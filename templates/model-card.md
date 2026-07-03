@@ -72,6 +72,8 @@ A complete, buildable example lives at
   `coreai.llm.eval` — is a stub in coreai-models 0.1.0 ("Evaluation support is
   coming soon") that cannot score a stateful KV-cache asset. It will be filled
   in when Apple ships their evaluator. fabric never fakes a parity number.
+- **Runtime throughput (tok/s):** to be published once measured on the on-device
+  (macOS/iOS 27) Swift runtime. Not estimated — real numbers or none.
 
 ## Provenance
 
