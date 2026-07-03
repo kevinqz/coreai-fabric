@@ -200,7 +200,10 @@ def cmd_new(args) -> int:
         },
         "publish": {
             "hf_target_namespace": args.namespace,
-            "repo_name": args.repo_name or f"{recipe_id}-coreai",
+            # SotA naming: match the coreai-community convention
+            # `<UpstreamModelName>-CoreAI` (e.g. Qwen3-0.6B-CoreAI) so a
+            # personal repo and its community mirror share one clean name.
+            "repo_name": args.repo_name or f"{hf_repo.split('/', 1)[1]}-CoreAI",
         },
     }
 

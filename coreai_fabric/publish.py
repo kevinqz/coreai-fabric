@@ -24,12 +24,38 @@ def render_model_card(root: Path, recipe, manifest: dict, report: dict) -> str:
     from . import FABRIC_REPO_URL
 
     catalog_block = recipe.data.get("catalog") or {}
+
+    # SotA HF discoverability metadata. base_model_relation: a CoreAI export is
+    # a `quantized` derivative when the preset compresses weights — NOT a
+    # `finetune` (HF's default, and what the community's own cards wrongly show).
+    # Omit the relation for an uncompressed (`none`) export rather than mislabel.
+    quant = str(conv.get("quantization", "none")).strip()
+    is_quantized = quant.lower() not in ("", "none")
+    base_model_relation_line = (
+        "base_model_relation: quantized\n" if is_quantized else ""
+    )
+    # Consistent, de-duped tag set (aligns with coreai-community's vocabulary:
+    # core-ai / coreai / on-device / apple-silicon) plus honest bundle_kind and
+    # quantization so the asset is findable by exactly what it is.
+    tags = ["coreai", "core-ai", "coreai-fabric", "aimodel",
+            "apple", "apple-silicon", "on-device"]
+    if catalog_block.get("bundle_kind"):
+        tags.append(str(catalog_block["bundle_kind"]))
+    if is_quantized:
+        tags.append(quant.lower())
+    seen: set[str] = set()
+    tags_block = "".join(
+        f"- {t}\n" for t in tags if not (t in seen or seen.add(t))
+    )
+
     return template.format(
         license=upstream["license"],
         upstream_hf_repo=upstream["hf_repo"],
         upstream_revision=manifest.get("input", {}).get("revision")
         or upstream.get("revision", "unpinned"),
         pipeline_tag=upstream.get("pipeline_tag", ""),
+        base_model_relation_line=base_model_relation_line,
+        tags_block=tags_block,
         name=catalog_block.get("name", recipe.id),
         recipe_id=recipe.id,
         recipe_url=f"{FABRIC_REPO_URL}/blob/main/recipes/{recipe.id}.yaml",

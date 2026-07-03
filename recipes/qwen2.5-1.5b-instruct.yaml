@@ -34,7 +34,7 @@ parity:
     tolerance: 0.02
 publish:
   hf_target_namespace: kevinqz
-  repo_name: qwen2.5-1.5b-instruct-coreai
+  repo_name: Qwen2.5-1.5B-Instruct-CoreAI
 catalog:
   name: Qwen2.5-1.5B-Instruct (fabric)
   family: Qwen2.5-1.5B-Instruct

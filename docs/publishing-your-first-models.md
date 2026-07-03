@@ -12,9 +12,9 @@ credentials or your machine's toolchain).
 
   | recipe id | upstream | preset ctx | publishes to |
   |---|---|---|---|
-  | `qwen3-0.6b` | Qwen/Qwen3-0.6B | 8192 | `kevinqz/qwen3-0.6b-coreai` |
-  | `qwen2.5-1.5b-instruct` | Qwen/Qwen2.5-1.5B-Instruct | 32768 | `kevinqz/qwen2.5-1.5b-instruct-coreai` |
-  | `qwen3-4b` | Qwen/Qwen3-4B | 40960 | `kevinqz/qwen3-4b-coreai` |
+  | `qwen3-0.6b` | Qwen/Qwen3-0.6B | 8192 | `kevinqz/Qwen3-0.6B-CoreAI` |
+  | `qwen2.5-1.5b-instruct` | Qwen/Qwen2.5-1.5B-Instruct | 32768 | `kevinqz/Qwen2.5-1.5B-Instruct-CoreAI` |
+  | `qwen3-4b` | Qwen/Qwen3-4B | 40960 | `kevinqz/Qwen3-4B-CoreAI` |
 
   All three pass `coreai-fabric validate`, and their generated catalog entries
   pass the **live catalog's** validate + audit + io_contract gates
@@ -149,3 +149,29 @@ your repo survives any org change, and the community org becomes a distribution
 layer rather than a single point of ownership. If you'd rather have a branded
 home, create your own org (e.g. `coreai-br`) and mirror there instead — the
 same own-source-of-truth principle applies.
+
+### The organization scheme fabric now enforces
+
+So a `kevinqz` repo and its `coreai-community` mirror are one clean, discoverable,
+honest unit, fabric standardizes:
+
+- **Repo name:** `<UpstreamModelName>-CoreAI` — matches the community's own
+  convention (`Qwen3-0.6B-CoreAI`, `MiniCPM-V-4.6-CoreAI`), so your repo and its
+  mirror share one name. (Was lowercase `<id>-coreai`.)
+- **`base_model` + `base_model_relation: quantized`** in the card frontmatter.
+  This is the key discoverability lever: HF then lists your conversion **on the
+  upstream model's page** as a quantized derivative. Note we use `quantized` —
+  the *correct* relation; the community's own cards show `finetune`, which is
+  wrong for a quantized export. When the preset is uncompressed (`none`), fabric
+  omits the relation rather than mislabel it.
+- **Consistent tags:** `coreai`, `core-ai`, `coreai-fabric`, `aimodel`, `apple`,
+  `apple-silicon`, `on-device`, the `bundle_kind` (`llm`/`asr`/`vlm`/…), and the
+  quantization (`4bit`) — findable by exactly what it is. `library_name: coreai`.
+- **The catalog is the neutral index** that ties the three identities together:
+  upstream (provenance) → your namespace (source of truth) → community mirror
+  (distribution). One entry, three links, no ambiguity about who made what.
+
+Two things fabric does NOT do for you (HF-account actions): **HF Collections**
+— group your CoreAI repos into a Collection per capability ("CoreAI LLMs",
+"CoreAI ASR") for a clean landing page — and the **mirror push** itself. Both
+are one-time clicks/API calls under your account.

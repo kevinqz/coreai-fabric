@@ -1,13 +1,10 @@
 ---
 license: {license}
 base_model: {upstream_hf_repo}
-pipeline_tag: {pipeline_tag}
+{base_model_relation_line}pipeline_tag: {pipeline_tag}
+library_name: coreai
 tags:
-- apple
-- core-ai
-- aimodel
-- coreai-fabric
----
+{tags_block}---
 
 # {name}
 

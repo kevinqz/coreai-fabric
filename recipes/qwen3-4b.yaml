@@ -34,7 +34,7 @@ parity:
     tolerance: 0.02
 publish:
   hf_target_namespace: kevinqz
-  repo_name: qwen3-4b-coreai
+  repo_name: Qwen3-4B-CoreAI
 catalog:
   name: Qwen3-4B (fabric)
   family: Qwen3-4B
