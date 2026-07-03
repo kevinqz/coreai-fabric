@@ -37,9 +37,21 @@ Catalog = "https://github.com/kevinqz/coreai-catalog"
 [project.optional-dependencies]
 hf = ["huggingface_hub>=0.20"]
 test = ["pytest>=7"]
+# The Apple conversion stack VERIFIED on real hardware (Apple M4 Max,
+# macOS 26.6, 2026-07-03): coreai-torch 0.4.1 (library, pulls
+# coreai-core==1.0.0b2 whose wheel bundles the Core AI compiler AND runtime —
+# conversion and Gate B execution both work on macOS 26; deployment via the
+# apple/coreai-models Swift runners needs macOS/iOS 27+).
+convert = [
+    "coreai-torch==0.4.1",
+    "torch>=2.8,<=2.11.0",
+    "transformers>=4.57,<5.0",
+]
 
 [project.scripts]
 coreai-fabric = "coreai_fabric.cli:main"
+coreai-fabric-llm-export = "coreai_fabric.drivers.llm_export:main"
+coreai-fabric-parity-runner = "coreai_fabric.parity_runner:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

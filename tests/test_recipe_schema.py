@@ -30,10 +30,16 @@ def test_all_seed_recipes_validate_without_errors():
 
 
 def test_seed_recipes_are_honest_drafts():
+    # Committed seed recipes stay `draft`: converted/verified describe LOCAL
+    # build/ state (disposable, gitignored), so they are reset before commit.
+    # Real conversion/verification runs are recorded in docs/validation-log.md,
+    # not in the status field. Status leaves draft in the committed tree only
+    # at publish (when the artifact exists somewhere durable).
     for recipe in load_all_recipes(REPO_ROOT):
         assert recipe.status == "draft", (
-            f"{recipe.id} claims status '{recipe.status}' but no conversion "
-            "has happened — seed recipes must stay draft"
+            f"{recipe.id} is committed with status '{recipe.status}' — "
+            "converted/verified refer to disposable build/ state; reset to "
+            "draft before committing (see docs/validation-log.md)"
         )
         assert "published" not in recipe.data
 
@@ -98,10 +104,9 @@ def _minimal_valid(id: str) -> dict:
             "license_terms": "permissive",
         },
         "conversion": {
-            "tool": "coreai-torch",
+            "tool": "coreai-fabric-llm-export",
             "quantization": "none",
-            "precision": "fp16",
-            "compute_units": "all",
+            "precision": "float16",
         },
         "expected": {"bundle_files": ["metadata.json"]},
         "parity": {

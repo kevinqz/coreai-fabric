@@ -84,12 +84,17 @@ def cmd_new(args) -> int:
         "upstream": upstream,
         "conversion": {
             "tool": args.tool,
-            "args": {},
+            # min_tool_version is set after the first successful conversion —
+            # never scaffolded (fabric does not guess toolchain versions).
+            "args": {"platform": args.platform},
             "quantization": args.quantization,
             "precision": args.precision,
-            "compute_units": args.compute_units,
         },
-        "expected": {"bundle_files": args.bundle_file or ["metadata.json"]},
+        # Verified .aimodel inventory (real asset, coreai-core 1.0.0b2):
+        # metadata.json + main.mlirb (program bytecode) + main.hash (sha256).
+        "expected": {
+            "bundle_files": args.bundle_file or ["metadata.json", "main.mlirb", "main.hash"]
+        },
         "parity": {
             "gate_a": {
                 "checks": [

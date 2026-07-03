@@ -18,8 +18,8 @@ def _recipe(tmp_path: Path, expected_files=None, format_version=None) -> Recipe:
         data={
             "id": "x",
             "upstream": {"hf_repo": "o/m", "license": "mit", "license_terms": "permissive"},
-            "conversion": {"tool": "coreai-torch", "quantization": "none",
-                           "precision": "fp16", "compute_units": "all"},
+            "conversion": {"tool": "coreai-fabric-llm-export", "quantization": "none",
+                           "precision": "float16"},
             "expected": expected,
             "parity": {
                 "gate_a": {"checks": ["bundle_files_present", "metadata_json_parses",
@@ -73,6 +73,17 @@ def test_gate_a_fails_on_format_version_mismatch(tmp_path):
     _make_bundle(tmp_path, {"format_version": "2"})
     result = run_gate_a(tmp_path, _recipe(tmp_path, format_version="1"))
     assert result["status"] == "failed"
+
+
+def test_gate_a_checks_real_asset_version_key(tmp_path):
+    # Real bundles (verified: coreai-core 1.0.0b2 asset on macOS 26.6) spell
+    # the format-version key `assetVersion`, e.g. "2.0".
+    _make_bundle(tmp_path, {"assetVersion": "2.0", "producer": "coreai-core 1.0.0b2"})
+    result = run_gate_a(tmp_path, _recipe(tmp_path, format_version="2.0"))
+    by_name = {c["name"]: c["status"] for c in result["checks"]}
+    assert by_name["metadata_matches_recipe"] == "passed"
+    mismatch = run_gate_a(tmp_path, _recipe(tmp_path, format_version="1.0"))
+    assert mismatch["status"] == "failed"
 
 
 def test_gate_a_records_skip_when_nothing_comparable_not_a_pass(tmp_path):

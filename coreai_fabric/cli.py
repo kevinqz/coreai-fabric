@@ -116,13 +116,22 @@ def build_parser() -> argparse.ArgumentParser:
     p_new.add_argument("--namespace", default="coreai-community",
                        help="the publisher's OWN HF namespace to publish into (default: coreai-community)")
     p_new.add_argument("--repo-name", help="target HF repo name (default: <id>-coreai)")
-    p_new.add_argument("--tool", default="coreai-torch", help="converter executable (default: coreai-torch)")
-    p_new.add_argument("--precision", default="fp16")
-    p_new.add_argument("--quantization", default="none")
-    p_new.add_argument("--compute-units", default="all",
-                       help="passed through to the converter (vocabulary defined by the toolchain)")
+    p_new.add_argument("--tool", default="coreai-fabric-llm-export",
+                       help="converter executable (default: coreai-fabric-llm-export, "
+                       "fabric's verified driver over coreai-torch; Apple's "
+                       "coreai.llm.export from an apple/coreai-models checkout "
+                       "accepts the same flag layout)")
+    p_new.add_argument("--precision", default="float16",
+                       help="passed as --compute-precision (verified vocabulary: "
+                       "float16, bfloat16, float32)")
+    p_new.add_argument("--quantization", default="none",
+                       help="passed as --compression (none, or an Apple preset "
+                       "when using coreai.llm.export)")
+    p_new.add_argument("--platform", default="macOS",
+                       help="target platform arg for the converter (default: macOS)")
     p_new.add_argument("--bundle-file", action="append",
-                       help="expected bundle file (repeatable; default: metadata.json)")
+                       help="expected bundle file (repeatable; default: the verified "
+                       ".aimodel inventory metadata.json, main.mlirb, main.hash)")
     p_new.add_argument("--license", help="upstream license id (required with --offline)")
     p_new.add_argument("--license-terms", choices=["permissive", "review_required", "unknown"])
     p_new.add_argument("--pipeline-tag", help="override the upstream pipeline_tag")

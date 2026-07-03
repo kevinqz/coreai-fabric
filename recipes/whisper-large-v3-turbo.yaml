@@ -11,14 +11,18 @@ upstream:
   pipeline_tag: automatic-speech-recognition
   size_bytes: 5096208915
 conversion:
-  tool: coreai-torch
-  args: {}
+  tool: models/whisper/export.py
+  min_tool_version: 0.4.1
+  args:
+    model: openai/whisper-large-v3-turbo
+    dtype: float16
   quantization: none
-  precision: fp16
-  compute_units: all
+  precision: float16
 expected:
   bundle_files:
   - metadata.json
+  - main.mlirb
+  - main.hash
 parity:
   gate_a:
     checks:
@@ -49,8 +53,16 @@ catalog:
   processor_required: true
   aot_required: unknown
 status: draft
-notes: 'License note: the upstream HF repo openai/whisper-large-v3-turbo declares
-  mit (verified via the HF API 2026-07-03); the catalog''s existing zoo-official
-  conversion entry lists Apache-2.0. Fabric records the upstream repo''s own
-  declaration. Runner is unknown until the first conversion is verified
-  on-device (the zoo conversion uses CoreAITranscribe).'
+notes: 'Converter reality (verified against the apple/coreai-models source, tag
+  0.1.0, 2026-07-03): whisper is converted by the per-model PEP 723 script
+  models/whisper/export.py (run via uv from a checkout; pins
+  coreai-torch==0.4.1 and transformers==4.57.3). Verified flags: --model
+  {openai/whisper-large-v3-turbo, openai/whisper-large-v3} --dtype
+  {float16,bfloat16,float32} --output-dir --overwrite; output naming is
+  script-owned, so fabric prints the manual invocation instead of driving it
+  (place the result at build/whisper-large-v3-turbo/whisper-large-v3-turbo.aimodel
+  and run verify). License note: the upstream HF repo declares mit (verified
+  via the HF API 2026-07-03); the catalog''s existing zoo-official conversion
+  entry lists Apache-2.0 — fabric records the upstream repo''s own declaration.
+  Runner is unknown until the first conversion is verified on-device (the zoo
+  conversion uses CoreAITranscribe).'

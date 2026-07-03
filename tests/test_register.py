@@ -83,7 +83,8 @@ def test_artifact_entry_shared_field_contract():
     assert hf["files"] == FAKE_FILES
     prov = entry["provenance"]
     assert prov["recipe_source"] == "fabric"
-    assert prov["converted_by"]["tool"] == "coreai-torch"
+    # The verified converter executable (coreai-torch is a library, not a CLI).
+    assert prov["converted_by"]["tool"] == "coreai-fabric-llm-export"
     assert prov["converted_by"]["version"] == "0.0-test"
     assert prov["converted_by"]["recipe_url"].endswith("/recipes/qwen3-0.6b.yaml")
     assert entry["officiality"] == {

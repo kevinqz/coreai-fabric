@@ -9,10 +9,15 @@ Key facts:
 - Source of truth: recipes/*.yaml (one per artifact), schema/recipe.schema.json.
 - Pipeline stages: draft, converted, verified, published, registered — advanced
   only by the corresponding CLI command.
-- convert requires macOS + Apple's toolchain (apple/coreai-torch); CI never converts.
-- Gate A = bundle structure checks (runs anywhere). Gate B = numeric parity vs
-  upstream (cosine >= threshold from the recipe); reported not_run until a real
-  runner measures it.
+- convert requires macOS on Apple Silicon + the [convert] extra (coreai-torch
+  0.4.1 is a LIBRARY on PyPI; fabric ships the coreai-fabric-llm-export
+  executable over it — verified on macOS 26.6, macOS 27 not required); CI
+  never converts.
+- Gate A = bundle structure checks (runs anywhere; verified .aimodel inventory:
+  main.mlirb, main.hash, metadata.json with assetVersion). Gate B = numeric
+  parity vs upstream (cosine >= threshold from the recipe); fabric ships
+  coreai-fabric-parity-runner (per_token_logit_cosine); reported not_run when
+  no runner is configured — never faked.
 - register generates coreai-catalog entries: source_group fabric, huggingface-only
   artifact provenance with pinned revision + per-file sha256, provenance.converted_by.
 

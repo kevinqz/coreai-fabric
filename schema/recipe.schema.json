@@ -50,35 +50,30 @@
     "conversion": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["tool", "quantization", "precision", "compute_units"],
+      "required": ["tool", "quantization", "precision"],
       "properties": {
         "tool": {
           "type": "string",
           "minLength": 1,
-          "description": "Converter executable name (e.g. coreai-torch). Resolved on PATH at convert time."
+          "description": "Converter executable resolved on PATH at convert time (verified tools: coreai-fabric-llm-export from this repo's [convert] extra, coreai.llm.export from an apple/coreai-models checkout), OR a per-model script path inside an apple/coreai-models checkout (models/<family>/export.py) — script tools are documented but not driven by fabric; convert prints the verified manual invocation."
         },
         "min_tool_version": {
           "type": "string",
-          "description": "Minimum converter version known to work for this recipe. Leave absent if unknown."
+          "description": "Minimum version of the underlying converter library (coreai-torch) known to work for this recipe — every verified tool is a thin driver over coreai-torch. Leave absent if unknown; 0.4.1 was validated on real hardware 2026-07-03."
         },
         "args": {
           "type": "object",
-          "description": "Extra converter arguments passed through verbatim as --key value pairs."
+          "description": "Extra converter arguments passed through verbatim as --key value pairs (e.g. platform: macOS). For script tools these document the script's verified flags."
         },
         "quantization": {
           "type": "string",
           "minLength": 1,
-          "description": "Quantization scheme requested from the converter (e.g. none, palettized)."
+          "description": "Passed to the converter as --compression (verified flag name; e.g. none, 4bit, or a coreai-opt YAML preset stem)."
         },
         "precision": {
           "type": "string",
           "minLength": 1,
-          "description": "Numeric precision requested from the converter (e.g. fp16, int4)."
-        },
-        "compute_units": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Compute-units selector passed through to the converter. Opaque to fabric; the accepted vocabulary is defined by the installed Apple toolchain."
+          "description": "Passed to the converter as --compute-precision. Verified vocabulary: float16, bfloat16, float32."
         }
       }
     },

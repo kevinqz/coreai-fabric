@@ -1,6 +1,7 @@
 # coreai-fabric recipe — Qwen3 0.6B (LLM seed recipe)
-# Status: draft. This recipe has NOT been converted yet — conversion requires
-# macOS + the Apple Core AI toolchain (apple/coreai-torch). See AGENTS.md.
+# Status: draft in the committed tree. Conversion + Gate A/B were executed for
+# real on 2026-07-03 (macOS 26.6, M4 Max) — see docs/validation-log.md. Gate B
+# measured min per-token logit cosine 0.99661 (< 0.999): parity NOT passed.
 # Upstream metadata resolved live from the HF API on 2026-07-03.
 id: qwen3-0.6b
 upstream:
@@ -11,14 +12,18 @@ upstream:
   pipeline_tag: text-generation
   size_bytes: 4522815806
 conversion:
-  tool: coreai-torch
-  args: {}
+  tool: coreai-fabric-llm-export
+  min_tool_version: 0.4.1
+  args:
+    platform: macOS
   quantization: none
-  precision: fp16
-  compute_units: all
+  precision: float16
 expected:
+  format_version: '2.0'
   bundle_files:
   - metadata.json
+  - main.mlirb
+  - main.hash
 parity:
   gate_a:
     checks:
@@ -51,7 +56,17 @@ catalog:
   processor_required: false
   aot_required: unknown
 status: draft
-notes: Fabric-native fp16 conversion of Qwen3-0.6B. Distinct from the catalog's
-  existing official-qwen3-0-6b entry (int4 palettized, converted via Apple's
-  official recipe by the zoo). Runner and AOT requirements are unknown until
-  the first conversion is verified on-device.
+notes: 'Fabric-native float16 conversion of Qwen3-0.6B. Distinct from the catalog''s existing
+  official-qwen3-0-6b entry (int4 palettized, converted via Apple''s official recipe by the
+  zoo). VALIDATED ON REAL HARDWARE 2026-07-03 (Apple M4 Max, macOS 26.6): coreai-fabric-llm-export
+  (coreai-torch 0.4.1 + coreai-core 1.0.0b2 + transformers 4.57.3 + torch 2.11.0) converted
+  this upstream at the pinned revision into a 1.1 GB static-graph .aimodel (main.mlirb/main.hash/metadata.json,
+  assetVersion 2.0); Gate A passed; Gate B was MEASURED with coreai-fabric-parity-runner and
+  honestly FAILED the 0.999 bar (min per-token logit cosine 0.99661 vs fp32 reference, greedy
+  divergence observed) — see docs/validation-log.md for the full reports. Status is committed
+  as draft: converted/verified describe disposable local build/ state, and parity has not
+  passed. The bundle is a static (1,96) logits graph, NOT Apple''s KV-cache chat layout; a
+  production chat asset needs coreai.llm.export from an apple/coreai-models checkout. Assets
+  serialize with minimum_os v27, so Swift-runner deployment requires macOS/iOS 27+; converting
+  and Python-runtime execution work on macOS 26.6. Runner and AOT requirements for the catalog
+  remain unknown until verified with the on-device Swift stack.'

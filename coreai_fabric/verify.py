@@ -5,10 +5,13 @@ expectations. Implemented and tested.
 
 Gate B is numeric parity vs the upstream model (cosine thresholds from the
 recipe). The protocol is defined in docs/parity-protocol.md; execution
-requires macOS with the Apple Core AI runtime, driven by a Swift runner that
-does not exist yet. This module shells out to a runner if one is configured
-(COREAI_FABRIC_PARITY_RUNNER) and otherwise records gate_b.status: not_run —
-it never fakes a pass.
+requires macOS with the Apple Core AI runtime. Fabric ships a conforming
+Python runner (`coreai-fabric-parity-runner`, per_token_logit_cosine) —
+validated on real hardware (macOS 26.6, M4 Max): the runtime inside the
+coreai-core PyPI wheel loads and executes .aimodel assets, so no Swift runner
+and no macOS 27 are needed for Gate B. This module shells out to whatever
+runner is configured (COREAI_FABRIC_PARITY_RUNNER) and otherwise records
+gate_b.status: not_run — it never fakes a pass.
 """
 from __future__ import annotations
 
@@ -25,7 +28,13 @@ from .util import err, find_root, ok, utc_now_iso, warn
 #: metadata.json keys that, when present, are cross-checked against the recipe.
 #: Only keys observed in .aimodel bundles are checked; absent keys are recorded
 #: as skipped, never assumed.
+#: VERIFIED 2026-07-03 on a real asset produced by coreai-core 1.0.0b2
+#: (macOS 26.6, M4 Max): the .aimodel's metadata.json top-level keys are
+#: `creationDate`, `assetVersion` (observed value "2.0") and `producer`
+#: (e.g. "coreai-core 1.0.0b2"). `assetVersion` is the format-version field;
+#: the legacy `format_version` mapping is kept for pre-discovery recipes.
 METADATA_RECIPE_KEYS = {
+    "assetVersion": ("expected", "format_version"),
     "format_version": ("expected", "format_version"),
 }
 
@@ -127,11 +136,14 @@ def run_gate_b(root: Path, recipe: Recipe) -> dict:
             **base,
             "status": "not_run",
             "reason": (
-                "Gate B requires macOS + the Apple Core AI runtime driven by a "
-                "Swift parity runner. No runner is configured "
-                "(set COREAI_FABRIC_PARITY_RUNNER=/path/to/runner) and fabric "
-                "does not ship one yet — see docs/parity-protocol.md for the "
-                "protocol the runner must implement."
+                "Gate B requires macOS + the Apple Core AI runtime (verified: "
+                "the Python runtime from the coreai-core PyPI wheel executes "
+                "assets on macOS 26.6 — no Swift runner or macOS 27 needed). "
+                "No runner is configured: set "
+                "COREAI_FABRIC_PARITY_RUNNER=coreai-fabric-parity-runner "
+                '(ships with `pip install "coreai-fabric[convert]"`; supports '
+                "per_token_logit_cosine) or point it at any runner that "
+                "implements docs/parity-protocol.md."
             ),
         }
     if not shutil.which(runner) and not Path(runner).is_file():
@@ -151,6 +163,10 @@ def run_gate_b(root: Path, recipe: Recipe) -> dict:
         "--tolerance", str(gate["tolerance"]),
         "--report-json", "-",
     ]
+    if recipe.data["upstream"].get("revision"):
+        # Optional per the protocol: runners SHOULD compare against the pinned
+        # upstream revision when given one (coreai-fabric-parity-runner does).
+        cmd += ["--revision", recipe.data["upstream"]["revision"]]
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:
         return {
@@ -173,6 +189,11 @@ def run_gate_b(root: Path, recipe: Recipe) -> dict:
         and (not gate.get("greedy_token_exact") or runner_report.get("greedy_token_exact") is True)
     )
     result = {**base, "status": "passed" if passed else "failed", "value": value}
+    # Protocol: only `value` (and greedy_token_exact) feed the pass computation;
+    # every other runner-report key is recorded verbatim (runner cannot
+    # override the computed status/metric/thresholds).
+    for key, val in runner_report.items():
+        result.setdefault(key, val)
     if "greedy_token_exact" in runner_report:
         result["greedy_token_exact"] = runner_report["greedy_token_exact"]
     return result

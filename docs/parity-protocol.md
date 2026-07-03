@@ -1,10 +1,15 @@
 # Gate B — numeric parity protocol
 
-Status: **protocol defined, runner not yet implemented.** Gate B execution
-requires macOS on Apple Silicon with the Apple Core AI runtime; fabric's
-`verify` command shells to a runner and honestly records `not_run` when none
-is configured. Nothing in this document has been measured yet — it specifies
-what a conforming runner MUST do.
+Status: **protocol defined; a conforming runner ships with fabric.**
+`coreai-fabric-parity-runner` (installed by the `[convert]` extra) implements
+`per_token_logit_cosine` in Python on the Core AI runtime that ships inside
+the `coreai-core` PyPI wheel — verified on real hardware (Apple M4 Max,
+macOS 26.6, 2026-07-03): the runtime loads, specializes and executes
+`.aimodel` assets, so Gate B needs neither a Swift runner nor macOS 27.
+`graph_output_cosine` still needs a runner (per-modality preprocessing);
+fabric's runner exits non-zero for it rather than faking a result. Fabric's
+`verify` shells to whatever `COREAI_FABRIC_PARITY_RUNNER` names and honestly
+records `not_run` when none is configured.
 
 ## Purpose
 
@@ -53,8 +58,12 @@ hardcode them.
 
 ```
 <runner> --bundle <path/to/id.aimodel> --upstream <owner/name> \
-         --metric <metric> --threshold <t> --tolerance <tol> --report-json -
+         --metric <metric> --threshold <t> --tolerance <tol> --report-json - \
+         [--revision <sha>]
 ```
+
+`--revision` is appended when the recipe pins `upstream.revision`; runners
+SHOULD compare against exactly that revision (fabric's runner does).
 
 and expects a single JSON object on stdout:
 
@@ -74,10 +83,13 @@ stdout is recorded as a Gate B failure with the stderr excerpt.
 
 ## What remains TODO (honest gaps)
 
-- A Swift runner implementing this contract on the Apple Core AI runtime
-  (bundle loading, typed IO binding, tokenizer handling for LLMs).
-- Standard seeded input corpora per modality (text prompts, audio clips,
-  images) versioned in this repo so runs are reproducible.
+- `graph_output_cosine` support in fabric's runner (per-modality reference
+  preprocessing; input corpora for audio/images). The LLM prompt corpus is
+  versioned in `coreai_fabric/parity_runner.py` (`PROMPTS`).
+- A Swift runner on the OS Core AI runtime (macOS/iOS 27) to additionally
+  prove parity on the DEPLOYMENT runtime — fabric's runner exercises the
+  runtime bundled in the coreai-core wheel, which is the same stack but not
+  the on-device binary.
 - A decision on preprocessing parity for models with `processor_required`
   (the processor must be identical on both sides or the comparison is
   meaningless).

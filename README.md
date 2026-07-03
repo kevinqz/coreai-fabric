@@ -41,9 +41,10 @@ loop, and verifiable provenance at every step.
   and `provenance.converted_by {tool, version, recipe_url}` — no fabricated
   GitHub coordinates, no unverifiable claims.
 - **Never fabricate.** Unknowable fields stay absent or `unknown`. Gate B
-  parity is `not_run` until a real runner measures it — never faked. Where the
-  Apple converter's CLI interface could not be verified offline, the single
-  assumption is isolated and TODO-marked (`coreai_fabric/convert.py`).
+  parity is `not_run` until a real runner measures it — never faked. The
+  converter interface is no longer an assumption: it was verified on real
+  hardware (macOS 26.6, M4 Max, 2026-07-03 — see `docs/toolchain-notes.md`
+  and `docs/validation-log.md`).
 
 ## The pipeline
 
@@ -51,8 +52,8 @@ loop, and verifiable provenance at every step.
 |---|---|---|
 | `coreai-fabric new <hf_repo>` | Scaffold `recipes/<id>.yaml` from HF API metadata | network (or `--offline` + flags) |
 | `coreai-fabric validate [id]` | Schema + license triage, aggregated errors | nothing |
-| `coreai-fabric convert <id>` | Upstream → `.aimodel` via the Apple toolchain adapter; writes a conversion manifest | **macOS + apple/coreai-torch** |
-| `coreai-fabric verify <id>` | Gate A: bundle structure + metadata sanity. Gate B: numeric parity vs upstream (cosine thresholds from the recipe); writes `parity-report.json` | Gate B: **macOS + Core AI runtime + a parity runner** |
+| `coreai-fabric convert <id>` | Upstream → `.aimodel` via the Apple toolchain adapter; writes a conversion manifest | **macOS/arm64 + `pip install ".[convert]"`** (`coreai-torch` on PyPI is a library, not a CLI — fabric ships the `coreai-fabric-llm-export` executable over it; verified on macOS 26.6) |
+| `coreai-fabric verify <id>` | Gate A: bundle structure + metadata sanity. Gate B: numeric parity vs upstream (cosine thresholds from the recipe); writes `parity-report.json` | Gate B: **macOS + a parity runner** (fabric ships `coreai-fabric-parity-runner`; the runtime in the coreai-core wheel executes assets on macOS 26) |
 | `coreai-fabric publish <id>` | Upload bundle + normalized model card + reports to the publisher's own HF namespace; pins the resulting revision into the recipe | `pip install ".[hf]"`, `hf auth login` |
 | `coreai-fabric register <id>` | Generate + schema-validate coreai-catalog entries, open PR `fabric/add-<id>` | catalog clone, `gh auth login` |
 | `coreai-fabric list` / `status` | Recipe inventory with pipeline stage | nothing |
@@ -73,8 +74,9 @@ coreai-fabric new Qwen/Qwen3-0.6B  # scaffold your own
 ## Seed recipes
 
 Three draft recipes covering diverse modalities, grounded in live-verified
-upstream metadata (they have **not** been converted yet — that requires the
-Apple toolchain on macOS):
+upstream metadata. `qwen3-0.6b` has been converted and parity-checked on real
+hardware (macOS 26.6 / M4 Max — see `docs/validation-log.md`); artifacts are
+not committed (`build/` is disposable) and nothing is published yet:
 
 | Recipe | Upstream | Modality | License |
 |---|---|---|---|
@@ -102,8 +104,9 @@ Apple toolchain on macOS):
   `metadata.json` parses, metadata agrees with recipe expectations.
 - **Gate B — numeric parity** (macOS + Core AI runtime): cosine similarity vs
   the upstream model per `docs/parity-protocol.md`; thresholds live in each
-  recipe (convention: ≥ 0.999, plus greedy-token-exact for LLMs). The Swift
-  runner is not implemented yet; Gate B reports `not_run` honestly until it is.
+  recipe (convention: ≥ 0.999, plus greedy-token-exact for LLMs). Fabric ships
+  `coreai-fabric-parity-runner` (per_token_logit_cosine, validated on real
+  hardware); without a configured runner Gate B reports `not_run` honestly.
 
 ## Contributing & governance
 

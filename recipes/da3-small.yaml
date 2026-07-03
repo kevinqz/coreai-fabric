@@ -11,14 +11,18 @@ upstream:
   pipeline_tag: depth-estimation
   size_bytes: 137248940
 conversion:
-  tool: coreai-torch
-  args: {}
+  tool: models/depth-anything/export.py
+  min_tool_version: 0.4.1
+  args:
+    model: depth-anything/da3-small
+    dtype: float32
   quantization: none
-  precision: fp16
-  compute_units: all
+  precision: float32
 expected:
   bundle_files:
   - metadata.json
+  - main.mlirb
+  - main.hash
 parity:
   gate_a:
     checks:
@@ -49,8 +53,15 @@ catalog:
   processor_required: true
   aot_required: unknown
 status: draft
-notes: 'Note on the depth-anything family: only the SMALL and BASE DA3 variants
-  are apache-2.0; DA3-LARGE and DA3-GIANT are cc-by-nc-4.0 (verified via the HF
-  API 2026-07-03) — a recipe for those variants would be license_terms:
-  review_required. Distinct from the catalog''s existing zoo entry
-  depth-anything-3-small.'
+notes: 'Converter reality (verified against the apple/coreai-models source, tag
+  0.1.0, 2026-07-03): DA3 is converted by the per-model PEP 723 script
+  models/depth-anything/export.py (run via uv from a checkout), which supports
+  ONLY --model depth-anything/da3-small and --dtype float32 — the previous
+  fp16 setting here was an unverified assumption. The script pins
+  coreai-torch==0.4.1 and depth-anything-3 from the ByteDance git repo, and
+  names its output <model>_float32.aimodel, so fabric prints the manual
+  invocation instead of driving it (place the result at
+  build/da3-small/da3-small.aimodel and run verify). License note: only the
+  SMALL and BASE DA3 variants are apache-2.0; DA3-LARGE and DA3-GIANT are
+  cc-by-nc-4.0 (verified via the HF API 2026-07-03). Distinct from the
+  catalog''s existing zoo entry depth-anything-3-small.'
