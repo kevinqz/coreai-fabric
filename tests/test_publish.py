@@ -33,9 +33,13 @@ def test_card_frontmatter_is_sota_for_quantized_asset():
     assert fm["base_model_relation"] == "quantized"
     assert fm["library_name"] == "coreai"
     tags = fm["tags"]
-    for t in ("coreai", "core-ai", "apple", "on-device", "llm", "4bit"):
+    # Accurate descriptors that are also the ecosystem's discoverability facets.
+    for t in ("coreai", "core-ai", "coreml", "apple", "apple-silicon",
+              "on-device", "iphone", "metal", "text-generation", "llm", "4bit"):
         assert t in tags, f"missing tag {t}"
     assert len(tags) == len(set(tags)), "tags must be de-duplicated"
+    # Curated example prompts render as widget examples (real usage docs).
+    assert fm.get("widget") and all("text" in w for w in fm["widget"])
 
 
 def test_card_omits_relation_for_uncompressed_export():

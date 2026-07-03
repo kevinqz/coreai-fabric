@@ -138,14 +138,31 @@ def render_model_card(root: Path, recipe, manifest: dict, report: dict,
     is_quantized = quant.lower() not in ("", "none")
     base_model_relation_line = "base_model_relation: quantized\n" if is_quantized else ""
 
-    tags = ["coreai", "core-ai", "coreai-fabric", "aimodel",
-            "apple", "apple-silicon", "on-device"]
+    # Tags = accurate descriptors that also happen to be the facets the whole
+    # Core AI ecosystem is found under: both spellings (coreai/core-ai) to bridge
+    # the community's split; coreml (Core AI is Core ML's successor lineage);
+    # the device/runtime facets (iphone, apple-silicon, metal) — all true of a
+    # 320 MB on-device asset; and the task + bundle_kind + quantization.
+    tags = ["coreai", "core-ai", "coreai-fabric", "aimodel", "coreml",
+            "apple", "apple-silicon", "on-device", "iphone", "metal"]
+    if upstream.get("pipeline_tag"):
+        tags.append(str(upstream["pipeline_tag"]))
     if catalog_block.get("bundle_kind"):
         tags.append(str(catalog_block["bundle_kind"]))
     if is_quantized:
         tags.append(quant.lower())
     seen: set[str] = set()
     tags_block = "".join(f"- {t}\n" for t in tags if not (t in seen or seen.add(t)))
+
+    # Curated example prompts (real chat turns this model handles well) — genuine
+    # usage documentation, rendered on the page as the `widget:` examples.
+    widget_prompts = catalog_block.get("example_prompts") or (
+        ["Explain on-device AI in one sentence.",
+         "Write a haiku about Apple Silicon."]
+        if (catalog_block.get("bundle_kind") == "llm") else [])
+    widget_block = ""
+    if widget_prompts:
+        widget_block = "widget:\n" + "".join(f'- text: "{p}"\n' for p in widget_prompts)
 
     # Optional `language:` frontmatter (drives HF's language facet) — only when
     # the recipe declares it (never invented).
@@ -201,6 +218,7 @@ def render_model_card(root: Path, recipe, manifest: dict, report: dict,
         pipeline_tag=upstream.get("pipeline_tag", ""),
         base_model_relation_line=base_model_relation_line,
         language_block=language_block,
+        widget_block=widget_block,
         tags_block=tags_block,
         name=catalog_block.get("name", recipe.id),
         recipe_id=recipe.id,

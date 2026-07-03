@@ -3,14 +3,17 @@ license: {license}
 base_model: {upstream_hf_repo}
 {base_model_relation_line}pipeline_tag: {pipeline_tag}
 library_name: coreai
-{language_block}tags:
+{language_block}{widget_block}tags:
 {tags_block}---
 
 {mirror_line}
 
 # {name}
 
-A 4-bit, **stateful KV-cache chat** `.aimodel` — an Apple Core AI conversion of
+**4-bit Apple Core AI chat model — runs fully on-device on Apple Silicon
+(iPhone / iPad / Mac, macOS/iOS 27+).**
+
+A **stateful KV-cache chat** `.aimodel` — an Apple Core AI conversion of
 [{upstream_hf_repo}](https://huggingface.co/{upstream_hf_repo}), with an embedded
 tokenizer + chat template. Produced by
 [coreai-fabric]({recipe_url}) and indexed by
@@ -80,8 +83,10 @@ A complete, buildable example lives at
 | Precision / quantization | {precision} / {quantization} |
 | Conversion date | {date} |
 
-The machine-readable reports ship in this repo as `parity-report.json` and
-`reproduce-manifest.json`.
+Machine-readable, in this repo:
+[`parity-report.json`](./parity-report.json) (gate results) ·
+[`reproduce-manifest.json`](./reproduce-manifest.json) (exact tool + stack + pinned
+revision to reproduce this conversion) · [`LICENSE`](./LICENSE) (upstream terms).
 
 ## License and attribution
 
@@ -91,9 +96,25 @@ AI format and 4-bit quantized. The conversion itself is community work.
 
 ## Links
 
-- [Base model](https://huggingface.co/{upstream_hf_repo}) · [Recipe]({recipe_url})
-- [coreai-catalog](https://github.com/kevinqz/coreai-catalog) (neutral index)
+- **Base model:** [{upstream_hf_repo}](https://huggingface.co/{upstream_hf_repo})
+- **Reproduce:** [recipe `{recipe_id}`]({recipe_url}) · [runnable example](https://github.com/kevinqz/coreai-catalog/tree/main/examples/llm-chat)
+- **Index:** [coreai-catalog](https://github.com/kevinqz/coreai-catalog) — the neutral registry that ties upstream ↔ this asset ↔ mirror together
 {collection_link}
+
+## The on-device Core AI ecosystem
+
+This conversion is part of a broader open ecosystem for running models on Apple's
+on-device stack — useful references if you're building here:
+
+- [coreai-fabric](https://github.com/kevinqz/coreai-fabric) — the reproducible
+  recipe → `.aimodel` pipeline that produced this asset.
+- [coreai-catalog](https://github.com/kevinqz/coreai-catalog) — the index of Core
+  AI models across the community, with provenance and integration snippets.
+- [apple/coreai-models](https://github.com/apple/coreai-models) — Apple's official
+  exporters and runtimes.
+- [CoreAI Model Zoo](https://github.com/john-rocky/coreai-model-zoo) and the wider
+  [coreai-community](https://huggingface.co/coreai-community) — community
+  conversions across many model families.
 
 ## Not affiliated with Apple
 
