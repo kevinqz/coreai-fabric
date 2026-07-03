@@ -133,7 +133,7 @@ def build_parser() -> argparse.ArgumentParser:
                        help="expected bundle file (repeatable; default: the verified "
                        ".aimodel inventory metadata.json, main.mlirb, main.hash)")
     p_new.add_argument("--license", help="upstream license id (required with --offline)")
-    p_new.add_argument("--license-terms", choices=["permissive", "review_required", "unknown"])
+    p_new.add_argument("--license-terms", choices=["permissive", "weak_copyleft", "restricted", "review_required", "unknown"])
     p_new.add_argument("--pipeline-tag", help="override the upstream pipeline_tag")
     p_new.add_argument("--name", help="catalog display name")
     p_new.add_argument("--family", help="catalog model family")
