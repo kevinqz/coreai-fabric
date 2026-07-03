@@ -34,7 +34,7 @@ parity:
     threshold: 0.999
     tolerance: 0.0005
 publish:
-  hf_target_namespace: coreai-community
+  hf_target_namespace: kevinqz
   repo_name: whisper-large-v3-turbo-coreai
 catalog:
   name: Whisper large-v3-turbo (fabric)

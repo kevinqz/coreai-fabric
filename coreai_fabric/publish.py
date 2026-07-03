@@ -8,6 +8,8 @@ Fabric never hosts weights: the target is always the publisher's namespace
 from __future__ import annotations
 
 import json
+import os
+import re
 from pathlib import Path
 
 from .convert import bundle_path, manifest_path
@@ -15,8 +17,109 @@ from .recipes import find_recipe, triage_license
 from .util import err, find_root, ok, today, warn, write_yaml
 from .verify import parity_report_path
 
+#: Candidate license/notice filenames to mirror from the upstream repo so the
+#: published derivative satisfies Apache-2.0 §4(a)/(d) and similar terms.
+UPSTREAM_LICENSE_FILES = ("LICENSE", "LICENSE.txt", "LICENSE.md", "NOTICE", "NOTICE.txt")
 
-def render_model_card(root: Path, recipe, manifest: dict, report: dict) -> str:
+#: Absolute-path markers that must never reach a public repo (privacy leak).
+_LOCAL_PATH_MARKERS = ("/Users/", "/home/")
+
+
+def fetch_upstream_license(hf_repo: str, revision: str | None, staging: Path) -> list[str]:
+    """Download the upstream LICENSE/NOTICE into staging (Apache-2.0 §4(a)/(d):
+    a redistribution must ship a copy of the license + retain the NOTICE). The
+    caller treats an absent-but-required license as a hard publish failure —
+    fabric never redistributes weights without their license text."""
+    from huggingface_hub import hf_hub_download
+    from huggingface_hub.utils import EntryNotFoundError
+
+    written: list[str] = []
+    for name in UPSTREAM_LICENSE_FILES:
+        try:
+            path = hf_hub_download(hf_repo, name, revision=revision, repo_type="model")
+        except EntryNotFoundError:
+            continue
+        except Exception:  # noqa: BLE001 — network/other: try the next candidate
+            continue
+        # Prefix so it never collides with anything fabric writes.
+        dest = staging / (name if name.startswith(("LICENSE", "NOTICE")) else f"upstream-{name}")
+        dest.write_text(Path(path).read_text())
+        written.append(dest.name)
+    return written
+
+
+def copyright_holder_from_license(staging: Path) -> str | None:
+    """Best-effort: the copyright holder to retain per Apache-2.0 §4(c), read
+    from the fetched LICENSE (e.g. 'Copyright 2024 Alibaba Cloud'). None if not
+    found — the card then omits the attribution line rather than inventing one."""
+    for name in ("LICENSE", "LICENSE.txt", "LICENSE.md", "NOTICE"):
+        f = staging / name
+        if not f.is_file():
+            continue
+        for line in f.read_text().splitlines():
+            m = re.search(r"copyright\s*(?:\(c\)|©)?\s*(\d{4}.*|.*\d{4}.*)", line, re.I)
+            if m and m.group(1).strip() and "[" not in m.group(1):  # skip template "[yyyy]"
+                return m.group(1).strip().rstrip(".")
+    return None
+
+
+def sanitize_manifest(manifest: dict, root: Path) -> dict:
+    """A PUBLIC, reproducible-by-anyone copy of the conversion manifest: drop
+    the host-specific absolute `tool_path` and relativize any local path in
+    `command[]` (which otherwise leaks the OS username + local dir layout into a
+    permanent public git history)."""
+    m = {k: v for k, v in manifest.items() if k != "tool_path"}
+    root_str, home = str(root), str(Path.home())
+    if isinstance(m.get("command"), list) and m["command"]:
+        cmd = [os.path.basename(str(m["command"][0]))]
+        for tok in m["command"][1:]:
+            cmd.append(str(tok).replace(root_str, ".").replace(home, "~"))
+        m["command"] = cmd
+    return m
+
+
+def assert_no_local_paths(staging: Path) -> list[str]:
+    """Last-line guard before a public upload: any staged text file still
+    carrying an absolute local path is a leak. Returns the offending filenames."""
+    markers = (*_LOCAL_PATH_MARKERS, str(Path.home()))
+    leaks: list[str] = []
+    for p in sorted(staging.rglob("*")):
+        if not p.is_file():
+            continue
+        try:
+            text = p.read_text()
+        except (UnicodeDecodeError, OSError):
+            continue
+        if any(mk in text for mk in markers):
+            leaks.append(str(p.relative_to(staging)))
+    return leaks
+
+
+def _human_size(num_bytes: int) -> str:
+    step = float(num_bytes)
+    for unit in ("B", "KB", "MB", "GB"):
+        if step < 1024 or unit == "GB":
+            return f"{step:.0f} {unit}" if unit != "GB" else f"{step:.1f} {unit}"
+        step /= 1024
+    return f"{num_bytes} B"
+
+
+def _bundle_metadata(root: Path, recipe) -> dict:
+    """The Apple-produced .aimodel metadata.json (assetVersion, producer, real
+    quantization if present) — the AUTHORITATIVE description of the shipped
+    asset, preferred over the recipe's documentation-only fields."""
+    f = bundle_path(root, recipe) / "metadata.json"
+    if f.is_file():
+        try:
+            return json.loads(f.read_text())
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def render_model_card(root: Path, recipe, manifest: dict, report: dict,
+                      *, copyright_holder: str | None = None,
+                      collection_url: str | None = None) -> str:
     template = (root / "templates" / "model-card.md").read_text()
     upstream = recipe.data["upstream"]
     conv = recipe.data["conversion"]
@@ -24,19 +127,17 @@ def render_model_card(root: Path, recipe, manifest: dict, report: dict) -> str:
     from . import FABRIC_REPO_URL
 
     catalog_block = recipe.data.get("catalog") or {}
+    publish_cfg = recipe.data.get("publish") or {}
+    repo_id = f"{publish_cfg.get('hf_target_namespace')}/{publish_cfg.get('repo_name')}"
 
-    # SotA HF discoverability metadata. base_model_relation: a CoreAI export is
-    # a `quantized` derivative when the preset compresses weights — NOT a
-    # `finetune` (HF's default, and what the community's own cards wrongly show).
-    # Omit the relation for an uncompressed (`none`) export rather than mislabel.
+    # SotA discoverability metadata. base_model_relation: a CoreAI export is a
+    # `quantized` derivative when the preset compresses weights — NOT `finetune`
+    # (HF's default, and what the community's own cards wrongly show). Omit it
+    # for an uncompressed (`none`) export rather than mislabel.
     quant = str(conv.get("quantization", "none")).strip()
     is_quantized = quant.lower() not in ("", "none")
-    base_model_relation_line = (
-        "base_model_relation: quantized\n" if is_quantized else ""
-    )
-    # Consistent, de-duped tag set (aligns with coreai-community's vocabulary:
-    # core-ai / coreai / on-device / apple-silicon) plus honest bundle_kind and
-    # quantization so the asset is findable by exactly what it is.
+    base_model_relation_line = "base_model_relation: quantized\n" if is_quantized else ""
+
     tags = ["coreai", "core-ai", "coreai-fabric", "aimodel",
             "apple", "apple-silicon", "on-device"]
     if catalog_block.get("bundle_kind"):
@@ -44,9 +145,53 @@ def render_model_card(root: Path, recipe, manifest: dict, report: dict) -> str:
     if is_quantized:
         tags.append(quant.lower())
     seen: set[str] = set()
-    tags_block = "".join(
-        f"- {t}\n" for t in tags if not (t in seen or seen.add(t))
+    tags_block = "".join(f"- {t}\n" for t in tags if not (t in seen or seen.add(t)))
+
+    # Optional `language:` frontmatter (drives HF's language facet) — only when
+    # the recipe declares it (never invented).
+    langs = catalog_block.get("languages") or upstream.get("languages")
+    language_block = ""
+    if langs:
+        language_block = "language:\n" + "".join(f"- {l}\n" for l in langs)
+
+    # ---- Model facts (all already known from the validated build) ----
+    meta = _bundle_metadata(root, recipe)
+    min_os = catalog_block.get("min_os") or {}
+    min_os_str = f"macOS {min_os.get('macos', '27.0')}+ / iOS {min_os.get('ios', '27.0')}+"
+    ctx = catalog_block.get("context_length") or conv.get("max_context_length") or "—"
+    bundle_bytes = 0
+    main = bundle_path(root, recipe) / "main.mlirb"
+    if main.is_file():
+        bundle_bytes = main.stat().st_size
+    size_str = _human_size(bundle_bytes) if bundle_bytes else "—"
+    facts_rows = [
+        ("Parameters", catalog_block.get("parameters", "—")),
+        ("Architecture", catalog_block.get("architecture", "—")),
+        ("Capabilities", ", ".join(catalog_block.get("capabilities", [])) or "—"),
+        ("Quantization / precision", f"{conv.get('quantization', '—')} / {conv.get('precision', '—')}"),
+        ("Context length", str(ctx)),
+        ("On-disk size", size_str),
+        ("Asset kind", "stateful KV-cache chat bundle; embedded tokenizer + chat template"),
+        ("assetVersion", meta.get("assetVersion", "—")),
+    ]
+    facts_block = "".join(f"| {k} | {v} |\n" for k, v in facts_rows)
+
+    # ---- Attribution (Apache-2.0 §4(b)/(c)) ----
+    holder = copyright_holder or upstream.get("copyright_holder")
+    attribution = (
+        f"Weights © {holder}, " if holder else "Weights "
+    ) + (
+        f"licensed **{upstream['license']}** — see the bundled `LICENSE`."
     )
+
+    # ---- Links + mirror banner ----
+    mirror_ns = publish_cfg.get("mirror_namespace")
+    mirror_line = (
+        f"> **Canonical:** [`{repo_id}`](https://huggingface.co/{repo_id}) — source of truth. "
+        + (f"**Mirror:** [`{mirror_ns}/{publish_cfg.get('repo_name')}`](https://huggingface.co/{mirror_ns}/{publish_cfg.get('repo_name')})."
+           if mirror_ns else "")
+    )
+    collection_link = f"- [HF Collection]({collection_url})\n" if collection_url else ""
 
     return template.format(
         license=upstream["license"],
@@ -55,9 +200,16 @@ def render_model_card(root: Path, recipe, manifest: dict, report: dict) -> str:
         or upstream.get("revision", "unpinned"),
         pipeline_tag=upstream.get("pipeline_tag", ""),
         base_model_relation_line=base_model_relation_line,
+        language_block=language_block,
         tags_block=tags_block,
         name=catalog_block.get("name", recipe.id),
         recipe_id=recipe.id,
+        repo_id=repo_id,
+        mirror_line=mirror_line,
+        facts_block=facts_block,
+        min_os=min_os_str,
+        attribution=attribution,
+        collection_link=collection_link,
         recipe_url=f"{FABRIC_REPO_URL}/blob/main/recipes/{recipe.id}.yaml",
         tool=manifest.get("tool", conv["tool"]),
         tool_version=manifest.get("tool_version") or "(version not reported)",
@@ -66,9 +218,7 @@ def render_model_card(root: Path, recipe, manifest: dict, report: dict) -> str:
         date=today(),
         gate_a_status=report["gate_a"]["status"],
         gate_b_metric=gate_b["metric"],
-        gate_b_threshold=gate_b["threshold"],
         gate_b_status=gate_b["status"],
-        gate_b_value=f" (value: {gate_b['value']})" if gate_b.get("value") is not None else "",
     )
 
 
@@ -132,73 +282,106 @@ def cmd_publish(args) -> int:
 
     mpath = manifest_path(root, recipe)
     manifest = json.loads(mpath.read_text()) if mpath.is_file() else {}
-    card = render_model_card(root, recipe, manifest, report)
-
+    upstream = recipe.data["upstream"]
     publish_cfg = recipe.data["publish"]
     repo_id = f"{publish_cfg['hf_target_namespace']}/{publish_cfg['repo_name']}"
+    revision_pin = manifest.get("input", {}).get("revision") or upstream.get("revision")
+
+    # Assemble the staging tree (card + upstream LICENSE/NOTICE + sanitized
+    # reproduce-manifest + parity report). The upstream LICENSE is REQUIRED —
+    # redistributing weights without it breaches Apache-2.0 §4(a)/(d).
+    staging = root / "build" / recipe.id / "publish-staging"
+    if staging.exists():
+        import shutil
+        shutil.rmtree(staging)
+    staging.mkdir(parents=True, exist_ok=True)
+    try:
+        license_files = fetch_upstream_license(upstream["hf_repo"], revision_pin, staging)
+    except ImportError:
+        err('huggingface_hub is not installed. Install: pip install "coreai-fabric[hf]"')
+        return 1
+    if not license_files and not args.allow_missing_license_file:
+        err(f"could not mirror an upstream LICENSE/NOTICE from {upstream['hf_repo']} — "
+            "refusing to redistribute weights without their license text "
+            "(Apache-2.0 §4(a)). If the upstream genuinely ships none, re-run with "
+            "--allow-missing-license-file.")
+        return 1
+    holder = copyright_holder_from_license(staging)
+
+    card = render_model_card(root, recipe, manifest, report, copyright_holder=holder)
+    (staging / "README.md").write_text(card)
+    (staging / "parity-report.json").write_text(json.dumps(report, indent=2) + "\n")
+    if manifest:
+        (staging / "reproduce-manifest.json").write_text(
+            json.dumps(sanitize_manifest(manifest, root), indent=2) + "\n")
+
+    # Last-line privacy guard: no absolute local path may reach a public repo.
+    leaks = assert_no_local_paths(staging)
+    if leaks:
+        err(f"ABORT: local paths would leak into the public repo via {leaks} — "
+            "not uploading. This is a bug; report it.")
+        return 1
 
     if args.dry_run:
         print(f"would publish to https://huggingface.co/{repo_id}")
-        print(f"  bundle: {bundle.relative_to(root)}")
-        print(f"  extras: README.md (model card), parity-report.json, conversion-manifest.json")
+        print(f"  fileset: {bundle.name}/ + " + ", ".join(sorted(p.name for p in staging.iterdir())))
         print("--- model card ---")
         print(card)
         return 0
 
-    try:
-        from huggingface_hub import HfApi
-    except ImportError:
-        err(
-            "huggingface_hub is not installed. Install the publish extra:\n"
-            '  pip install "coreai-fabric[hf]"\n'
-            "then authenticate with `hf auth login`."
-        )
-        return 1
-
+    from huggingface_hub import HfApi
     api = HfApi()
-    staging = root / "build" / recipe.id / "publish-staging"
-    staging.mkdir(parents=True, exist_ok=True)
-    (staging / "README.md").write_text(card)
-    (staging / "parity-report.json").write_text(json.dumps(report, indent=2) + "\n")
-    if manifest:
-        (staging / "conversion-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
-    print(f"creating repo (if missing): {repo_id}")
-    api.create_repo(repo_id=repo_id, repo_type="model", exist_ok=True)
-    print(f"uploading bundle {bundle.name} ...")
-    api.upload_folder(
-        repo_id=repo_id,
-        folder_path=str(bundle),
-        path_in_repo=bundle.name,
-        commit_message=f"coreai-fabric publish {recipe.id}",
-    )
-    info = api.upload_folder(
-        repo_id=repo_id,
-        folder_path=str(staging),
-        path_in_repo=".",
-        commit_message=f"coreai-fabric publish {recipe.id}: card + reports",
-    )
+    # Atomic-ish publish: create PRIVATE, land weights + card + license, then
+    # flip public as the final step. A failure mid-upload never leaves a PUBLIC
+    # license-less, un-attributed weights drop (Apache-2.0 §4 + reputation).
+    print(f"creating repo (private): {repo_id}")
+    api.create_repo(repo_id=repo_id, repo_type="model", exist_ok=True, private=True)
+    _set_private(api, repo_id, True)
+    print(f"uploading bundle {bundle.name} + card + license (private) ...")
+    api.upload_folder(repo_id=repo_id, folder_path=str(bundle), path_in_repo=bundle.name,
+                      commit_message=f"coreai-fabric: {recipe.id} asset")
+    info = api.upload_folder(repo_id=repo_id, folder_path=str(staging), path_in_repo=".",
+                             commit_message=f"coreai-fabric: {recipe.id} card + license + reports")
     revision = getattr(info, "oid", None) or api.model_info(repo_id).sha
 
-    # Organize within the namespace: drop the model into a Collection so a
-    # publisher's CoreAI work is grouped and separated from the rest of their
-    # HF repos (HF namespaces are flat; Collections are the native grouping).
     collection_title = publish_cfg.get("collection")
+    collection_url = None
     if collection_title:
-        url = _add_to_collection(
-            api, publish_cfg["hf_target_namespace"], collection_title, repo_id
-        )
-        if url:
-            ok(f"added to collection '{collection_title}': {url}")
+        collection_url = _add_to_collection(
+            api, publish_cfg["hf_target_namespace"], collection_title, repo_id)
+        if collection_url:
+            # Re-render the card now that we know the collection URL, and update it.
+            card = render_model_card(root, recipe, manifest, report,
+                                     copyright_holder=holder, collection_url=collection_url)
+            api.upload_file(path_or_fileobj=card.encode(), path_in_repo="README.md",
+                            repo_id=repo_id, commit_message="coreai-fabric: link collection")
 
-    recipe.data["published"] = {
-        "hf_repo": repo_id,
-        "revision": revision,
-        "date": today(),
-    }
+    # Everything landed — make it public.
+    _set_private(api, repo_id, False)
+    ok(f"published https://huggingface.co/{repo_id} @ {revision}")
+    if collection_url:
+        ok(f"added to collection '{collection_title}': {collection_url}")
+
+    recipe.data["published"] = {"hf_repo": repo_id, "revision": revision, "date": today()}
     recipe.data["status"] = "published"
     write_yaml(recipe.path, recipe.data)
-    ok(f"published https://huggingface.co/{repo_id} @ {revision}")
     ok(f"recipe status -> published ({recipe.path.name})")
     print(f"next: coreai-fabric register {recipe.id} --catalog-path ../coreai-catalog --dry-run")
     return 0
+
+
+def _set_private(api, repo_id: str, private: bool) -> None:
+    """Flip repo visibility, tolerant of huggingface_hub API differences."""
+    for attempt in (
+        lambda: api.update_repo_settings(repo_id=repo_id, private=private),
+        lambda: api.update_repo_visibility(repo_id=repo_id, private=private),
+    ):
+        try:
+            attempt()
+            return
+        except (AttributeError, TypeError):
+            continue
+        except Exception as exc:  # noqa: BLE001
+            warn(f"could not set repo private={private}: {exc}")
+            return

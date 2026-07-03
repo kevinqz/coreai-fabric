@@ -38,7 +38,11 @@ publish:
   collection: CoreAI · Apple on-device
 catalog:
   name: Qwen2.5-1.5B-Instruct (fabric)
-  family: Qwen2.5-1.5B-Instruct
+  family: Qwen
+  context_length: 32768
+  languages:
+  - en
+  - zh
   bundle_kind: llm
   min_os:
     macos: '27.0'

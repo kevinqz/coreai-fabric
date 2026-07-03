@@ -113,8 +113,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_new = sub.add_parser("new", help="scaffold a draft recipe from an upstream HF repo")
     p_new.add_argument("upstream_hf_repo", help="upstream Hugging Face repo id (owner/name)")
     p_new.add_argument("--id", help="recipe id (default: derived from the repo name)")
-    p_new.add_argument("--namespace", default="coreai-community",
-                       help="the publisher's OWN HF namespace to publish into (default: coreai-community)")
+    p_new.add_argument("--namespace", default=None,
+                       help="the publisher's OWN HF namespace to publish into "
+                       "(default: your logged-in HF user via `hf whoami`). Fabric "
+                       "refuses to scaffold into a known shared org (e.g. "
+                       "coreai-community) unless you pass --i-am-mirroring — your "
+                       "own namespace is the source of truth; a shared org is a mirror.")
+    p_new.add_argument("--i-am-mirroring", action="store_true",
+                       help="acknowledge you are targeting a SHARED org (mirror), "
+                       "not your own namespace — required to scaffold into one.")
     p_new.add_argument("--repo-name",
                        help="target HF repo name (default: <UpstreamModelName>-CoreAI)")
     p_new.add_argument("--collection", default="CoreAI · Apple on-device",
@@ -175,6 +182,9 @@ def build_parser() -> argparse.ArgumentParser:
                        help="confirm a human reviewed a review_required license")
     p_pub.add_argument("--allow-unverified-parity", action="store_true",
                        help="publish although Gate B has not passed (recorded honestly in the card)")
+    p_pub.add_argument("--allow-missing-license-file", action="store_true",
+                       help="publish even if no upstream LICENSE/NOTICE could be mirrored "
+                       "(only for upstreams that genuinely ship none — fabric refuses by default)")
 
     p_reg = sub.add_parser("register", help="generate catalog entries and open a PR to kevinqz/coreai-catalog")
     p_reg.add_argument("id")

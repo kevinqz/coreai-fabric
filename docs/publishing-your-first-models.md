@@ -21,12 +21,15 @@ credentials or your machine's toolchain).
   (cross-contract CI). `qwen3-0.6b` was additionally run end-to-end on real
   hardware — see `docs/validation-log.md`.
 
-  > **Namespace note.** All three publish to **your** namespace (`kevinqz`).
-  > Do NOT use `coreai-community` — that is a real, separate HF org (members
-  > include Hugging Face's `pcuenq`) that mirrors community CoreAI conversions;
-  > you are not a member, so a publish there would fail. fabric's `--namespace`
-  > default of `coreai-community` is a footgun for that reason — always pass
-  > your own `--namespace`.
+  > **Namespace note.** All three publish to **your** namespace (`kevinqz`) —
+  > your namespace is the source of truth. `coreai-community` is a real, separate
+  > HF org (members include Hugging Face's `pcuenq`) that mirrors community CoreAI
+  > conversions. You **are** a member (verify:
+  > `curl -s https://huggingface.co/api/organizations/coreai-community/members | grep kevinqz`),
+  > so a publish there would *succeed silently* — which is exactly why you don't
+  > want it as the default: it would drop an unverified draft into a shared org
+  > as the primary copy. Publish to `kevinqz` first (source of truth), then
+  > mirror. fabric no longer defaults `--namespace` to a shared org.
 
 - **Want different models?** Any short-name from Apple's registry works. List
   them with `coreai.model.registry --list-models --type llm`. The permissive
@@ -125,18 +128,19 @@ are publishing a structurally-verified, honestly-labelled artifact.
 ## SotA distribution: own your namespace, mirror into `coreai-community`
 
 `coreai-community` (huggingface.co/coreai-community) is the community org for
-Apple CoreAI assets — members include Hugging Face's `pcuenq`. You are not a
-member yet, but the org is open ("**Join this org**" on its page). The SotA
-move is NOT to publish straight into it — it is the pattern the org already
-uses: **its repos are mirrors of individual authors' namespaces** (their
-commit history literally reads "Mirror of `<author>/<model>`").
+Apple CoreAI assets — members include Hugging Face's `pcuenq`. You **are** a
+member (member #4 of 5; verify with the `curl` above), so you have write access.
+Even so, the SotA move is NOT to publish straight into it — it is the pattern the
+org already uses: **its repos are mirrors of individual authors' namespaces**
+(their commit history literally reads "Mirror of `<author>/<model>`").
 
 So the durable, attribution-preserving flow is:
 
-1. **Publish to your own namespace** (`kevinqz/<model>-coreai`) — you own the
+1. **Publish to your own namespace** (`kevinqz/<model>-CoreAI`) — you own the
    canonical repo, keep attribution, and can iterate. This is Steps 1–4 above.
-2. **Request to join** `coreai-community` (the "Join this org" button), or ask a
-   maintainer to mirror your repo — exactly how the existing entries got there.
+2. **Mirror into `coreai-community`** — since you're a member, duplicate your
+   canonical repo there (HF "Duplicate this model" or the API), exactly how the
+   existing entries got there.
 3. **Mirror** your canonical repo into the org once you're in (or let a
    maintainer). The org entry is a discovery surface; your namespace stays the
    source of truth.

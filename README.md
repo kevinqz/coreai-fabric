@@ -68,8 +68,12 @@ pip install -e ".[test]"
 
 coreai-fabric list                 # seed recipes and their stages
 coreai-fabric validate             # all green
-coreai-fabric new Qwen/Qwen3-0.6B  # scaffold your own
+coreai-fabric new Qwen/Qwen3-0.6B --namespace <your-hf-user>  # scaffold your own
 ```
+
+> `--namespace` defaults to your logged-in HF user (`hf whoami`). Fabric refuses
+> to scaffold into a shared org (e.g. `coreai-community`) without `--i-am-mirroring`
+> — your own namespace is the source of truth; a shared org is a mirror.
 
 ## Seed recipes
 
@@ -93,7 +97,7 @@ not committed (`build/` is disposable) and nothing is published yet:
   The catalog continues to index it as a reference upstream; fabric is
   independent of it and takes nothing from it.
 - **Hugging Face** — hosts all published bytes, always under the publisher's
-  own namespace (default org: `coreai-community`).
+  own namespace (defaults to your logged-in HF user; never a shared org).
 - **Apple (apple/coreai-models, apple/coreai-torch)** — provides the
   toolchain and runtime that `convert` drives. Fabric is not affiliated with
   or endorsed by Apple.

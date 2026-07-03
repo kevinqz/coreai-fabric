@@ -34,7 +34,7 @@ parity:
     threshold: 0.999
     tolerance: 0.0005
 publish:
-  hf_target_namespace: coreai-community
+  hf_target_namespace: kevinqz
   repo_name: da3-small-coreai
 catalog:
   name: Depth Anything 3 Small (fabric)

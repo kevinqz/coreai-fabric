@@ -95,11 +95,45 @@ def derive_id(hf_repo: str) -> str:
     return base
 
 
+#: HF orgs with multiple members that must never be a SILENT scaffold/publish
+#: target — your own namespace is the source of truth; a shared org is a mirror
+#: you opt into explicitly (--i-am-mirroring). Publishing here by accident drops
+#: an unverified draft into a shared org you cannot cleanly delete.
+KNOWN_SHARED_ORGS = {"coreai-community"}
+
+
+def _resolve_namespace(args) -> str | None:
+    """The publish namespace: explicit --namespace, else the logged-in HF user.
+    Never silently a shared org (see KNOWN_SHARED_ORGS)."""
+    namespace = args.namespace
+    if not namespace:
+        try:
+            from huggingface_hub import whoami
+            namespace = whoami().get("name")
+        except Exception:  # noqa: BLE001 — offline / not logged in / hf not installed
+            namespace = None
+        if not namespace:
+            err("could not resolve your HF namespace (not logged in?). Pass "
+                "--namespace <your-hf-user>, or run `hf auth login` first.")
+            return None
+    if namespace in KNOWN_SHARED_ORGS and not getattr(args, "i_am_mirroring", False):
+        err(f"'{namespace}' is a SHARED org, not your own namespace — refusing to "
+            "target it silently. Your namespace is the source of truth; publish "
+            "there first, then mirror. Pass --i-am-mirroring only if you really "
+            "mean to scaffold a mirror recipe.")
+        return None
+    return namespace
+
+
 def cmd_new(args) -> int:
     root = find_root()
     hf_repo = args.upstream_hf_repo
     if "/" not in hf_repo:
         err(f"'{hf_repo}' is not an owner/name HF repo id")
+        return 1
+
+    namespace = _resolve_namespace(args)
+    if namespace is None:
         return 1
 
     meta: dict = {}
@@ -199,7 +233,7 @@ def cmd_new(args) -> int:
             "gate_b": _default_gate_b(pipeline_tag, production=production),
         },
         "publish": {
-            "hf_target_namespace": args.namespace,
+            "hf_target_namespace": namespace,
             # SotA naming: match the coreai-community convention
             # `<UpstreamModelName>-CoreAI` (e.g. Qwen3-0.6B-CoreAI) so a
             # personal repo and its community mirror share one clean name.
@@ -272,7 +306,10 @@ def _catalog_block(args, hf_repo: str, pipeline_tag: str | None,
     base_name = hf_repo.split("/", 1)[1]
     block: dict = {
         "name": args.name or f"{base_name} (fabric)",
-        "family": args.family or base_name,
+        # Coarse vendor/series token (the HF owner), NOT the full model name —
+        # so the catalog's family facet groups siblings (Qwen, not Qwen3-4B).
+        # A draft default the human reviews; see the recipe header.
+        "family": args.family or hf_repo.split("/", 1)[0],
         "bundle_kind": bundle_kind,
         # Verified: coreai-core 1.0.0b2 serializes assets with minimum_os v27.
         "min_os": {"macos": "27.0", "ios": "27.0"},

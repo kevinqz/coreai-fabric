@@ -38,7 +38,11 @@ publish:
   collection: CoreAI · Apple on-device
 catalog:
   name: Qwen3-4B (fabric)
-  family: Qwen3-4B
+  family: Qwen
+  context_length: 40960
+  languages:
+  - en
+  - zh
   bundle_kind: llm
   min_os:
     macos: '27.0'

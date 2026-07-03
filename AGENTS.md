@@ -56,14 +56,16 @@ hf auth login
 ## 1. new — scaffold a recipe
 
 ```bash
-coreai-fabric new Qwen/Qwen3-0.6B
+coreai-fabric new Qwen/Qwen3-0.6B --namespace kevinqz
 ```
 
 Fetches license, `pipeline_tag`, revision sha, and size from the HF API and
-writes `recipes/<id>.yaml` with `status: draft`. Override anything via flags:
+writes `recipes/<id>.yaml` with `status: draft`. `--namespace` defaults to your
+logged-in HF user; fabric refuses a shared org (e.g. `coreai-community`) without
+`--i-am-mirroring`. Override anything via flags:
 
 ```bash
-coreai-fabric new openai/whisper-large-v3-turbo --id whisper-large-v3-turbo --namespace coreai-community --precision float16
+coreai-fabric new openai/whisper-large-v3-turbo --id whisper-large-v3-turbo --namespace kevinqz --precision float16
 ```
 
 Offline (fabric never invents a license, so you must supply one):

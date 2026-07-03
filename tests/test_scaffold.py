@@ -111,6 +111,31 @@ def test_production_scaffold_resolves_real_quantization(tmp_path, monkeypatch):
     assert data["conversion"]["quantization"] == "4bit"
 
 
+def test_namespace_guard_refuses_shared_org(tmp_path, monkeypatch):
+    # Publishing into a shared org silently (Kevin is a member) is the footgun —
+    # `new` must refuse coreai-community without the explicit --i-am-mirroring.
+    rc = _run_new(tmp_path, monkeypatch, [
+        "Qwen/Qwen3-0.6B", "--offline", "--license", "apache-2.0",
+        "--namespace", "coreai-community",
+    ])
+    assert rc == 1
+    assert not list((tmp_path / "recipes").glob("*.yaml"))
+
+
+def test_namespace_defaults_to_logged_in_user(tmp_path, monkeypatch):
+    # With no --namespace, resolve the caller's own HF user (never a shared org).
+    monkeypatch.setattr(scaffold, "whoami", None, raising=False)
+    import coreai_fabric.scaffold as sc
+    monkeypatch.setattr("huggingface_hub.whoami", lambda: {"name": "kevinqz"}, raising=False)
+    rc = _run_new(tmp_path, monkeypatch, [
+        "Qwen/Qwen3-0.6B", "--offline", "--license", "apache-2.0",
+        "--pipeline-tag", "text-generation",
+    ])
+    assert rc == 0
+    data = yaml.safe_load((tmp_path / "recipes" / "qwen3-0.6b.yaml").read_text())
+    assert data["publish"]["hf_target_namespace"] == "kevinqz"
+
+
 def test_registry_name_rejected_without_production_tool(tmp_path, monkeypatch):
     # --apple-registry-name with the default fabric driver is a user error:
     # the flag only means something for Apple's coreai.llm.export.

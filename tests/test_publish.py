@@ -3,6 +3,7 @@ surface — it must be honest and correct, not just present."""
 from __future__ import annotations
 
 import copy
+import json
 from pathlib import Path
 
 import yaml
@@ -85,3 +86,39 @@ def test_add_to_collection_never_fails_a_completed_publish():
             raise RuntimeError("403 not a member")
 
     assert _add_to_collection(_Boom(), "kevinqz", "CoreAI", "kevinqz/X-CoreAI") is None
+
+
+def test_sanitize_manifest_strips_host_paths():
+    # The public manifest must not leak the OS username / local dir layout.
+    from coreai_fabric.publish import sanitize_manifest
+    root = Path("/Users/someone/Dev/coreai-fabric")
+    manifest = {
+        "tool": "coreai.llm.export",
+        "tool_path": "/Users/someone/Dev/coreai-fabric/.venv/bin/coreai.llm.export",
+        "command": ["/Users/someone/Dev/coreai-fabric/.venv/bin/coreai.llm.export",
+                    "qwen3-0.6b", "--output-dir",
+                    "/Users/someone/Dev/coreai-fabric/build"],
+        "input": {"hf_repo": "Qwen/Qwen3-0.6B"},
+    }
+    out = sanitize_manifest(manifest, root)
+    assert "tool_path" not in out
+    assert out["command"][0] == "coreai.llm.export"          # basename only
+    assert "/Users/someone" not in json.dumps(out)           # no absolute local path
+    assert "./build" in out["command"]                       # root relativized to '.'
+
+
+def test_assert_no_local_paths_catches_leak(tmp_path):
+    from coreai_fabric.publish import assert_no_local_paths
+    (tmp_path / "clean.json").write_text('{"a": 1}')
+    assert assert_no_local_paths(tmp_path) == []
+    (tmp_path / "leak.json").write_text('{"p": "/Users/kevin/x"}')
+    assert assert_no_local_paths(tmp_path) == ["leak.json"]
+
+
+def test_copyright_holder_parsed_from_license(tmp_path):
+    from coreai_fabric.publish import copyright_holder_from_license
+    (tmp_path / "LICENSE").write_text("Apache License 2.0\n\n   Copyright 2024 Alibaba Cloud\n")
+    assert copyright_holder_from_license(tmp_path) == "2024 Alibaba Cloud"
+    # A bare template placeholder must not be mistaken for a real holder.
+    (tmp_path / "LICENSE").write_text("Copyright [yyyy] [name of copyright owner]\n")
+    assert copyright_holder_from_license(tmp_path) is None

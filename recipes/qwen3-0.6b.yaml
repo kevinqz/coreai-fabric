@@ -37,6 +37,10 @@ publish:
 catalog:
   name: Qwen3 0.6B (fabric)
   family: Qwen
+  context_length: 8192
+  languages:
+  - en
+  - zh
   bundle_kind: llm
   min_os:
     macos: '27.0'

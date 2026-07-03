@@ -181,6 +181,16 @@
       "properties": {
         "name": { "type": "string", "minLength": 1 },
         "family": { "type": "string", "minLength": 1 },
+        "context_length": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Max context window of the produced asset (the registry preset's resolved value, e.g. 8192 for qwen3-0.6b/macOS). Surfaced in the model card's facts table so a user can judge fit."
+        },
+        "languages": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Languages the model supports (BCP-47/HF codes, e.g. [en, zh] or [multilingual]). Emitted as the HF card `language:` frontmatter to drive HF's language facet. Only declare what the upstream card states."
+        },
         "bundle_kind": {
           "type": "string",
           "enum": ["llm", "vlm", "ocr", "audio-lm", "embedding", "reranker", "object-detection", "segmentation", "depth", "image-generation", "super-resolution", "tts", "asr", "audio-generation", "video", "3d", "action"],
