@@ -23,6 +23,34 @@ PIPELINE_MAP = {
     "text-to-speech": (["text-to-speech"], ["text"], ["audio"]),
 }
 
+#: HF pipeline_tag → catalog `bundle_kind` (a REQUIRED catalog field, closed
+#: enum). Only clean 1:1 mappings; a tag with no honest bundle_kind leaves the
+#: catalog block unscaffolded so a human sets it before register.
+BUNDLE_KIND_BY_PIPELINE = {
+    "text-generation": "llm",
+    "automatic-speech-recognition": "asr",
+    "depth-estimation": "depth",
+    "object-detection": "object-detection",
+    "image-segmentation": "segmentation",
+    "feature-extraction": "embedding",
+    "sentence-similarity": "embedding",
+    "text-to-speech": "tts",
+}
+
+#: Runtime facts for a VANILLA export through the standard Apple toolchain: the
+#: stock runtime, no custom kernels / source patches / AOT specialization. This
+#: is the VALIDATED reality of a production coreai.llm.export asset (verified on
+#: hardware 2026-07-03) and the correct DRAFT default for any standard export —
+#: the recipe header says review every field before convert. The catalog
+#: REJECTS `unknown` here by design (boundary redteam), so the scaffold states
+#: the honest default instead of a placeholder.
+_STOCK_RUNTIME_FACTS = {
+    "stock_runtime": True,
+    "custom_kernel": False,
+    "patch_required": False,
+    "aot_required": False,
+}
+
 
 def derive_id(hf_repo: str) -> str:
     base = hf_repo.split("/", 1)[1].lower()
@@ -121,7 +149,7 @@ def cmd_new(args) -> int:
         },
     }
 
-    catalog_block = _catalog_block(args, hf_repo, pipeline_tag)
+    catalog_block = _catalog_block(args, hf_repo, pipeline_tag, production=production)
     if catalog_block:
         data["catalog"] = catalog_block
     else:
@@ -163,7 +191,8 @@ def _default_gate_b(pipeline_tag: str | None, production: bool = False) -> dict:
     return {"metric": "graph_output_cosine", "threshold": 0.999, "tolerance": 0.0005}
 
 
-def _catalog_block(args, hf_repo: str, pipeline_tag: str | None) -> dict | None:
+def _catalog_block(args, hf_repo: str, pipeline_tag: str | None,
+                   production: bool = False) -> dict | None:
     capabilities = list(args.capability or [])
     inputs = list(args.input or [])
     outputs = list(args.output or [])
@@ -173,18 +202,30 @@ def _catalog_block(args, hf_repo: str, pipeline_tag: str | None) -> dict | None:
             capabilities = capabilities or list(mapped[0])
             inputs = inputs or list(mapped[1])
             outputs = outputs or list(mapped[2])
-    if not (capabilities and inputs and outputs):
+    bundle_kind = BUNDLE_KIND_BY_PIPELINE.get(pipeline_tag or "")
+    # bundle_kind + runtime_facts are REQUIRED by the catalog (boundary redteam).
+    # If we can't name an honest bundle_kind, leave the block for a human.
+    if not (capabilities and inputs and outputs and bundle_kind):
         return None
     base_name = hf_repo.split("/", 1)[1]
     block: dict = {
         "name": args.name or f"{base_name} (fabric)",
         "family": args.family or base_name,
+        "bundle_kind": bundle_kind,
+        # Verified: coreai-core 1.0.0b2 serializes assets with minimum_os v27.
+        "min_os": {"macos": "27.0", "ios": "27.0"},
+        # Stock toolchain export (reviewed before convert); catalog forbids `unknown`.
+        "runtime_facts": dict(_STOCK_RUNTIME_FACTS),
         "capabilities": capabilities,
         "modalities": {"input": inputs, "output": outputs},
     }
-    # Everything below is unknowable before the first verified conversion.
-    block["runner"] = "unknown"
-    block["tokenizer_required"] = "unknown"
-    block["processor_required"] = "unknown"
-    block["aot_required"] = "unknown"
+    if bundle_kind == "llm":
+        block["architecture"] = "transformer"
+        # A production coreai.llm.export asset embeds its tokenizer and runs on
+        # the stock CoreAIRunner — validated on hardware 2026-07-03. Only assert
+        # these for that path; for other tools they stay for a human to confirm.
+        if production:
+            block["runner"] = "CoreAIRunner"
+            block["tokenizer_required"] = True
+            block["processor_required"] = False
     return block

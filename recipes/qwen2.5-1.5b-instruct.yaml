@@ -1,0 +1,61 @@
+# coreai-fabric recipe — scaffolded by `coreai-fabric new Qwen/Qwen2.5-1.5B-Instruct` on 2026-07-03
+# Status: draft. Review every field before convert; edit catalog: before register.
+id: qwen2.5-1.5b-instruct
+upstream:
+  hf_repo: Qwen/Qwen2.5-1.5B-Instruct
+  revision: 989aa7980e4cf806f80c7fef2b1adb7bc71aa306
+  license: apache-2.0
+  license_terms: permissive
+  pipeline_tag: text-generation
+  size_bytes: 10208517569
+conversion:
+  tool: coreai.llm.export
+  apple_registry_name: qwen2.5-1.5b-instruct
+  args:
+    platform: macOS
+  quantization: none
+  precision: float16
+expected:
+  bundle_files:
+  - metadata.json
+  - main.mlirb
+  - main.hash
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: benchmark_accuracy
+    threshold: 0.999
+    tolerance: 0.02
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: qwen2.5-1.5b-instruct-coreai
+catalog:
+  name: Qwen2.5-1.5B-Instruct (fabric)
+  family: Qwen2.5-1.5B-Instruct
+  bundle_kind: llm
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: true
+    custom_kernel: false
+    patch_required: false
+    aot_required: false
+  capabilities:
+  - text-generation
+  modalities:
+    input:
+    - text
+    output:
+    - text
+  architecture: transformer
+  runner: CoreAIRunner
+  tokenizer_required: true
+  processor_required: false
+status: draft
+notes: Production KV-cache chat asset via coreai.llm.export preset 'qwen2.5-1.5b-instruct'.
+  Gate B (benchmark_accuracy) is not_run until Apple ships coreai.llm.eval.

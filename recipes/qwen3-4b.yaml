@@ -1,0 +1,61 @@
+# coreai-fabric recipe — scaffolded by `coreai-fabric new Qwen/Qwen3-4B` on 2026-07-03
+# Status: draft. Review every field before convert; edit catalog: before register.
+id: qwen3-4b
+upstream:
+  hf_repo: Qwen/Qwen3-4B
+  revision: 1cfa9a7208912126459214e8b04321603b3df60c
+  license: apache-2.0
+  license_terms: permissive
+  pipeline_tag: text-generation
+  size_bytes: 8056404654
+conversion:
+  tool: coreai.llm.export
+  apple_registry_name: qwen3-4b
+  args:
+    platform: macOS
+  quantization: none
+  precision: float16
+expected:
+  bundle_files:
+  - metadata.json
+  - main.mlirb
+  - main.hash
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: benchmark_accuracy
+    threshold: 0.999
+    tolerance: 0.02
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: qwen3-4b-coreai
+catalog:
+  name: Qwen3-4B (fabric)
+  family: Qwen3-4B
+  bundle_kind: llm
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: true
+    custom_kernel: false
+    patch_required: false
+    aot_required: false
+  capabilities:
+  - text-generation
+  modalities:
+    input:
+    - text
+    output:
+    - text
+  architecture: transformer
+  runner: CoreAIRunner
+  tokenizer_required: true
+  processor_required: false
+status: draft
+notes: Production KV-cache chat asset via coreai.llm.export preset 'qwen3-4b'. Gate B (benchmark_accuracy)
+  is not_run until Apple ships coreai.llm.eval.
