@@ -121,6 +121,13 @@ def build_parser() -> argparse.ArgumentParser:
                        "fabric's verified driver over coreai-torch; Apple's "
                        "coreai.llm.export from an apple/coreai-models checkout "
                        "accepts the same flag layout)")
+    p_new.add_argument("--apple-registry-name",
+                       help="PRODUCTION path: the Apple model-registry short-name "
+                       "(e.g. qwen3-0.6b, from `coreai.model.registry "
+                       "--list-models`). Only valid with --tool coreai.llm.export; "
+                       "makes convert drive `coreai.llm.export <short-name>` so "
+                       "Apple's TESTED compression preset resolves (the KV-cache "
+                       "chat asset). precision/quantization then document the preset.")
     p_new.add_argument("--precision", default="float16",
                        help="passed as --compute-precision (verified vocabulary: "
                        "float16, bfloat16, float32)")

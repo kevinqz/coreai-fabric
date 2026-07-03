@@ -52,6 +52,13 @@ def cmd_new(args) -> int:
         if meta.get("gated"):
             warn(f"{hf_repo} is gated on HF; conversion will require accepted terms + a token")
 
+    registry_name = getattr(args, "apple_registry_name", None)
+    if registry_name and args.tool != "coreai.llm.export":
+        err("--apple-registry-name is only valid with --tool coreai.llm.export "
+            "(it selects an Apple model-registry preset for the production exporter)")
+        return 1
+    production = bool(registry_name) and args.tool == "coreai.llm.export"
+
     recipe_id = args.id or derive_id(hf_repo)
     path = root / "recipes" / f"{recipe_id}.yaml"
     if path.exists() and not args.force:
@@ -84,6 +91,9 @@ def cmd_new(args) -> int:
         "upstream": upstream,
         "conversion": {
             "tool": args.tool,
+            # Production path: the registry short-name makes convert drive
+            # `coreai.llm.export <short-name>` so Apple's tested preset resolves.
+            **({"apple_registry_name": registry_name} if production else {}),
             # min_tool_version is set after the first successful conversion —
             # never scaffolded (fabric does not guess toolchain versions).
             "args": {"platform": args.platform},
@@ -103,7 +113,7 @@ def cmd_new(args) -> int:
                     "metadata_matches_recipe",
                 ]
             },
-            "gate_b": _default_gate_b(pipeline_tag),
+            "gate_b": _default_gate_b(pipeline_tag, production=production),
         },
         "publish": {
             "hf_target_namespace": args.namespace,
@@ -134,9 +144,15 @@ def cmd_new(args) -> int:
     return 0
 
 
-def _default_gate_b(pipeline_tag: str | None) -> dict:
-    """Gate B defaults follow the zoo PORTING convention: cosine >= 0.999,
-    plus greedy-token-exact for LLMs."""
+def _default_gate_b(pipeline_tag: str | None, production: bool = False) -> dict:
+    """Gate B defaults. Static-graph exports follow the zoo PORTING convention
+    (cosine >= 0.999, plus greedy-token-exact for LLMs). A PRODUCTION
+    coreai.llm.export asset is quantized + stateful, so its correct metric is
+    benchmark_accuracy (task accuracy vs upstream) — which is blocked upstream
+    until Apple ships coreai.llm.eval, so verify reports it not_run. See
+    docs/parity-protocol.md."""
+    if production:
+        return {"metric": "benchmark_accuracy", "threshold": 0.999, "tolerance": 0.02}
     if pipeline_tag == "text-generation":
         return {
             "metric": "per_token_logit_cosine",
