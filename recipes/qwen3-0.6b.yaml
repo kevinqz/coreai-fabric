@@ -46,7 +46,7 @@ parity:
     threshold: 0.999
     tolerance: 0.02
 publish:
-  hf_target_namespace: coreai-community
+  hf_target_namespace: kevinqz
   repo_name: qwen3-0.6b-coreai
 catalog:
   name: Qwen3 0.6B (fabric)

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 from . import hf
@@ -52,6 +54,41 @@ _STOCK_RUNTIME_FACTS = {
 }
 
 
+def parse_preset_compression(table: str, registry_name: str, platform: str) -> str | None:
+    """Read the real compression Apple's preset resolves for a
+    short-name+platform out of `coreai.model.registry --list-models` output.
+
+    The table rows are `SHORT_NAME  PLATFORM  COMPRESSION  CTX  HF_ID` — e.g.
+    `qwen3-0.6b  macOS  4bit  8192  Qwen/Qwen3-0.6B` (and `gpt-oss-20b macOS
+    none ...`, which is genuinely uncompressed). Returns None if the row is
+    absent so callers warn rather than guess. Pure/parsing-only so it is unit
+    tested against a captured registry dump without the toolchain installed."""
+    for line in table.splitlines():
+        parts = line.split()
+        if len(parts) >= 3 and parts[0] == registry_name and parts[1] == platform:
+            return parts[2]
+    return None
+
+
+def preset_compression(registry_name: str, platform: str = "macOS") -> str | None:
+    """Best-effort real compression for an Apple registry preset, via
+    `coreai.model.registry`. Returns None when the tool is not on PATH — the
+    scaffolder then keeps the requested value and warns, never inventing one."""
+    tool = shutil.which("coreai.model.registry")
+    if not tool:
+        return None
+    try:
+        proc = subprocess.run(
+            [tool, "--list-models", "--type", "llm"],
+            capture_output=True, text=True, timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    return parse_preset_compression(proc.stdout, registry_name, platform)
+
+
 def derive_id(hf_repo: str) -> str:
     base = hf_repo.split("/", 1)[1].lower()
     base = re.sub(r"[^a-z0-9.-]+", "-", base).strip("-")
@@ -86,6 +123,24 @@ def cmd_new(args) -> int:
             "(it selects an Apple model-registry preset for the production exporter)")
         return 1
     production = bool(registry_name) and args.tool == "coreai.llm.export"
+
+    # On the production path, quantization is documentation-only (the preset
+    # wins) but register copies it verbatim into the catalog — so a stale
+    # `none` would advertise a 4bit asset as unquantized. Resolve the real
+    # value from the registry when the toolchain is present; otherwise keep the
+    # requested value and warn loudly rather than ship a wrong number.
+    quantization = args.quantization
+    if production:
+        resolved = preset_compression(registry_name, args.platform)
+        if resolved:
+            quantization = resolved
+        else:
+            warn(
+                f"could not resolve the '{registry_name}' preset compression from "
+                "coreai.model.registry (toolchain not on PATH?); left "
+                f"quantization={quantization!r} — set it to the preset's real "
+                "value (e.g. 4bit) before register, or it will misreport in the catalog"
+            )
 
     recipe_id = args.id or derive_id(hf_repo)
     path = root / "recipes" / f"{recipe_id}.yaml"
@@ -125,7 +180,7 @@ def cmd_new(args) -> int:
             # min_tool_version is set after the first successful conversion —
             # never scaffolded (fabric does not guess toolchain versions).
             "args": {"platform": args.platform},
-            "quantization": args.quantization,
+            "quantization": quantization,
             "precision": args.precision,
         },
         # Verified .aimodel inventory (real asset, coreai-core 1.0.0b2):

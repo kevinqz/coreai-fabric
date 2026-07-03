@@ -12,7 +12,7 @@ credentials or your machine's toolchain).
 
   | recipe id | upstream | preset ctx | publishes to |
   |---|---|---|---|
-  | `qwen3-0.6b` | Qwen/Qwen3-0.6B | 8192 | `coreai-community/qwen3-0.6b-coreai` † |
+  | `qwen3-0.6b` | Qwen/Qwen3-0.6B | 8192 | `kevinqz/qwen3-0.6b-coreai` |
   | `qwen2.5-1.5b-instruct` | Qwen/Qwen2.5-1.5B-Instruct | 32768 | `kevinqz/qwen2.5-1.5b-instruct-coreai` |
   | `qwen3-4b` | Qwen/Qwen3-4B | 40960 | `kevinqz/qwen3-4b-coreai` |
 
@@ -21,11 +21,12 @@ credentials or your machine's toolchain).
   (cross-contract CI). `qwen3-0.6b` was additionally run end-to-end on real
   hardware — see `docs/validation-log.md`.
 
-  † `qwen3-0.6b` is the repo's neutral reference seed, so it points at the
-  community org. To publish it under **your** namespace instead, change one
-  line in `recipes/qwen3-0.6b.yaml`:
-  `publish.hf_target_namespace: coreai-community` → `kevinqz`. The other two
-  already target `kevinqz`.
+  > **Namespace note.** All three publish to **your** namespace (`kevinqz`).
+  > Do NOT use `coreai-community` — that is a real, separate HF org (members
+  > include Hugging Face's `pcuenq`) that mirrors community CoreAI conversions;
+  > you are not a member, so a publish there would fail. fabric's `--namespace`
+  > default of `coreai-community` is a footgun for that reason — always pass
+  > your own `--namespace`.
 
 - **Want different models?** Any short-name from Apple's registry works. List
   them with `coreai.model.registry --list-models --type llm`. The permissive
@@ -41,8 +42,8 @@ credentials or your machine's toolchain).
 
 ## What only you can do
 
-Three things need **your** credentials or your machine and cannot be done for
-you: install the Apple toolchain, connect Hugging Face, and run the
+These need **your** credentials or your machine and cannot be done for you:
+install the Apple toolchain + GitHub CLI, connect Hugging Face, and run the
 upload/PR steps.
 
 ### Step 1 — Install the toolchain (one time, your Mac)
@@ -58,6 +59,10 @@ pip install ./coreai-models/python
 # fabric with the convert + publish extras (after PR #1 merges; or `pip install -e .`
 # from your local checkout of this repo on the feature branch)
 pip install "coreai-fabric[convert,hf]"
+
+# GitHub CLI — the `register` step (Step 4) opens the catalog PR via `gh`.
+# It is a system binary, NOT a pip package. If you don't already have it:
+brew install gh && gh auth login      # needs `repo` scope to open/fork the catalog PR
 ```
 
 ### Step 2 — Connect Hugging Face (this is the "how do I connect HF?" step)
@@ -90,13 +95,15 @@ Each recipe walks convert → verify → publish → register. Example, `qwen3-0
 coreai-fabric convert  qwen3-0.6b          # runs coreai.llm.export → 4bit KV-cache asset (~320 MB)
 coreai-fabric verify   qwen3-0.6b          # Gate A passes; Gate B = not_run (expected — see below)
 coreai-fabric publish  qwen3-0.6b --allow-unverified-parity   # uploads to huggingface.co/kevinqz/…
-coreai-fabric register qwen3-0.6b --catalog-path ../coreai-catalog   # opens the catalog PR
+coreai-fabric register qwen3-0.6b --catalog-path ../coreai-catalog   # opens the catalog PR (needs gh)
 ```
 
 Repeat for `qwen2.5-1.5b-instruct` and `qwen3-4b`. `register` needs a local
-clone of `coreai-catalog` (`--catalog-path`); it validates the entry, replays
-the catalog's own CI locally, and opens a PR (forking if you lack push access).
-After that PR merges: `coreai-fabric register <id> --mark-merged`.
+clone of `coreai-catalog` (`--catalog-path`) **and the GitHub CLI authenticated**
+(`gh auth login`, Step 1); it validates the entry, replays the catalog's own CI
+locally, and opens a PR (forking if you lack push access). To preview without
+`gh` first, run `coreai-fabric register <id> --dry-run` (prints the YAML, opens
+nothing). After the PR merges: `coreai-fabric register <id> --mark-merged`.
 
 ## The one honest caveat: `--allow-unverified-parity`
 
@@ -114,3 +121,31 @@ is **correct, not a workaround**:
 
 So: Gate A (structure) is proven; numeric quality parity waits on upstream. You
 are publishing a structurally-verified, honestly-labelled artifact.
+
+## SotA distribution: own your namespace, mirror into `coreai-community`
+
+`coreai-community` (huggingface.co/coreai-community) is the community org for
+Apple CoreAI assets — members include Hugging Face's `pcuenq`. You are not a
+member yet, but the org is open ("**Join this org**" on its page). The SotA
+move is NOT to publish straight into it — it is the pattern the org already
+uses: **its repos are mirrors of individual authors' namespaces** (their
+commit history literally reads "Mirror of `<author>/<model>`").
+
+So the durable, attribution-preserving flow is:
+
+1. **Publish to your own namespace** (`kevinqz/<model>-coreai`) — you own the
+   canonical repo, keep attribution, and can iterate. This is Steps 1–4 above.
+2. **Request to join** `coreai-community` (the "Join this org" button), or ask a
+   maintainer to mirror your repo — exactly how the existing entries got there.
+3. **Mirror** your canonical repo into the org once you're in (or let a
+   maintainer). The org entry is a discovery surface; your namespace stays the
+   source of truth.
+4. **Index both in the catalog.** `coreai-catalog` points at your namespace as
+   provenance and can note the community mirror — the catalog is the neutral
+   index that ties the source repo and the community copy together.
+
+Why this beats publishing directly into the org: your name stays on the work,
+your repo survives any org change, and the community org becomes a distribution
+layer rather than a single point of ownership. If you'd rather have a branded
+home, create your own org (e.g. `coreai-br`) and mirror there instead — the
+same own-source-of-truth principle applies.

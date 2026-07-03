@@ -13,7 +13,9 @@ conversion:
   apple_registry_name: qwen3-4b
   args:
     platform: macOS
-  quantization: none
+  # Documentation only — the registry preset resolves the real value
+  # (verified 4bit / 40960 max context via coreai.model.registry).
+  quantization: 4bit
   precision: float16
 expected:
   bundle_files:
