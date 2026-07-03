@@ -1,0 +1,34 @@
+# coreai-fabric
+
+> The conversion fabric for Apple Core AI: recipes in, provenance-verified
+> .aimodel out, indexed by coreai-catalog. Agent-first pipeline:
+> new -> validate -> convert -> verify -> publish -> register. Fabric never
+> hosts weights; artifacts go to each publisher's own Hugging Face namespace.
+
+Key facts:
+- Source of truth: recipes/*.yaml (one per artifact), schema/recipe.schema.json.
+- Pipeline stages: draft, converted, verified, published, registered — advanced
+  only by the corresponding CLI command.
+- convert requires macOS + Apple's toolchain (apple/coreai-torch); CI never converts.
+- Gate A = bundle structure checks (runs anywhere). Gate B = numeric parity vs
+  upstream (cosine >= threshold from the recipe); reported not_run until a real
+  runner measures it.
+- register generates coreai-catalog entries: source_group fabric, huggingface-only
+  artifact provenance with pinned revision + per-file sha256, provenance.converted_by.
+
+## Docs
+
+- [AGENTS.md](AGENTS.md): the operating manual — full pipeline, exact commands, prerequisites, failure modes
+- [README.md](README.md): positioning and ecosystem relationships (catalog / zoo / HF / Apple)
+- [CONTRIBUTING.md](CONTRIBUTING.md): contributions are recipes + parity reports; checkable rules
+- [GOVERNANCE.md](GOVERNANCE.md): mergeable = validate green + license triage clean + upstream resolves + no digest conflicts
+- [docs/parity-protocol.md](docs/parity-protocol.md): Gate B metric definitions and the runner contract
+
+## Data
+
+- [schema/recipe.schema.json](schema/recipe.schema.json): the strict recipe contract
+- [recipes/](recipes/): recipe inventory (seed: qwen3-0.6b, whisper-large-v3-turbo, da3-small)
+
+## Related
+
+- [coreai-catalog](https://github.com/kevinqz/coreai-catalog): the registry that indexes fabric-published artifacts

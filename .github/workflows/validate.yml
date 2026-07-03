@@ -1,0 +1,32 @@
+# CI gate for coreai-fabric.
+#
+# NOTE: CI deliberately runs NO conversion. `coreai-fabric convert` requires
+# macOS on Apple Silicon with Apple's Core AI toolchain (apple/coreai-torch),
+# which hosted runners do not provide — and fabric never pretends otherwise.
+# CI validates the recipe contract, the register generator, the tests, and
+# that every command documented in the agent docs actually parses.
+name: validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install (test extras)
+        run: pip install -e ".[test]"
+
+      - name: Validate all recipes (schema + license triage, aggregated errors)
+        run: coreai-fabric validate
+
+      - name: Tests (recipe contract, register generator vs vendored catalog schemas, Gate A, doc-check)
+        run: python -m pytest -q

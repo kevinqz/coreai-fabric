@@ -1,0 +1,220 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Core AI Catalog Artifact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "group", "officiality"],
+  "anyOf": [
+    { "required": ["github"] },
+    { "required": ["huggingface"] }
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "group": {
+      "type": "string",
+      "enum": ["zoo", "official", "external", "unknown"]
+    },
+    "github": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owner", "repo"],
+      "properties": {
+        "owner": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repo": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "huggingface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owner", "repo", "url"],
+      "properties": {
+        "owner": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repo": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https://"
+        },
+        "path": {
+          "type": ["string", "null"]
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$",
+          "description": "Pinned Hugging Face commit SHA the catalog entry was verified against"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "sha256", "size_bytes"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "size_bytes": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "description": "Per-file sha256 digests attested by the HF API (LFS blobs only) at the pinned revision"
+        }
+      }
+    },
+    "officiality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "apple_export_recipe",
+        "apple_hosted_artifact",
+        "community_packaged"
+      ],
+      "properties": {
+        "apple_export_recipe": { "type": "boolean" },
+        "apple_hosted_artifact": { "type": "boolean" },
+        "community_packaged": { "type": "boolean" }
+      }
+    },
+    "conversion_script": {
+      "type": ["string", "null"],
+      "description": "Path to the conversion/export script in the Zoo (e.g. conversion/export_qwen3_5_decode_pipelined.py)"
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "converted_by": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "tool": {
+              "type": "string",
+              "minLength": 1
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "recipe_url": {
+              "type": "string",
+              "pattern": "^https://"
+            }
+          }
+        },
+        "recipe_source": {
+          "type": "string",
+          "enum": ["apple-official", "zoo-port", "fabric", "independent"]
+        },
+        "format_version": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "mirrors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["owner", "repo", "url"],
+        "properties": {
+          "owner": {
+            "type": "string",
+            "minLength": 1
+          },
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "url": {
+            "type": "string",
+            "pattern": "^https://"
+          },
+          "revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          }
+        }
+      },
+      "description": "Alternative hosts for the same artifact bytes (failover mirrors)"
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "zoo_smoke": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": { "type": "string", "enum": ["passed", "failed", "unverified"] },
+            "sha": { "type": ["string", "null"] },
+            "url": { "type": ["string", "null"] }
+          }
+        },
+        "last_verified": { "type": ["string", "null"] }
+      }
+    },
+    "bundle_kind": { "type": "string" },
+    "precision": { "type": "string" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "group": { "const": "official" }
+        },
+        "required": ["group"]
+      },
+      "then": {
+        "properties": {
+          "officiality": {
+            "properties": {
+              "apple_export_recipe": { "const": true }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "group": { "const": "zoo" }
+        },
+        "required": ["group"]
+      },
+      "then": {
+        "properties": {
+          "officiality": {
+            "properties": {
+              "apple_export_recipe": { "const": false }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

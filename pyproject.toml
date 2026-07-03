@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "coreai-fabric"
+version = "0.1.0"
+description = "The conversion fabric for Apple Core AI — recipes in, provenance-verified .aimodel out, indexed by coreai-catalog."
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [{name = "Kevin Saltarelli"}]
+keywords = [
+    "apple", "core-ai", "aimodel", "on-device", "ai",
+    "model-conversion", "provenance", "apple-silicon",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "PyYAML>=6.0",
+    "jsonschema>=4.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/kevinqz/coreai-fabric"
+Repository = "https://github.com/kevinqz/coreai-fabric"
+Issues = "https://github.com/kevinqz/coreai-fabric/issues"
+Catalog = "https://github.com/kevinqz/coreai-catalog"
+
+[project.optional-dependencies]
+hf = ["huggingface_hub>=0.20"]
+test = ["pytest>=7"]
+
+[project.scripts]
+coreai-fabric = "coreai_fabric.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["coreai_fabric*"]

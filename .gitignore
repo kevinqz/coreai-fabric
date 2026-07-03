@@ -1,0 +1,16 @@
+# Conversion outputs — never committed; fabric never hosts weights.
+build/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+
+# OS / editors
+.DS_Store

@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Core AI Catalog Source",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "title",
+    "type",
+    "url",
+    "owner",
+    "trust",
+    "volatility",
+    "last_checked",
+    "notes"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "github_repository",
+        "github_file",
+        "github_directory",
+        "huggingface_user",
+        "huggingface_repository",
+        "huggingface_model"
+      ]
+    },
+    "url": {
+      "type": "string",
+      "pattern": "^https://(github\\.com|huggingface\\.co|developer\\.apple\\.com|machinelearning\\.apple\\.com|arxiv\\.org)/"
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 1
+    },
+    "repo": {
+      "type": "string",
+      "minLength": 1
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "trust": {
+      "type": "string",
+      "enum": [
+        "official_primary",
+        "maintainer_primary",
+        "project_primary",
+        "community_primary",
+        "community_secondary",
+        "artifact_host",
+        "original_model_primary"
+      ]
+    },
+    "volatility": {
+      "type": "string",
+      "enum": ["low", "medium", "high"]
+    },
+    "last_checked": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "notes": {
+      "type": ["string", "null"]
+    }
+  }
+}

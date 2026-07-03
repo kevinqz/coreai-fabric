@@ -1,0 +1,56 @@
+# coreai-fabric recipe — Depth Anything 3 Small (vision seed recipe)
+# Status: draft. This recipe has NOT been converted yet — conversion requires
+# macOS + the Apple Core AI toolchain (apple/coreai-torch). See AGENTS.md.
+# Upstream metadata resolved live from the HF API on 2026-07-03.
+id: da3-small
+upstream:
+  hf_repo: depth-anything/DA3-SMALL
+  revision: e08cab65ca0ec38e7826075418411ab90cab4da3
+  license: apache-2.0
+  license_terms: permissive
+  pipeline_tag: depth-estimation
+  size_bytes: 137248940
+conversion:
+  tool: coreai-torch
+  args: {}
+  quantization: none
+  precision: fp16
+  compute_units: all
+expected:
+  bundle_files:
+  - metadata.json
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: graph_output_cosine
+    threshold: 0.999
+    tolerance: 0.0005
+publish:
+  hf_target_namespace: coreai-community
+  repo_name: da3-small-coreai
+catalog:
+  name: Depth Anything 3 Small (fabric)
+  family: Depth Anything
+  capabilities:
+  - monocular-depth
+  modalities:
+    input:
+    - image
+    output:
+    - depth_map
+  parameters: small
+  architecture: transformer
+  runner: unknown
+  tokenizer_required: false
+  processor_required: true
+  aot_required: unknown
+status: draft
+notes: 'Note on the depth-anything family: only the SMALL and BASE DA3 variants
+  are apache-2.0; DA3-LARGE and DA3-GIANT are cc-by-nc-4.0 (verified via the HF
+  API 2026-07-03) — a recipe for those variants would be license_terms:
+  review_required. Distinct from the catalog''s existing zoo entry
+  depth-anything-3-small.'

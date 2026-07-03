@@ -1,0 +1,56 @@
+# coreai-fabric recipe — Whisper large-v3-turbo (audio seed recipe)
+# Status: draft. This recipe has NOT been converted yet — conversion requires
+# macOS + the Apple Core AI toolchain (apple/coreai-torch). See AGENTS.md.
+# Upstream metadata resolved live from the HF API on 2026-07-03.
+id: whisper-large-v3-turbo
+upstream:
+  hf_repo: openai/whisper-large-v3-turbo
+  revision: 41f01f3fe87f28c78e2fbf8b568835947dd65ed9
+  license: mit
+  license_terms: permissive
+  pipeline_tag: automatic-speech-recognition
+  size_bytes: 5096208915
+conversion:
+  tool: coreai-torch
+  args: {}
+  quantization: none
+  precision: fp16
+  compute_units: all
+expected:
+  bundle_files:
+  - metadata.json
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: graph_output_cosine
+    threshold: 0.999
+    tolerance: 0.0005
+publish:
+  hf_target_namespace: coreai-community
+  repo_name: whisper-large-v3-turbo-coreai
+catalog:
+  name: Whisper large-v3-turbo (fabric)
+  family: Whisper
+  capabilities:
+  - speech-to-text
+  modalities:
+    input:
+    - audio
+    output:
+    - transcript
+  parameters: 809M
+  architecture: transformer
+  runner: unknown
+  tokenizer_required: true
+  processor_required: true
+  aot_required: unknown
+status: draft
+notes: 'License note: the upstream HF repo openai/whisper-large-v3-turbo declares
+  mit (verified via the HF API 2026-07-03); the catalog''s existing zoo-official
+  conversion entry lists Apache-2.0. Fabric records the upstream repo''s own
+  declaration. Runner is unknown until the first conversion is verified
+  on-device (the zoo conversion uses CoreAITranscribe).'
