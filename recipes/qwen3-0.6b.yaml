@@ -41,6 +41,20 @@ publish:
 catalog:
   name: Qwen3 0.6B (fabric)
   family: Qwen
+  bundle_kind: llm
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  # Runtime facts describe the clean coreai-fabric-llm-export PROCESS (which fabric
+  # controls), not unverified on-device performance: a clean coreai-torch export
+  # produces a standard .aimodel with no zoo-style source patch (patch_required),
+  # no custom Metal kernel (custom_kernel), and no separate AOT step — the export IS
+  # the compile (aot_required). It targets the stock CoreAIRunner (stock_runtime).
+  runtime_facts:
+    stock_runtime: true
+    custom_kernel: false
+    patch_required: false
+    aot_required: false
   capabilities:
   - chat
   - text-generation
@@ -51,10 +65,9 @@ catalog:
     - text
   parameters: 0.6B
   architecture: transformer
-  runner: unknown
+  runner: CoreAIRunner
   tokenizer_required: true
   processor_required: false
-  aot_required: unknown
 status: draft
 notes: 'Fabric-native float16 conversion of Qwen3-0.6B. Distinct from the catalog''s existing
   official-qwen3-0-6b entry (int4 palettized, converted via Apple''s official recipe by the
@@ -68,5 +81,6 @@ notes: 'Fabric-native float16 conversion of Qwen3-0.6B. Distinct from the catalo
   passed. The bundle is a static (1,96) logits graph, NOT Apple''s KV-cache chat layout; a
   production chat asset needs coreai.llm.export from an apple/coreai-models checkout. Assets
   serialize with minimum_os v27, so Swift-runner deployment requires macOS/iOS 27+; converting
-  and Python-runtime execution work on macOS 26.6. Runner and AOT requirements for the catalog
-  remain unknown until verified with the on-device Swift stack.'
+  and Python-runtime execution work on macOS 26.6. Runtime facts (stock_runtime/custom_kernel/patch_required/aot_required)
+  are declared from the clean-export process fabric controls, not from on-device Swift verification,
+  which is still pending.'

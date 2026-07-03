@@ -57,6 +57,13 @@ def build_model_entry(recipe: Recipe, files: list[dict], *, notes_suffix: str = 
         )
     conv = recipe.data["conversion"]
     total_bytes = sum(f.get("size_bytes", 0) for f in files)
+    # Runtime facts are declared by the recipe (fabric is the converter, so it is the
+    # authoritative source). The catalog audit rejects `unknown` for these four; the
+    # recipe schema requires them as real booleans, so they are always present here.
+    rf = catalog_block["runtime_facts"]
+    # min_os: the recipe may declare it; else default to the apple-core-ai floor
+    # (macOS/iOS 27.0, grounded in apple/coreai-models Package.swift).
+    min_os = catalog_block.get("min_os", {"macos": "27.0", "ios": "27.0"})
     entry: dict = {
         "id": recipe.id,
         "name": catalog_block["name"],
@@ -65,6 +72,10 @@ def build_model_entry(recipe: Recipe, files: list[dict], *, notes_suffix: str = 
         "source_path": recipe_url(recipe),
         "artifact_ref": recipe.id,
         "capabilities": list(catalog_block["capabilities"]),
+        "bundle_kind": catalog_block["bundle_kind"],
+        "min_os": {"macos": min_os["macos"], "ios": min_os["ios"]},
+        # Upstream repo (org/name) is the discovery dedup key; fabric holds it verbatim.
+        "upstream_repo": recipe.data["upstream"]["hf_repo"],
         "modalities": {
             "input": list(catalog_block["modalities"]["input"]),
             "output": list(catalog_block["modalities"]["output"]),
@@ -78,13 +89,13 @@ def build_model_entry(recipe: Recipe, files: list[dict], *, notes_suffix: str = 
         },
         "runtime": {
             "runtime_name": "apple-core-ai",
-            "runner": catalog_block.get("runner", "unknown"),
-            "stock_runtime": "unknown",
-            "custom_kernel": "unknown",
-            "patch_required": "unknown",
+            "runner": catalog_block.get("runner", "CoreAIRunner"),
+            "stock_runtime": rf["stock_runtime"],
+            "custom_kernel": rf["custom_kernel"],
+            "patch_required": rf["patch_required"],
             "tokenizer_required": _bool_or_unknown(catalog_block.get("tokenizer_required")),
             "processor_required": _bool_or_unknown(catalog_block.get("processor_required")),
-            "aot_required": _bool_or_unknown(catalog_block.get("aot_required")),
+            "aot_required": rf["aot_required"],
         },
         # Device support is unknowable until someone runs the artifact on-device;
         # fabric never asserts it.
@@ -251,6 +262,18 @@ def cmd_register(args) -> int:
     root = find_root()
     recipe = find_recipe(args.id, root)
 
+    # --mark-merged: the human merged the catalog PR; flip published -> registered.
+    if getattr(args, "mark_merged", False):
+        pr = recipe.data.get("catalog_pr")
+        if not pr:
+            err(f"recipe {recipe.id} has no catalog_pr — nothing to mark merged "
+                "(run register to open the PR first)")
+            return 1
+        recipe.data["status"] = "registered"
+        write_yaml(recipe.path, recipe.data)
+        ok(f"recipe {recipe.id} status -> registered (PR {pr} merged)")
+        return 0
+
     files = _resolve_published_digests(recipe)
     tool_version = _tool_version_from_manifest(root, recipe)
     model_entry = build_model_entry(
@@ -314,31 +337,61 @@ def _apply_and_open_pr(
     _bump_artifact_count(catalog_path / "artifacts.yaml")
     _ensure_source_record(catalog_path / "sources.yaml", source_record)
 
-    # Run the catalog's own gate locally so the PR arrives green.
-    for script in ("validate.py", "generate.py", "audit.py"):
-        spath = catalog_path / "scripts" / script
-        if not spath.is_file():
-            warn(f"catalog has no scripts/{script}; skipping")
+    # Replay the catalog's OWN CI gate locally so the PR arrives green. Mirrors
+    # .github/workflows/validate.yml, not a 3-script subset — otherwise a PR can
+    # pass here and still fail catalog CI. Missing scripts (older checkout) are
+    # skipped with a warning.
+    gates = [
+        ([sys.executable, "scripts/validate.py"], "validate", "scripts/validate.py"),
+        ([sys.executable, "scripts/audit.py"], "audit", "scripts/audit.py"),
+        ([sys.executable, "scripts/generate.py"], "generate", "scripts/generate.py"),
+        ([sys.executable, "scripts/doc_test.py"], "doc_test", "scripts/doc_test.py"),
+        ([sys.executable, "scripts/generate_templates.py", "--check"], "templates --check", "scripts/generate_templates.py"),
+        ([sys.executable, "scripts/injection_lint.py"], "injection_lint", "scripts/injection_lint.py"),
+        ([sys.executable, "-m", "pytest", "tests/test_p1_iocontract.py", "-q"], "io_contract tests", "tests/test_p1_iocontract.py"),
+    ]
+    for argv, label, needs in gates:
+        if not (catalog_path / needs).exists():
+            warn(f"catalog has no {needs}; skipping gate '{label}'")
             continue
-        proc = subprocess.run([sys.executable, str(spath)], cwd=catalog_path,
-                              capture_output=True, text=True)
+        proc = subprocess.run(argv, cwd=catalog_path, capture_output=True, text=True)
         if proc.returncode != 0:
-            err(f"catalog scripts/{script} failed:\n{proc.stdout}\n{proc.stderr}")
+            tail = "\n".join((proc.stdout + proc.stderr).strip().splitlines()[-6:])
+            err(f"catalog gate '{label}' failed:\n{tail}")
             err(f"branch {branch} left in place at {catalog_path} for inspection; no PR opened")
             return 1
-        print(f"  catalog {script}: ok")
+        print(f"  catalog gate {label}: ok")
 
     git("add", "-A")
     git("commit", "-m", f"feat: add {recipe.id} via coreai-fabric\n\nRecipe: {recipe_url(recipe)}")
+
+    # Third-party publishers have no push access to the canonical catalog. Try a
+    # direct push; on failure, fork and push to the fork, then open a cross-repo PR.
+    head_ref = branch
     push = git("push", "-u", "origin", branch, check=False)
     if push.returncode != 0:
-        err(f"git push failed:\n{push.stderr}")
-        return 1
+        warn("no push access to the catalog's origin — forking (third-party publisher path)")
+        subprocess.run(["gh", "repo", "fork", CATALOG_REPO, "--remote=false", "--clone=false"],
+                       cwd=catalog_path, capture_output=True, text=True)
+        who = subprocess.run(["gh", "api", "user", "--jq", ".login"],
+                             capture_output=True, text=True)
+        fork_owner = who.stdout.strip()
+        if not fork_owner:
+            err(f"could not resolve your GitHub login for the fork:\n{who.stderr}")
+            return 1
+        fork_url = f"https://github.com/{fork_owner}/{CATALOG_REPO.split('/')[-1]}.git"
+        git("remote", "add", "fork", fork_url, check=False)
+        fpush = git("push", "-u", "fork", branch, check=False)
+        if fpush.returncode != 0:
+            err(f"push to fork {fork_owner} failed:\n{fpush.stderr}")
+            return 1
+        head_ref = f"{fork_owner}:{branch}"
+
     pr = subprocess.run(
         [
             "gh", "pr", "create",
             "--repo", CATALOG_REPO,
-            "--head", branch,
+            "--head", head_ref,
             "--title", f"Add {recipe.id} (fabric conversion)",
             "--body", _pr_body(recipe),
         ],
@@ -347,11 +400,17 @@ def _apply_and_open_pr(
     if pr.returncode != 0:
         err(f"gh pr create failed:\n{pr.stderr}")
         return 1
-    print(pr.stdout.strip())
+    pr_url = pr.stdout.strip()
+    print(pr_url)
 
-    recipe.data["status"] = "registered"
+    # Honest status: the PR is OPEN, not merged. Indexing happens on merge, so
+    # status stays `published` and we record the PR URL. `register --mark-merged`
+    # flips to `registered` once a human merges.
+    recipe.data["catalog_pr"] = pr_url
     write_yaml(recipe.path, recipe.data)
-    ok(f"recipe status -> registered ({recipe.path.name})")
+    ok(f"catalog PR opened: {pr_url}")
+    ok(f"recipe {recipe.id} stays status='published' until the PR merges "
+       f"(then: coreai-fabric register --mark-merged {recipe.id})")
     return 0
 
 

@@ -166,11 +166,38 @@
     "catalog": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "family", "capabilities", "modalities"],
-      "description": "Fields needed to generate the coreai-catalog entries at register time. Optional at draft stage; required before `coreai-fabric register`.",
+      "required": ["name", "family", "capabilities", "modalities", "bundle_kind", "runtime_facts"],
+      "description": "Fields needed to generate the coreai-catalog entries at register time. Optional at draft stage; required before `coreai-fabric register`. The catalog rejects `unknown` for the runtime facts and requires bundle_kind + min_os on every model, so the recipe must declare them here — fabric is the converter and is the authoritative source for these conversion-time facts.",
       "properties": {
         "name": { "type": "string", "minLength": 1 },
         "family": { "type": "string", "minLength": 1 },
+        "bundle_kind": {
+          "type": "string",
+          "enum": ["llm", "vlm", "ocr", "audio-lm", "embedding", "reranker", "object-detection", "segmentation", "depth", "image-generation", "super-resolution", "tts", "asr", "audio-generation", "video", "3d", "action"],
+          "description": "Mirrors the catalog model.schema bundle_kind enum. The catalog test suite requires bundle_kind on every model. Choose the kind that matches the model's task (e.g. an LLM chat model = llm, a document-OCR model = ocr)."
+        },
+        "min_os": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["macos", "ios"],
+          "description": "Minimum OS the .aimodel runtime requires. For apple-core-ai this is macOS/iOS 27.0, grounded in apple/coreai-models Package.swift platforms: [.macOS(\"27.0\"), .iOS(\"27.0\")]. Defaults to 27.0/27.0 at register time if absent.",
+          "properties": {
+            "macos": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$" },
+            "ios": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$" }
+          }
+        },
+        "runtime_facts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["stock_runtime", "custom_kernel", "patch_required", "aot_required"],
+          "description": "Runtime characteristics of the converted bundle. The catalog's audit REJECTS `unknown` for these four, so they must be real booleans. A standard clean coreai-fabric export runs on the stock CoreAIRunner with no custom Metal kernel, no zoo-style source patch, and no separate AOT step (the export IS the compile) — declare true/false honestly for THIS recipe's conversion.",
+          "properties": {
+            "stock_runtime": { "type": "boolean", "description": "Runs on the stock CoreAIRunner without runtime modification." },
+            "custom_kernel": { "type": "boolean", "description": "Requires a custom Metal/compute kernel." },
+            "patch_required": { "type": "boolean", "description": "Requires a source patch to the runtime (zoo-style). A clean fabric export is false." },
+            "aot_required": { "type": "boolean", "description": "Requires a separate ahead-of-time compile beyond the export." }
+          }
+        },
         "capabilities": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 },
@@ -221,7 +248,6 @@
         },
         "tokenizer_required": { "enum": [true, false, "unknown"] },
         "processor_required": { "enum": [true, false, "unknown"] },
-        "aot_required": { "enum": [true, false, "unknown"] },
         "streaming": { "type": "boolean" }
       }
     },
@@ -250,6 +276,11 @@
           "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
         }
       }
+    },
+    "catalog_pr": {
+      "type": "string",
+      "pattern": "^https://github\\.com/.+/pull/[0-9]+$",
+      "description": "URL of the open catalog PR written back by `register` after `gh pr create`. Status stays `published` until a human MERGES this PR; `register --mark-merged` then flips status to `registered`. Absent until a PR is opened."
     },
     "notes": { "type": ["string", "null"] }
   }

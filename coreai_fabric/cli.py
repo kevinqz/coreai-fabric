@@ -168,6 +168,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_reg.add_argument("id")
     p_reg.add_argument("--catalog-path", help="path to a coreai-catalog clone (schemas + PR staging)")
     p_reg.add_argument("--dry-run", action="store_true", help="print the generated YAML, change nothing")
+    p_reg.add_argument("--mark-merged", action="store_true",
+                       help="flip status published->registered after the catalog PR (catalog_pr) merges")
 
     sub.add_parser("list", help="recipe inventory with pipeline stage")
 

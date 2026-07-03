@@ -72,6 +72,19 @@ def test_model_entry_shared_field_contract():
     assert entry["status"] == "needs_review"
 
 
+def test_model_entry_satisfies_catalog_p1_invariants():
+    # The catalog requires bundle_kind + min_os on every model and REJECTS
+    # `unknown` for the four runtime facts (audit category 5). register must
+    # emit all of them from the recipe, or the fabric->catalog lane can't complete.
+    entry = build_model_entry(_published_recipe(), FAKE_FILES)
+    assert entry["bundle_kind"] == "llm"
+    assert entry["min_os"] == {"macos": "27.0", "ios": "27.0"}
+    assert entry["upstream_repo"] == "Qwen/Qwen3-0.6B"
+    rt = entry["runtime"]
+    for field in ("stock_runtime", "custom_kernel", "patch_required", "aot_required"):
+        assert isinstance(rt[field], bool), f"{field} must be a real bool, not {rt[field]!r}"
+
+
 def test_artifact_entry_shared_field_contract():
     entry = build_artifact_entry(_published_recipe(), FAKE_FILES, tool_version="0.0-test")
     # HF-native provenance: no fabricated github block.

@@ -39,6 +39,18 @@ publish:
 catalog:
   name: Depth Anything 3 Small (fabric)
   family: Depth Anything
+  bundle_kind: depth
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  # Expected clean-export runtime facts (this recipe is a draft — the DA3 converter
+  # is a per-model script in apple/coreai-models not yet run; a clean official export
+  # produces no zoo patch, no custom kernel, no separate AOT).
+  runtime_facts:
+    stock_runtime: true
+    custom_kernel: false
+    patch_required: false
+    aot_required: false
   capabilities:
   - monocular-depth
   modalities:
@@ -51,7 +63,6 @@ catalog:
   runner: unknown
   tokenizer_required: false
   processor_required: true
-  aot_required: unknown
 status: draft
 notes: 'Converter reality (verified against the apple/coreai-models source, tag
   0.1.0, 2026-07-03): DA3 is converted by the per-model PEP 723 script

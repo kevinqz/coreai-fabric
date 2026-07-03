@@ -235,6 +235,163 @@
     },
     "notes": {
       "type": ["string", "null"]
+    },
+    "bundle_kind": {
+      "description": "Authored task-level bundle kind (redteam C5). Derived from the catalog's capability vocabulary — NOT the runtime's 4-value BundleKind enum (apple/coreai-models swift/Sources/CoreAIShared/Bundle/BundleKind.swift:12-17: llm/vlm/diffusion/segmenter). exports.py re-derives this from capabilities and fails the export on disagreement.",
+      "type": "string",
+      "enum": [
+        "llm",
+        "vlm",
+        "ocr",
+        "audio-lm",
+        "embedding",
+        "reranker",
+        "object-detection",
+        "segmentation",
+        "depth",
+        "image-generation",
+        "super-resolution",
+        "tts",
+        "asr",
+        "audio-generation",
+        "video",
+        "3d",
+        "action"
+      ]
+    },
+    "min_os": {
+      "description": "Minimum OS version required by the model's runtime (redteam E5 / min_os data gap). For runtime_name apple-core-ai this is grounded in apple/coreai-models Package.swift: platforms: [.macOS(\"27.0\"), .iOS(\"27.0\")].",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "macos": { "type": "string", "pattern": "^\\d+(\\.\\d+)*$", "examples": ["27.0"] },
+        "ios": { "type": "string", "pattern": "^\\d+(\\.\\d+)*$", "examples": ["27.0"] }
+      }
+    },
+    "superseded_by": {
+      "description": "Model id of the catalog entry that supersedes this one (lifecycle, redteam E4).",
+      "type": "string",
+      "minLength": 1,
+      "examples": ["newer-model-id"]
+    },
+    "deprecation": {
+      "description": "Deprecation record — set together with status: deprecated (lifecycle, redteam E4).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["date", "reason"],
+      "properties": {
+        "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "upstream_repo": {
+      "description": "Upstream source model repo as org/name (e.g. Qwen/Qwen3-0.6B) — the dedup key for discovery tooling (redteam F4). Real .aimodel bundles record this as metadata.json source.hf_model_id.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+      "examples": ["Qwen/Qwen3-0.6B"]
+    },
+    "io_contract": {
+      "description": "Machine-readable typed Swift-IO contract (redteam C1/C2/C6/C7, spec §3.3). Authored from the .aimodel bundle's real metadata (metadata.json / recipe.json in the pinned HF revision) plus the apple/coreai-models Swift API. Absent when the contract could not be verified — never guessed.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "entrypoint": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "framework": { "type": "string", "minLength": 1, "examples": ["CoreAILanguageModels"] },
+            "type": { "type": "string", "minLength": 1, "examples": ["CoreAILanguageModel"] },
+            "init_pattern": { "type": "string", "minLength": 1, "examples": ["try await CoreAILanguageModel(resourcesAt:)"] }
+          }
+        },
+        "inputs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "modality"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1, "examples": ["prompt"] },
+              "modality": { "type": "string", "minLength": 1, "examples": ["text"] },
+              "swift_type": { "type": "string", "minLength": 1, "examples": ["String"] },
+              "tensor": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "shape": {
+                    "type": "array",
+                    "items": { "type": ["integer", "string"] }
+                  },
+                  "dtype": { "type": "string" },
+                  "layout": { "type": "string" }
+                }
+              },
+              "preprocessing": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "resize": { "type": "string" },
+                  "normalization": { "type": "string" },
+                  "color_format": { "type": "string" },
+                  "sample_rate": { "type": "integer" }
+                }
+              },
+              "constraints": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "max_context": { "type": "integer" },
+                  "max_image_px": { "type": "integer" },
+                  "max_audio_s": { "type": "number" }
+                }
+              }
+            }
+          }
+        },
+        "outputs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1, "examples": ["response"] },
+              "swift_type": { "type": "string", "minLength": 1, "examples": ["String"] },
+              "decoding": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "format_selector": { "type": "string" },
+                  "coordinate_convention": { "type": "string" },
+                  "label_vocab_ref": { "type": "string" },
+                  "embedding_dim": { "type": "integer" },
+                  "score_range": { "type": "string" },
+                  "detokenization": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "session": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "stateful": { "type": "boolean" },
+            "streaming": { "type": "boolean" }
+          }
+        },
+        "files": {
+          "description": "Paths inside the pinned HF revision of the artifact repo.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "tokenizer_ref": { "type": "string", "examples": ["tokenizer"] },
+            "processor_ref": { "type": "string", "examples": ["preprocessor_config.json"] }
+          }
+        }
+      }
     }
   }
 }

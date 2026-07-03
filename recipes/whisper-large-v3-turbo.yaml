@@ -39,6 +39,18 @@ publish:
 catalog:
   name: Whisper large-v3-turbo (fabric)
   family: Whisper
+  bundle_kind: asr
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  # Expected clean-export runtime facts (this recipe is a draft — the whisper
+  # converter is a per-model script in apple/coreai-models not yet run; a clean
+  # official export produces no zoo patch, no custom kernel, no separate AOT).
+  runtime_facts:
+    stock_runtime: true
+    custom_kernel: false
+    patch_required: false
+    aot_required: false
   capabilities:
   - speech-to-text
   modalities:
@@ -51,7 +63,6 @@ catalog:
   runner: unknown
   tokenizer_required: true
   processor_required: true
-  aot_required: unknown
 status: draft
 notes: 'Converter reality (verified against the apple/coreai-models source, tag
   0.1.0, 2026-07-03): whisper is converted by the per-model PEP 723 script
