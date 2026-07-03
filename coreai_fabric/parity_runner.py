@@ -115,6 +115,31 @@ def run_per_token_logit_cosine(args) -> dict:
         # API: desc.input_descriptor(name) -> NDArrayDescriptor with
         # .shape/.dtype; coreai-torch narrows torch int64 ids to int32).
         desc = fn.desc
+        # A production `coreai.llm.export` asset is STATEFUL: it carries a KV
+        # cache (state_names = keyCache/valueCache) and takes input_ids +
+        # position_ids with a dynamic seq len. This static-graph runner cannot
+        # drive it (a plain forward raises "Missing state view for keyCache"),
+        # and raw logit-cosine vs an fp32 reference is the wrong metric for a
+        # quantized asset anyway (4bit diverges in logits but preserves task
+        # accuracy). The correct Gate B is a benchmark-accuracy eval via Apple's
+        # `coreai.llm.eval` — which ships as a STUB ("Evaluation support is
+        # coming soon") as of coreai-models 0.1.0. So we honestly decline rather
+        # than fake a number. Verified on real hardware 2026-07-03.
+        if getattr(desc, "state_names", None):
+            return {
+                "metric": args.metric,
+                "value": None,
+                "status": "not_run",
+                "reason": (
+                    "production KV-cache asset (state_names="
+                    f"{list(desc.state_names)}): this static-graph runner cannot "
+                    "drive a stateful asset, and raw logit-cosine is the wrong "
+                    "metric for a quantized asset. Gate B for production assets "
+                    "is benchmark-accuracy via Apple's coreai.llm.eval, which is "
+                    "not yet implemented upstream (coreai-models 0.1.0: "
+                    "'Evaluation support is coming soon')."
+                ),
+            }
         if "input_ids" not in desc.input_names or "logits" not in desc.output_names:
             raise SystemExit(
                 f"bundle main function has inputs {desc.input_names} / outputs "

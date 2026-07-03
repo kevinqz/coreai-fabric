@@ -17,8 +17,14 @@ Nothing here is guessed. Where something was not tested, it says so.
 | `coreai-core` | **1.0.0b2** | PyPI (pulled by coreai-torch, `==` pin) | Compiler (MLIR) + **bundled runtime** |
 | `torch` | 2.11.0 | PyPI (coreai-torch allows `>=2.8,<=2.11`) | export frontend |
 | `transformers` | 4.57.3 | PyPI (the pin in coreai-torch's `[test]` extra and in every apple/coreai-models export script) | model sourcing |
-| `coreai-models` | 0.1.0 | **GitHub only — NOT on PyPI** | CLI exporters + Swift runners |
-| `coreai-opt` | 0.2.1 | PyPI (not installed here; required only for quantized exports) | compression |
+| `coreai-models` | 0.1.0 | **GitHub only — NOT on PyPI** (checkout at commit `e203a0d`) | CLI exporters + Swift runners |
+| `coreai-opt` | 0.2.1 | PyPI | compression — **used** for the 4bit production export (Finding 7) |
+
+The static-graph driver run (Findings 3–5) used torch 2.11.0 / transformers
+4.57.3. The production `coreai.llm.export` run (Finding 7) used a separate venv
+with the coreai-models 0.1.0 checkout installed from source: torch 2.9.0,
+transformers 4.57.6, coreai-opt 0.2.1 (same coreai-torch 0.4.1 / coreai-core
+1.0.0b2).
 
 ## Finding 1 — there is NO `coreai-torch` executable
 
@@ -128,7 +134,42 @@ A real asset directory (verified by producing one, consistent with all 354
 | Path | Status |
 |---|---|
 | `coreai-fabric-llm-export` (this repo, `[convert]` extra) | **Validated on real hardware** — static logits graph, `--compression none` only |
-| `coreai.llm.export` (apple/coreai-models checkout) | Interface verified from source; **not executed here** (checkout installation was outside this session's sandbox policy) |
-| `models/<family>/export.py` scripts | Interfaces verified from source; not executed here (same reason + DA3 needs a third-party git dependency) |
-| Quantized/palettized exports (`coreai-opt`) | Not attempted |
+| `coreai.llm.export` (apple/coreai-models checkout) | **Validated on real hardware** — produced a 320 MB 4bit KV-cache chat asset, Gate A passes (Finding 7) |
+| `models/<family>/export.py` scripts | Interfaces verified from source; not executed here (DA3 needs a third-party git dependency) |
+| Quantized/palettized exports (`coreai-opt`) | **Done** — the production export above is 4bit via the registry preset (Finding 7) |
 | Swift runners (CoreAILM, …) | Cannot build or run on this Mac: `Package.swift` requires macOS 27; only SDK here is macosx26.5 |
+| `coreai.llm.eval` (Gate B benchmark evaluator) | **Stub** in coreai-models 0.1.0 — prints "Evaluation support is coming soon" (Finding 7) |
+
+## Finding 7 — the PRODUCTION `coreai.llm.export` asset (executed, measured)
+
+Executed later the same day from a checkout venv (see `docs/validation-log.md`,
+2026-07-03 21:09 UTC, for the verbatim run). Key INTERFACE facts discovered:
+
+- **The production asset is quantized and STATEFUL.** Its runtime descriptor
+  is fundamentally different from the static driver asset (Finding 5):
+
+  ```
+  input_names : ['input_ids', 'position_ids']   # driver: ['input_ids'] only
+  output_names: ['logits']
+  state_names : ['keyCache', 'valueCache']       # driver: none — this is a KV cache
+  input_ids   : shape [1, -1] int32              # DYNAMIC seq len; driver: static [1, 96]
+  logits      : shape [1, -1, 151936] float16
+  ```
+
+  Consequence: fabric's static-graph `parity-runner` **cannot drive it** (a
+  plain forward raises "Missing state view for keyCache"). The runner detects
+  `desc.state_names` and returns `not_run`.
+- **Registry short-name resolves Apple's tested preset.** `coreai.llm.export
+  qwen3-0.6b` (positional short-name, no `--compute-precision`/`--compression`)
+  produced a **4bit / 8192-ctx** asset — verified against
+  `coreai.model.registry --list-models`. A raw `owner/name` id instead needs
+  `--experimental` + explicit `--compute-precision`.
+- **The asset embeds the tokenizer + chat template.** `<name>.aimodel/` plus a
+  sibling `tokenizer/` (7 files incl. `chat_template.jinja` — the real Qwen3
+  tool-calling template) and richer `metadata.json` (6 keys: adds `license`,
+  `author`, `description`). The on-device runner needs nothing else.
+- **`coreai.llm.eval` is a STUB.** The KV-cache-aware benchmark evaluator that
+  Gate B (`benchmark_accuracy`) would shell to prints "Evaluation support is
+  coming soon" in 0.1.0. So production Gate B is blocked upstream, and fabric
+  reports `not_run` rather than faking a number. This is the one gap between
+  "production conversion works" and "production conversion verified".

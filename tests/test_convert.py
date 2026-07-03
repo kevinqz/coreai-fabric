@@ -75,6 +75,37 @@ def test_revision_only_passed_to_revision_capable_tools(tmp_path):
     assert "--revision" not in apple_cmd
 
 
+def test_coreai_llm_export_raw_id_adds_experimental(tmp_path):
+    # A raw HF id (no apple_registry_name) needs --experimental for the real
+    # coreai.llm.export, and keeps precision/quantization.
+    recipe = _recipe(tool="coreai.llm.export")
+    cmd = build_command(recipe, "coreai.llm.export", bundle_path(tmp_path, recipe))
+    joined = " ".join(cmd)
+    assert cmd[1] == "Qwen/Qwen3-0.6B"
+    assert "--experimental" in joined
+    assert "--compute-precision float16" in joined
+    assert "--compression none" in joined
+    # The fabric driver never gets --experimental (only coreai.llm.export needs it).
+    fabric_cmd = build_command(recipe, "coreai-fabric-llm-export",
+                               bundle_path(tmp_path, recipe))
+    assert "--experimental" not in " ".join(fabric_cmd)
+
+
+def test_coreai_llm_export_registry_name_uses_preset(tmp_path):
+    # PRODUCTION path: apple_registry_name -> the short-name positional, and NO
+    # --compute-precision/--compression/--experimental (the tested preset wins).
+    recipe = _recipe(tool="coreai.llm.export")
+    recipe.data["conversion"]["apple_registry_name"] = "qwen3-0.6b"
+    cmd = build_command(recipe, "coreai.llm.export", bundle_path(tmp_path, recipe))
+    joined = " ".join(cmd)
+    assert cmd[1] == "qwen3-0.6b"  # registry short-name, not the HF id
+    assert "--compute-precision" not in joined
+    assert "--compression" not in joined
+    assert "--experimental" not in joined
+    assert "--output-name qwen3-0.6b" in joined
+    assert "--overwrite" in joined
+
+
 def test_known_tool_sets_are_consistent():
     assert REVISION_CAPABLE_TOOLS <= LLM_EXPORT_TOOLS
 

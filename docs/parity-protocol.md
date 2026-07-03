@@ -11,6 +11,18 @@ fabric's runner exits non-zero for it rather than faking a result. Fabric's
 `verify` shells to whatever `COREAI_FABRIC_PARITY_RUNNER` names and honestly
 records `not_run` when none is configured.
 
+**Which metric applies depends on the EXPORT LAYOUT, not just the modality.**
+The logit/graph-cosine metrics compare a STATIC-graph export (fabric's
+`coreai-fabric-llm-export`: fixed `(1, seq_len)` `input_ids` → full-sequence
+`logits`, `use_cache=False`) against an fp32 reference. A PRODUCTION
+`coreai.llm.export` asset is different: it is a **quantized (e.g. 4bit),
+stateful KV-cache** asset whose raw logits legitimately diverge from fp32 —
+raw cosine is the wrong metric for it. Its Gate B is `benchmark_accuracy`
+(below), which is blocked upstream. See `docs/validation-log.md`
+(2026-07-03 production run) for the measured descriptor
+(`state_names=['keyCache','valueCache']`, dynamic `[1,-1]` inputs) that makes
+this concrete.
+
 ## Purpose
 
 Gate A proves the bundle is structurally sound. Gate B proves the converted
@@ -40,6 +52,23 @@ For autoregressive LLMs:
    `value`.
 4. If the recipe sets `greedy_token_exact: true`, additionally report whether
    the greedy token sequences match exactly (`greedy_token_exact: true/false`).
+
+### `benchmark_accuracy`
+For a PRODUCTION `coreai.llm.export` asset (quantized, stateful KV-cache): the
+correct fidelity metric is **task accuracy vs upstream**, not raw logit
+fidelity. A 4bit asset is expected to diverge in logits while preserving
+downstream accuracy, so the gate is: the converted asset stays within
+`tolerance` of the upstream model's score on a fixed benchmark (e.g. tinyMMLU
+/ tinyGSM8k), evaluated through the KV-cache decode path.
+
+**Status: blocked UPSTREAM (not_run).** The only conforming evaluator is
+Apple's `coreai.llm.eval` (KV-cache-aware), which ships as a STUB in
+coreai-models 0.1.0 — it prints "Evaluation support is coming soon". A
+static-graph runner cannot score a stateful asset. So `verify` reports
+`not_run` with that reason for any recipe whose metric is `benchmark_accuracy`
+— regardless of whether a runner is configured — and never records it as a
+failure. When Apple ships the evaluator, the runner contract below gains a
+`benchmark_accuracy` implementation that shells to `coreai.llm.eval`.
 
 ## Pass criteria
 
@@ -83,6 +112,12 @@ stdout is recorded as a Gate B failure with the stderr excerpt.
 
 ## What remains TODO (honest gaps)
 
+- `benchmark_accuracy` for production `coreai.llm.export` assets is blocked on
+  Apple shipping `coreai.llm.eval` (a stub in coreai-models 0.1.0). Until then,
+  a production recipe's Gate B is `not_run` by design — Gate A validates the
+  bundle structure, and quality parity waits for the upstream evaluator. This
+  is the single largest gap between "conversion works" and "conversion
+  verified" for the production path.
 - `graph_output_cosine` support in fabric's runner (per-modality reference
   preprocessing; input corpora for audio/images). The LLM prompt corpus is
   versioned in `coreai_fabric/parity_runner.py` (`PROMPTS`).

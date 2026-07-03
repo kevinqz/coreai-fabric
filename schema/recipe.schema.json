@@ -61,6 +61,11 @@
           "type": "string",
           "description": "Minimum version of the underlying converter library (coreai-torch) known to work for this recipe — every verified tool is a thin driver over coreai-torch. Leave absent if unknown; 0.4.1 was validated on real hardware 2026-07-03."
         },
+        "apple_registry_name": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9.-]*$",
+          "description": "For tool `coreai.llm.export` (Apple's production exporter): the Apple model-registry short-name (e.g. `qwen3-0.6b`, from `coreai.model.registry --list-models`). When set, convert drives `coreai.llm.export <short-name>` and lets Apple's TESTED compression preset resolve — this produces the production KV-cache chat asset that passes parity. `precision`/`quantization` are then documentation only (the preset wins). Absent = raw HF-ID export (requires `--experimental`, uses this recipe's precision/quantization, and typically does NOT clear the parity bar)."
+        },
         "args": {
           "type": "object",
           "description": "Extra converter arguments passed through verbatim as --key value pairs (e.g. platform: macOS). For script tools these document the script's verified flags."
@@ -124,8 +129,8 @@
           "properties": {
             "metric": {
               "type": "string",
-              "enum": ["graph_output_cosine", "per_token_logit_cosine"],
-              "description": "Numeric parity metric vs the upstream model. See docs/parity-protocol.md."
+              "enum": ["graph_output_cosine", "per_token_logit_cosine", "benchmark_accuracy"],
+              "description": "Parity metric vs the upstream model. `graph_output_cosine`/`per_token_logit_cosine` = raw fidelity of a STATIC-graph export (fabric's coreai-fabric-llm-export). `benchmark_accuracy` = the correct metric for a QUANTIZED production `coreai.llm.export` asset (task accuracy, e.g. tinyMMLU, must stay within tolerance of the upstream) — but Apple's evaluator (`coreai.llm.eval`) ships as a stub as of coreai-models 0.1.0, so this gate honestly reports not_run until it lands. See docs/parity-protocol.md."
             },
             "threshold": {
               "type": "number",

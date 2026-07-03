@@ -39,6 +39,16 @@ METADATA_RECIPE_KEYS = {
 }
 
 
+#: Metric for a quantized PRODUCTION `coreai.llm.export` asset: task accuracy
+#: vs upstream (e.g. tinyMMLU) rather than raw logit fidelity, which a 4bit
+#: asset legitimately fails. The only conforming evaluator is Apple's
+#: `coreai.llm.eval`, which ships as a STUB in coreai-models 0.1.0
+#: ("Evaluation support is coming soon"), and the stateful KV-cache asset can't
+#: be scored by a static-graph runner. So this gate is blocked UPSTREAM — we
+#: say so instead of faking a number or flagging a false failure.
+BENCHMARK_ACCURACY = "benchmark_accuracy"
+
+
 def parity_report_path(root: Path, recipe: Recipe) -> Path:
     return root / "build" / recipe.id / "parity-report.json"
 
@@ -129,6 +139,27 @@ def run_gate_b(root: Path, recipe: Recipe) -> dict:
     }
     if gate.get("greedy_token_exact") is not None:
         base["greedy_token_exact_required"] = gate["greedy_token_exact"]
+
+    # A production asset's Gate B (benchmark_accuracy) is blocked UPSTREAM,
+    # regardless of whether a runner is configured — fabric's runner can't score
+    # a stateful KV-cache asset, and Apple's coreai.llm.eval is a stub. Report
+    # not_run with the real reason; never shell out to fail on an unknown metric.
+    if gate["metric"] == BENCHMARK_ACCURACY:
+        return {
+            **base,
+            "status": "not_run",
+            "reason": (
+                "Gate B for a production coreai.llm.export asset is benchmark "
+                "accuracy vs upstream (e.g. tinyMMLU) — the correct metric for a "
+                "quantized asset, whose raw logits legitimately diverge. The only "
+                "conforming evaluator is Apple's coreai.llm.eval, which ships as a "
+                "stub in coreai-models 0.1.0 ('Evaluation support is coming "
+                "soon'), and the stateful KV-cache asset cannot be scored by a "
+                "static-graph runner. Gate A (structure) validated the bundle on "
+                "real hardware; Gate B stays not_run until the upstream evaluator "
+                "lands — we do not fake a number."
+            ),
+        }
 
     runner = os.environ.get("COREAI_FABRIC_PARITY_RUNNER")
     if not runner:

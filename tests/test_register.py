@@ -96,8 +96,10 @@ def test_artifact_entry_shared_field_contract():
     assert hf["files"] == FAKE_FILES
     prov = entry["provenance"]
     assert prov["recipe_source"] == "fabric"
-    # The verified converter executable (coreai-torch is a library, not a CLI).
-    assert prov["converted_by"]["tool"] == "coreai-fabric-llm-export"
+    # The recipe's real converter — the seed uses Apple's PRODUCTION CLI
+    # (coreai.llm.export), verified on hardware to emit the KV-cache chat asset.
+    # register records whatever the recipe declares; it never invents a tool.
+    assert prov["converted_by"]["tool"] == "coreai.llm.export"
     assert prov["converted_by"]["version"] == "0.0-test"
     assert prov["converted_by"]["recipe_url"].endswith("/recipes/qwen3-0.6b.yaml")
     assert entry["officiality"] == {

@@ -166,9 +166,9 @@ NOT tuned to make this pass.
 - The bundle is a STATIC (1, 96) logits graph — parity-verifiable and
   runnable, but not Apple's KV-cache chat-asset layout. Producing the
   production layout requires `coreai.llm.export` from an apple/coreai-models
-  checkout, whose interface was verified from source but which was not
-  executed in this session (sandbox policy blocked installing the checkout;
-  the package is not on PyPI).
+  checkout (not on PyPI). That production run was executed LATER THE SAME DAY
+  — see the next section, "PRODUCTION export via apple/coreai-models" — which
+  supersedes the earlier note here that it had not been run.
 - whisper-large-v3-turbo and da3-small were NOT converted: their converters
   are per-model PEP 723 scripts in apple/coreai-models (da3 additionally
   pulls `depth-anything-3` from a third-party git repo). Their interfaces
@@ -180,3 +180,138 @@ NOT tuned to make this pass.
   describe disposable local `build/` state (this log is the durable record).
   The 1.1 GB bundle was deleted after verification — fabric never hosts
   weights.
+
+## 2026-07-03 (21:09 UTC) — PRODUCTION export via apple/coreai-models `coreai.llm.export`
+
+The production path the ecosystem actually deploys. Unlike the static-graph
+driver run above, this produces Apple's **stateful KV-cache chat asset** —
+the layout the on-device runner expects.
+
+**Environment:** same Mac (Apple M4 Max, macOS 26.6, Darwin 25.6.0). A fresh
+venv with the apple/coreai-models checkout installed from source
+(`git clone` + `pip install ./coreai-models/python`; it is NOT on PyPI).
+Checkout at commit `e203a0d`; installed stack: coreai-models 0.1.0,
+coreai-torch 0.4.1, coreai-core 1.0.0b2, coreai-opt 0.2.1, torch 2.9.0,
+transformers 4.57.6. macOS 27 was NOT required to build the asset (only to
+run it on device).
+
+### Registry preset (verbatim, `coreai.model.registry --list-models --type llm`)
+
+```
+qwen3-0.6b   macOS   4bit                            8192   Qwen/Qwen3-0.6B
+qwen3-0.6b   iOS     qwen3_0_6b_mixed_4bit_8bit.yaml 4096   Qwen/Qwen3-0.6B
+```
+
+The registry SHORT-NAME (`qwen3-0.6b`) auto-resolves Apple's TESTED preset —
+4bit / 8192-token context on macOS. This is why the production recipe passes
+`apple_registry_name: qwen3-0.6b` (positional) and does NOT pass
+`--compute-precision`/`--compression`: the preset must win. A raw HF id would
+instead require `--experimental` + explicit precision.
+
+### convert (real run, Apple's production CLI)
+
+```
+coreai.llm.export qwen3-0.6b --output-dir <build> --output-name qwen3-0.6b-prod --overwrite
+```
+
+(The probe used `--output-name qwen3-0.6b-prod` to avoid clobbering the
+static-graph build above; the seed recipe uses `--output-name qwen3-0.6b`.)
+
+### Real production bundle inventory (measured)
+
+```
+build/qwen3-0.6b-prod/
+├── qwen3-0.6b-prod.aimodel/
+│   ├── main.mlirb      335,979,906 bytes   # 4bit-quantized program (320 MB)
+│   ├── main.hash                32 bytes
+│   └── metadata.json           307 bytes   # 6 top-level keys (see below)
+└── tokenizer/                              # EMBEDDED, 7 files:
+    ├── chat_template.jinja   4,168 bytes   # real Qwen3 template (tool-calling)
+    ├── tokenizer.json   11,422,654 bytes
+    ├── vocab.json        2,776,833 bytes
+    ├── merges.txt        1,671,853 bytes
+    ├── tokenizer_config.json 5,404 bytes
+    ├── special_tokens_map.json 613 bytes
+    └── added_tokens.json       707 bytes
+```
+
+Two facts the static-graph driver's asset did NOT have: the 4bit asset is
+**320 MB** vs the driver's 1.19 GB float16 graph, and it carries an
+**embedded tokenizer + chat template** so the on-device runner needs nothing
+else.
+
+`qwen3-0.6b-prod.aimodel/metadata.json` (verbatim):
+
+```json
+{
+  "assetVersion" : "2.0",
+  "license" : "Apache-2.0",
+  "producer" : "coreai-core 1.0.0b2",
+  "creationDate" : "20260703T210920Z",
+  "author" : "Qwen Team",
+  "description" : "Qwen3-0.6B is a 0.6B-parameter causal language model from the Qwen3 family. Source: https://huggingface.co/Qwen/Qwen3-0.6B"
+}
+```
+
+### Runtime function descriptor (verbatim — this is a STATEFUL asset)
+
+Loaded via `AIModel.load(...).load_function("main").desc` on the coreai-core
+runtime:
+
+```
+input_names : ['input_ids', 'position_ids']
+output_names: ['logits']
+state_names : ['keyCache', 'valueCache']        # <- KV cache: STATEFUL
+  in  input_ids   : shape=[1, -1]         dtype=int32
+  in  position_ids: shape=[1, -1]         dtype=int32
+  out logits      : shape=[1, -1, 151936] dtype=float16
+```
+
+This is the crux for Gate B: the asset carries a KV cache (`state_names`) and
+takes a DYNAMIC sequence length (`[1, -1]`). Fabric's `parity-runner` is a
+static-graph runner (fixed `(1, seq_len)` `input_ids` → full-sequence
+`logits`, `use_cache=False`); it literally cannot drive this — a plain forward
+raises "Missing state view for keyCache". The runner now detects
+`desc.state_names` and returns `not_run` with that reason instead of crashing.
+
+### Gate A (real run vs the production asset) — PASSED
+
+```
+GATE A: passed
+  [passed] bundle_exists: build/qwen3-0.6b-prod/qwen3-0.6b-prod.aimodel
+  [passed] bundle_files_present: 3 expected file(s) present
+  [passed] metadata_json_parses: metadata.json parses (6 top-level keys)
+  [passed] metadata_matches_recipe: 1 key(s) match     # assetVersion 2.0 == expected 2.0
+```
+
+### Gate B — not_run, blocked UPSTREAM (honest)
+
+```
+GATE B: not_run
+reason: Gate B for a production coreai.llm.export asset is benchmark accuracy
+        vs upstream (e.g. tinyMMLU) — the correct metric for a quantized
+        asset, whose raw logits legitimately diverge. The only conforming
+        evaluator is Apple's coreai.llm.eval, which ships as a stub in
+        coreai-models 0.1.0 ("Evaluation support is coming soon"), and the
+        stateful KV-cache asset cannot be scored by a static-graph runner.
+```
+
+Two independent reasons Gate B can't produce a number today, both real:
+
+1. **Wrong metric for a quantized asset.** Raw per-token logit cosine vs an
+   fp32 reference is meaningful for a float16 graph (the driver run above), but
+   a 4bit asset legitimately diverges in logits while preserving task
+   accuracy. The correct Gate B is a benchmark-accuracy eval (e.g. tinyMMLU
+   within tolerance of upstream).
+2. **The upstream evaluator is a stub.** Apple's `coreai.llm.eval` — the
+   KV-cache-aware benchmark evaluator — prints "Evaluation support is coming
+   soon" in coreai-models 0.1.0. There is no conforming evaluator to shell to.
+
+So the honest state of the production path: **conversion works and is wired
+end-to-end** (recipe → `coreai.llm.export` → real 4bit KV-cache chat asset →
+Gate A passes), and **Gate B stays `not_run` until Apple ships their
+evaluator**. Fabric never fakes a parity number and never records this as a
+failure — a metric that can't run yet is not a parity failure.
+
+The 320 MB bundle + the ~2 GB scratch venv/checkout were deleted after these
+measurements — fabric never hosts weights.

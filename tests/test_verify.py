@@ -102,3 +102,18 @@ def test_gate_b_not_run_without_runner(tmp_path, monkeypatch):
     assert result["status"] == "not_run"
     assert result["value"] is None
     assert "macOS" in result["reason"]
+
+
+def test_gate_b_benchmark_accuracy_blocked_upstream(tmp_path, monkeypatch):
+    # A production recipe (metric benchmark_accuracy) must report not_run with
+    # the eval-stub reason — and must NOT shell out to a runner even when one is
+    # configured (fabric's runner can't score a stateful asset; faking a failure
+    # would be dishonest).
+    monkeypatch.setenv("COREAI_FABRIC_PARITY_RUNNER", "/definitely/not/a/real/runner")
+    recipe = _recipe(tmp_path)
+    recipe.data["parity"]["gate_b"]["metric"] = "benchmark_accuracy"
+    result = run_gate_b(tmp_path, recipe)
+    assert result["status"] == "not_run"
+    assert result["value"] is None
+    assert "coreai.llm.eval" in result["reason"]
+    assert "coming soon" in result["reason"]

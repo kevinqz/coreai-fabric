@@ -55,9 +55,15 @@ Verified reality of the Apple toolchain (macOS on Apple Silicon required):
          pip install "coreai-fabric[convert]"
      installs `coreai-fabric-llm-export` (validated on macOS 26.6 —
      macOS 27 is NOT needed to convert).
-  3. Apple's full-featured CLIs (`coreai.llm.export`, KV-cache assets,
-     quantization presets) live in the apple/coreai-models repo, which is
-     NOT on PyPI — install from a checkout per its README.
+  3. Apple's PRODUCTION CLI (`coreai.llm.export` — KV-cache chat assets with
+     Apple's tested compression presets) lives in the apple/coreai-models repo,
+     which is NOT on PyPI. Install from a checkout:
+         git clone https://github.com/apple/coreai-models
+         pip install ./coreai-models/python
+     Then use `tool: coreai.llm.export` + `apple_registry_name: <short-name>`
+     in the recipe (list short-names with `coreai.model.registry --list-models
+     --type llm`). Validated on macOS 26.6 — macOS 27 is only needed to RUN the
+     asset, not to build it.
   4. Or set COREAI_FABRIC_TOOL=/path/to/converter.
 
 Fabric cannot install the Apple toolchain for you, and CI never converts.
@@ -101,6 +107,24 @@ def build_command(recipe: Recipe, tool: str, output: Path) -> list[str]:
     conv = recipe.data["conversion"]
     upstream = recipe.data["upstream"]
     out_dir = output.parent.parent  # build/<id>/<id>.aimodel -> build/
+    registry_name = conv.get("apple_registry_name")
+
+    # PRODUCTION path: Apple's coreai.llm.export with a registry short-name
+    # auto-resolves the TESTED compression preset for that model (e.g. qwen3-0.6b
+    # -> 4bit/float16/8192), producing the KV-cache chat asset that passes parity.
+    # Do NOT pass --compute-precision/--compression here — the preset must win.
+    if tool == "coreai.llm.export" and registry_name:
+        cmd = [
+            tool,
+            registry_name,
+            "--output-dir", str(out_dir),
+            "--output-name", recipe.id,
+            "--overwrite",
+        ]
+        for key, value in sorted((conv.get("args") or {}).items()):
+            cmd += [f"--{key}", str(value)]
+        return cmd
+
     cmd = [
         tool,
         upstream["hf_repo"],
@@ -114,6 +138,11 @@ def build_command(recipe: Recipe, tool: str, output: Path) -> list[str]:
         str(conv["quantization"]),
         "--overwrite",
     ]
+    # coreai.llm.export refuses a raw HF ID (not a registry short-name) without
+    # --experimental (verified against its argparse: "Allow exporting models
+    # without a registry preset. Requires --compute-precision.").
+    if tool == "coreai.llm.export":
+        cmd.append("--experimental")
     if upstream.get("revision") and tool in REVISION_CAPABLE_TOOLS:
         cmd += ["--revision", upstream["revision"]]
     for key, value in sorted((conv.get("args") or {}).items()):
