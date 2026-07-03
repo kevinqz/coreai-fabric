@@ -115,7 +115,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_new.add_argument("--id", help="recipe id (default: derived from the repo name)")
     p_new.add_argument("--namespace", default="coreai-community",
                        help="the publisher's OWN HF namespace to publish into (default: coreai-community)")
-    p_new.add_argument("--repo-name", help="target HF repo name (default: <id>-coreai)")
+    p_new.add_argument("--repo-name",
+                       help="target HF repo name (default: <UpstreamModelName>-CoreAI)")
+    p_new.add_argument("--collection", default="CoreAI · Apple on-device",
+                       help="HF Collection title (under the namespace) to add the "
+                       "published model to, grouping your CoreAI work "
+                       "(default: 'CoreAI · Apple on-device'; pass '' to disable)")
     p_new.add_argument("--tool", default="coreai-fabric-llm-export",
                        help="converter executable (default: coreai-fabric-llm-export, "
                        "fabric's verified driver over coreai-torch; Apple's "

@@ -204,6 +204,10 @@ def cmd_new(args) -> int:
             # `<UpstreamModelName>-CoreAI` (e.g. Qwen3-0.6B-CoreAI) so a
             # personal repo and its community mirror share one clean name.
             "repo_name": args.repo_name or f"{hf_repo.split('/', 1)[1]}-CoreAI",
+            # Group every fabric conversion into one namespace Collection so a
+            # publisher's CoreAI work is organized and separated from the rest.
+            # Omitted entirely when disabled (--collection '') to satisfy schema.
+            **({"collection": args.collection} if (args.collection or "").strip() else {}),
         },
     }
 

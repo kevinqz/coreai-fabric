@@ -167,11 +167,17 @@ honest unit, fabric standardizes:
 - **Consistent tags:** `coreai`, `core-ai`, `coreai-fabric`, `aimodel`, `apple`,
   `apple-silicon`, `on-device`, the `bundle_kind` (`llm`/`asr`/`vlm`/…), and the
   quantization (`4bit`) — findable by exactly what it is. `library_name: coreai`.
+- **HF Collection (in-namespace organization):** on `publish`, fabric adds the
+  model to a Collection under your namespace (`publish.collection`, default
+  `CoreAI · Apple on-device`) — idempotently, creating it if needed. HF
+  namespaces are flat, so a Collection is the native way to **separate your
+  CoreAI work from the rest of your repos** and give it one curated landing
+  page. Disable per recipe by removing the field, or globally with
+  `--collection ''` at scaffold time.
 - **The catalog is the neutral index** that ties the three identities together:
   upstream (provenance) → your namespace (source of truth) → community mirror
   (distribution). One entry, three links, no ambiguity about who made what.
 
-Two things fabric does NOT do for you (HF-account actions): **HF Collections**
-— group your CoreAI repos into a Collection per capability ("CoreAI LLMs",
-"CoreAI ASR") for a clean landing page — and the **mirror push** itself. Both
-are one-time clicks/API calls under your account.
+The one thing fabric does NOT do for you: the **mirror push** into
+`coreai-community` — that is a one-time duplicate/API call under your account,
+after you've joined the org.

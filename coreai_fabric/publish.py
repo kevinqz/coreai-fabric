@@ -72,6 +72,21 @@ def render_model_card(root: Path, recipe, manifest: dict, report: dict) -> str:
     )
 
 
+def _add_to_collection(api, namespace: str, title: str, repo_id: str) -> str | None:
+    """Ensure a namespace Collection exists and add the published repo to it.
+
+    Best-effort by design: the model is already uploaded when this runs, so a
+    Collections hiccup (permissions, API) warns and returns None rather than
+    failing a completed publish. Idempotent via exists_ok on both calls."""
+    try:
+        coll = api.create_collection(title=title, namespace=namespace, exists_ok=True)
+        api.add_collection_item(coll.slug, item_id=repo_id, item_type="model", exists_ok=True)
+        return f"https://huggingface.co/collections/{coll.slug}"
+    except Exception as exc:  # noqa: BLE001 — a completed upload must not fail on this
+        warn(f"published, but could not add to collection {title!r}: {exc}")
+        return None
+
+
 def cmd_publish(args) -> int:
     root = find_root()
     recipe = find_recipe(args.id, root)
@@ -164,6 +179,17 @@ def cmd_publish(args) -> int:
         commit_message=f"coreai-fabric publish {recipe.id}: card + reports",
     )
     revision = getattr(info, "oid", None) or api.model_info(repo_id).sha
+
+    # Organize within the namespace: drop the model into a Collection so a
+    # publisher's CoreAI work is grouped and separated from the rest of their
+    # HF repos (HF namespaces are flat; Collections are the native grouping).
+    collection_title = publish_cfg.get("collection")
+    if collection_title:
+        url = _add_to_collection(
+            api, publish_cfg["hf_target_namespace"], collection_title, repo_id
+        )
+        if url:
+            ok(f"added to collection '{collection_title}': {url}")
 
     recipe.data["published"] = {
         "hf_repo": repo_id,

@@ -165,6 +165,11 @@
           "type": "string",
           "minLength": 1,
           "description": "Target HF repo name for the published artifact."
+        },
+        "collection": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional HF Collection title under the namespace to add the published model to (idempotent, exists_ok). Groups a publisher's CoreAI work — HF namespaces are flat, so Collections are the native way to separate/organize. e.g. `CoreAI · Apple on-device`."
         }
       }
     },

@@ -35,6 +35,7 @@ parity:
 publish:
   hf_target_namespace: kevinqz
   repo_name: Qwen3-4B-CoreAI
+  collection: CoreAI · Apple on-device
 catalog:
   name: Qwen3-4B (fabric)
   family: Qwen3-4B
