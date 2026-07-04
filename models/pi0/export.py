@@ -48,6 +48,20 @@ N_LAYERS, KV_HEADS, HEAD_DIM = 18, 1, 256                    # gemma_2b prefix c
 import contextlib
 
 
+def _safe_make_att_2d_masks(pad_masks, att_masks):
+    """Bool-mul-free make_att_2d_masks. The upstream does `pad_masks * pad_masks` on BOOL
+    tensors — it lowers, but the coreai runtime has no bool `mul` kernel (KernelError
+    unsupportedType bool at inference). Recompute with int32 mul + a comparison (supported
+    kernels); identical result (a bool 2-D attention mask). Used by BOTH encode (the wrapper)
+    and denoise (denoise_step calls it internally), so it is monkeypatched module-wide."""
+    import torch
+    cumsum = torch.cumsum(att_masks, dim=1)
+    att_2d = (cumsum[:, None, :] <= cumsum[:, :, None]).to(torch.int32)
+    pad = pad_masks.to(torch.int32)
+    pad_2d = pad[:, None, :] * pad[:, :, None]
+    return (att_2d * pad_2d) > 0                      # int mul + compare -> bool, no bool mul/and
+
+
 @contextlib.contextmanager
 def no_deepcopy():
     """denoise_step deepcopies the KV cache internally (lerobot ~:918); deepcopy fails
@@ -121,7 +135,11 @@ def _load_policy(fp16: bool = False):
 def _build_wrappers(fp16: bool = False):
     """venv-A only. Returns (encode_module, denoise_module, dummy_args_dict)."""
     import torch
-    from lerobot.policies.pi0.modeling_pi0 import make_att_2d_masks
+    from lerobot.policies.pi0 import modeling_pi0 as _mp
+
+    # Install the bool-mul-free mask builder module-wide: the encode wrapper calls it below
+    # AND denoise_step calls the module global internally — both must avoid the bool `mul`.
+    _mp.make_att_2d_masks = _safe_make_att_2d_masks
 
     policy = _load_policy(fp16=fp16)
     m = policy.model  # PI0Pytorch
@@ -130,7 +148,7 @@ def _build_wrappers(fp16: bool = False):
         def forward(self, img0, img1, img2, imask0, imask1, imask2, lang_tokens, lang_masks):
             pe, ppad, patt = m.embed_prefix([img0, img1, img2], [imask0, imask1, imask2],
                                             lang_tokens, lang_masks)
-            att2d = make_att_2d_masks(ppad, patt)
+            att2d = _safe_make_att_2d_masks(ppad, patt)
             pos = torch.cumsum(ppad, 1) - 1
             att4d = m._prepare_attention_masks_4d(att2d)
             _, pkv = m.paligemma_with_expert.forward(

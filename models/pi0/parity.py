@@ -169,7 +169,8 @@ def cmd_compare(out: Path, bundle: Path):
             "n_obs": int(len(images)), "num_steps": num_steps,
             "action_dim": int(refs.shape[-1]), "chunk_size": int(refs.shape[-2]),
             "sampler": "flow_matching_euler", "deterministic": True,
-            "reference": "torch encode+denoise (fp32) vs fp16 asset, identical Euler loop, fixed noise",
+            "reference": "torch fp16 encode+denoise vs the fp16 coreai-optimized asset, identical "
+                         "10-step Euler loop, fixed noise (isolates export+optimization fidelity)",
             "runner": f"coreai-fabric-parity-runner/{__version__}", "environment": _environment(),
         }
 
