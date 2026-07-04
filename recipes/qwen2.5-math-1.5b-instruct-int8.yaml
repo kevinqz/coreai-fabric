@@ -1,0 +1,68 @@
+id: qwen2.5-math-1.5b-instruct-int8
+upstream:
+  hf_repo: Qwen/Qwen2.5-Math-1.5B-Instruct
+  revision: aafeb0fc6f22cbf0eaeed126eff8be45b0360a35
+  license: apache-2.0
+  license_terms: permissive
+  pipeline_tag: text-generation
+  size_bytes: 3087467144
+conversion:
+  tool: coreai.llm.export
+  compression_config: quant/int8_absmax_perblock32.yaml
+  args:
+    platform: macOS
+  quantization: int8
+  precision: float16
+expected:
+  bundle_files:
+  - metadata.json
+  - main.mlirb
+  - main.hash
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: greedy_parity
+    threshold: 0.9
+    tolerance: 0.05
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: Qwen2.5-Math-1.5B-Instruct-CoreAI
+  variant: int8
+  collection: CoreAI · Apple on-device
+catalog:
+  name: Qwen2.5-Math 1.5B Instruct (fabric, int8)
+  family: Qwen
+  bundle_kind: llm
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: true
+    custom_kernel: false
+    patch_required: false
+    aot_required: false
+  capabilities:
+  - text-generation
+  - reasoning
+  modalities:
+    input:
+    - text
+    output:
+    - text
+  architecture: transformer
+  runner: CoreAIRunner
+  tokenizer_required: true
+  processor_required: false
+status: published
+notes: int8 high-fidelity variant via the int8 absmax/per-block-32 config (quant/int8_absmax_perblock32.yaml).
+  The int8 lane measured ~lossless on Qwen3-0.6B; PARITY ON THIS MODEL IS NOT YET MEASURED
+  — run convert then verify (greedy_parity vs the fp16 reference) before publishing. fabric
+  never fakes a parity number.
+published:
+  hf_repo: kevinqz/Qwen2.5-Math-1.5B-Instruct-CoreAI
+  revision: af307590416053f922f67ebb4d85ff8e2e33c7f6
+  date: '2026-07-04'
