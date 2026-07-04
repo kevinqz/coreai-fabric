@@ -66,12 +66,7 @@ A complete, buildable example lives at
 
 - **Gate A (structure): {gate_a_status}** — the bundle's layout + metadata were
   validated on real hardware (Apple Silicon); the asset loads and generates.
-- **Gate B (numeric accuracy): {gate_b_status}.** This is pending *upstream*, not
-  skipped: the correct metric for a quantized asset is task accuracy
-  (`{gate_b_metric}`), and the only conforming evaluator — Apple's
-  `coreai.llm.eval` — is a stub in coreai-models 0.1.0 ("Evaluation support is
-  coming soon") that cannot score a stateful KV-cache asset. It will be filled
-  in when Apple ships their evaluator. fabric never fakes a parity number.
+{evaluation_block}
 - **Runtime throughput (tok/s):** to be published once measured on the on-device
   (macOS/iOS 27) Swift runtime. Not estimated — real numbers or none.
 

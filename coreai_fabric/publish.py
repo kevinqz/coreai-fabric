@@ -193,6 +193,38 @@ def render_model_card(root: Path, recipe, manifest: dict, report: dict,
     ]
     facts_block = "".join(f"| {k} | {v} |\n" for k, v in facts_rows)
 
+    # ---- Evaluation block: real greedy-parity when measured, honest pending otherwise ----
+    gb = report.get("gate_b", {})
+    if gb.get("metric") == "greedy_parity" and isinstance(gb.get("value"), (int, float)):
+        matched, compared = gb.get("matched"), gb.get("compared")
+        pct = round(100 * gb["value"], 1)
+        env = gb.get("environment", {})
+        dev = env.get("chip") or "Apple Silicon"
+        frac = f"{matched}/{compared} " if matched is not None and compared is not None else ""
+        evaluation_block = (
+            f"- **Gate B — greedy fidelity vs fp32: {frac}({pct}%) token-exact.** "
+            "Per-token greedy argmax agreement with the fp32 reference (raw argmax, "
+            f"teacher-forced), measured on-device ({dev}, macOS {env.get('os','').replace('macOS ','')}). "
+            "This is *fidelity to the reference*, not a quality verdict — a quantized "
+            "asset makes some different-but-often-valid greedy choices, and the output "
+            "stays coherent. Reproduce with `coreai-fabric verify` + the parity runner "
+            "(see `parity-report.json`)."
+        )
+        sm = gb.get("sample")
+        if sm and sm.get("prompt"):
+            evaluation_block += (
+                f"\n  - Sample — prompt `{sm['prompt']}` → asset: "
+                f"`{sm.get('asset_argmax','').strip()}`"
+            )
+    else:
+        evaluation_block = (
+            f"- **Gate B (numeric accuracy): {gb.get('status', 'not_run')}.** Task-accuracy "
+            "evaluation (e.g. tinyMMLU) is pending *upstream*: Apple's `coreai.llm.eval` is a "
+            "stub in coreai-models 0.1.0 that cannot score a stateful KV-cache asset. Greedy "
+            "fidelity vs fp32 can be measured on-device via the parity runner. fabric never "
+            "fakes a parity number."
+        )
+
     # ---- Attribution (Apache-2.0 §4(b)/(c)) ----
     holder = copyright_holder or upstream.get("copyright_holder")
     attribution = (
@@ -226,6 +258,7 @@ def render_model_card(root: Path, recipe, manifest: dict, report: dict,
         mirror_line=mirror_line,
         facts_block=facts_block,
         min_os=min_os_str,
+        evaluation_block=evaluation_block,
         attribution=attribution,
         collection_link=collection_link,
         recipe_url=f"{FABRIC_REPO_URL}/blob/main/recipes/{recipe.id}.yaml",
