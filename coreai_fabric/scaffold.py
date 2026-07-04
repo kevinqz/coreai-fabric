@@ -156,15 +156,27 @@ def cmd_new(args) -> int:
         err("--apple-registry-name is only valid with --tool coreai.llm.export "
             "(it selects an Apple model-registry preset for the production exporter)")
         return 1
-    production = bool(registry_name) and args.tool == "coreai.llm.export"
+    # G2: `--variant int8` scaffolds the VERIFIED lane (the int8 absmax/per-block
+    # compression config that measured ~lossless on Qwen3-0.6B) instead of Apple's
+    # lossy 4bit preset — the SotA default for an LLM. It's the production path
+    # too (greedy_parity Gate B), so treat it like the registry path for gating.
+    int8 = getattr(args, "variant", None) == "int8"
+    if int8 and args.tool != "coreai.llm.export":
+        err("--variant int8 is only valid with --tool coreai.llm.export (the int8 LLM lane)")
+        return 1
+    if int8 and registry_name:
+        err("--variant int8 uses the int8 compression config, not an Apple 4bit preset — "
+            "drop --apple-registry-name")
+        return 1
+    production = (bool(registry_name) or int8) and args.tool == "coreai.llm.export"
 
     # On the production path, quantization is documentation-only (the preset
     # wins) but register copies it verbatim into the catalog — so a stale
     # `none` would advertise a 4bit asset as unquantized. Resolve the real
     # value from the registry when the toolchain is present; otherwise keep the
     # requested value and warn loudly rather than ship a wrong number.
-    quantization = args.quantization
-    if production:
+    quantization = "int8" if int8 else args.quantization
+    if production and registry_name:
         resolved = preset_compression(registry_name, args.platform)
         if resolved:
             quantization = resolved
@@ -210,7 +222,10 @@ def cmd_new(args) -> int:
             "tool": args.tool,
             # Production path: the registry short-name makes convert drive
             # `coreai.llm.export <short-name>` so Apple's tested preset resolves.
-            **({"apple_registry_name": registry_name} if production else {}),
+            **({"apple_registry_name": registry_name} if (production and not int8) else {}),
+            # int8 lane: the compression config drives the raw-id --experimental
+            # export (the ~lossless tier), not a registry preset.
+            **({"compression_config": "quant/int8_absmax_perblock32.yaml"} if int8 else {}),
             # min_tool_version is set after the first successful conversion —
             # never scaffolded (fabric does not guess toolchain versions).
             "args": {"platform": args.platform},
@@ -238,6 +253,8 @@ def cmd_new(args) -> int:
             # `<UpstreamModelName>-CoreAI` (e.g. Qwen3-0.6B-CoreAI) so a
             # personal repo and its community mirror share one clean name.
             "repo_name": args.repo_name or f"{hf_repo.split('/', 1)[1]}-CoreAI",
+            # int8 lands as the `int8/` tier of the shared repo (int4 can join later).
+            **({"variant": "int8"} if int8 else {}),
             # Group every fabric conversion into one namespace Collection so a
             # publisher's CoreAI work is organized and separated from the rest.
             # Omitted entirely when disabled (--collection '') to satisfy schema.
@@ -257,6 +274,14 @@ def cmd_new(args) -> int:
     data["status"] = "draft"
     if args.notes:
         data["notes"] = args.notes
+    elif int8:
+        data["notes"] = (
+            "int8 high-fidelity variant via the int8 absmax/per-block-32 config "
+            "(quant/int8_absmax_perblock32.yaml). The int8 lane measured ~lossless on "
+            "Qwen3-0.6B; PARITY ON THIS MODEL IS NOT YET MEASURED — run convert then "
+            "verify (greedy_parity vs the fp16 reference) before publishing. fabric "
+            "never fakes a parity number."
+        )
 
     header = (
         f"# coreai-fabric recipe — scaffolded by `coreai-fabric new {hf_repo}` on {today()}\n"

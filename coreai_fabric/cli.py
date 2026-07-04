@@ -140,6 +140,12 @@ def build_parser() -> argparse.ArgumentParser:
                        "makes convert drive `coreai.llm.export <short-name>` so "
                        "Apple's TESTED compression preset resolves (the KV-cache "
                        "chat asset). precision/quantization then document the preset.")
+    p_new.add_argument("--variant", choices=["int8"],
+                       help="scaffold the VERIFIED int8 lane (the absmax/per-block-32 "
+                       "compression config that measured ~lossless on Qwen3-0.6B) instead "
+                       "of Apple's lossy 4bit preset — the SotA default for an LLM. Only "
+                       "with --tool coreai.llm.export; drop --apple-registry-name. Lands "
+                       "as the int8/ tier and defaults gate_b to greedy_parity.")
     p_new.add_argument("--precision", default="float16",
                        help="passed as --compute-precision (verified vocabulary: "
                        "float16, bfloat16, float32)")

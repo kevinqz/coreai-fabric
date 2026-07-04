@@ -87,6 +87,38 @@ def test_scaffolded_production_recipe_is_schema_valid(tmp_path, monkeypatch):
     assert "aot_required" not in cat  # it lives INSIDE runtime_facts now
 
 
+def test_variant_int8_scaffolds_the_verified_lane(tmp_path, monkeypatch):
+    # G2: --variant int8 scaffolds the compression-config lane (the ~lossless
+    # tier), not Apple's 4bit preset — the SotA default for an LLM, schema-valid,
+    # and honest that parity on THIS model is unmeasured.
+    rc = _run_new(tmp_path, monkeypatch, [
+        "Qwen/Qwen3-8B", "--offline", "--license", "apache-2.0",
+        "--pipeline-tag", "text-generation", "--tool", "coreai.llm.export",
+        "--variant", "int8", "--id", "qwen3-8b-int8",
+    ])
+    assert rc == 0
+    data = yaml.safe_load((tmp_path / "recipes" / "qwen3-8b-int8.yaml").read_text())
+    conv = data["conversion"]
+    assert conv["compression_config"] == "quant/int8_absmax_perblock32.yaml"
+    assert "apple_registry_name" not in conv          # NOT Apple's 4bit preset
+    assert conv["quantization"] == "int8"
+    assert data["publish"]["variant"] == "int8"
+    assert data["parity"]["gate_b"]["metric"] == "greedy_parity"
+    assert "NOT YET MEASURED" in data["notes"]         # honest on this model
+    errors = [e.message for e in Draft202012Validator(RECIPE_SCHEMA).iter_errors(data)]
+    assert errors == [], f"int8-variant recipe fails schema: {errors}"
+
+
+def test_variant_int8_rejects_apple_registry_name(tmp_path, monkeypatch):
+    # Mutually exclusive: int8 is the compression-config lane, not a preset.
+    rc = _run_new(tmp_path, monkeypatch, [
+        "Qwen/Qwen3-8B", "--offline", "--license", "apache-2.0",
+        "--pipeline-tag", "text-generation", "--tool", "coreai.llm.export",
+        "--variant", "int8", "--apple-registry-name", "qwen3-8b", "--id", "qwen3-8b-x",
+    ])
+    assert rc == 1
+
+
 def test_parse_preset_compression_reads_real_value():
     # The production quantization must come from the preset, not the scaffolder
     # default — a 4bit preset advertised as `none` would misreport in the catalog.
