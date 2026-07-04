@@ -1,0 +1,86 @@
+id: pi0-base
+upstream:
+  hf_repo: lerobot/pi0
+  revision: e4ed526af508e58f6008b29e9e48f1098278fdb5
+  license: apache-2.0
+  license_terms: permissive
+  pipeline_tag: robotics
+  size_bytes: 14000000000
+conversion:
+  # Per-model export script (like da3-small): fabric records + prints the manual
+  # invocation; it does NOT auto-drive it. pi0 is a VLA — NOT a coreai.llm.export
+  # arch — so it needs the custom torch.export -> coreai_torch split-export path.
+  tool: models/pi0/export.py
+  precision: float16
+  quantization: none
+  action:
+    embodiment: generalist_multi_robot
+    robot_required: true
+    action_space:
+      dim: 32
+      max_action_dim: 32
+      max_state_dim: 32
+      chunk_size: 50
+      convention: per_embodiment_joint_space
+    sampling:
+      kind: flow_matching
+      num_steps: 10
+      solver: euler
+    normalization:
+      stats_source: "policy_preprocessor.json + policy_postprocessor.json (upstream); ships as norm_stats.json sidecar"
+    graphs:
+      - name: encode
+      - name: denoise_step
+expected:
+  bundle_files:
+    - metadata.json
+    - encode/main.mlirb
+    - encode/main.hash
+    - denoise_step/main.mlirb
+    - denoise_step/main.hash
+    - norm_stats.json
+parity:
+  gate_a:
+    checks: [bundle_files_present, metadata_json_parses, metadata_matches_recipe]
+  gate_b:
+    metric: action_parity
+    threshold: 0.999
+    tolerance: 0.001
+    max_action_mae: 0.05
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: Pi0-CoreAI
+  collection: CoreAI · Apple on-device
+catalog:
+  name: Pi0 (fabric)
+  family: LeRobot
+  bundle_kind: action
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: false
+    custom_kernel: false
+    patch_required: true
+    aot_required: false
+  capabilities:
+    - vision-language-action
+    - robotics
+  modalities:
+    input: [image, text, state]
+    output: [action]
+  parameters: 3.3B
+  architecture: transformer
+  runner: CoreAIRunner
+  tokenizer_required: true
+  processor_required: true
+status: draft
+notes: 'pi0 VLA policy (lerobot/pi0, apache-2.0 — the clean one; pi0_base/pi05_base are Gemma-gated).
+  A flow-matching vision-language-action policy: 3 cameras (224x224) + proprioceptive state (padded
+  to 32) + language instruction -> a 50-step action chunk (32 dims padded), via a fixed 10-step
+  Euler flow-matching sampler. Split-export: encode (VLM prefix, run once) + denoise_step (action
+  expert, host drives 10x). Generalist BASE checkpoint — needs a matching robot embodiment to
+  actuate and fine-tuning for useful behavior; the output is inert without the robot. Gate B =
+  action_parity vs the torch reference on a pi0-compatible recorded dataset (fixed noise) — NOT
+  YET MEASURED (needs the export path + the action_parity runner). Draft: no conversion has been
+  run. The export is UNCERTAIN (SigLIP/PaliGemma vision tower op coverage in coremltools beta).'

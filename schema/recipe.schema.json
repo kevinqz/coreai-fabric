@@ -186,6 +186,11 @@
               "minimum": 0,
               "description": "Allowed slack below threshold before hard failure."
             },
+            "max_action_mae": {
+              "type": "number",
+              "minimum": 0,
+              "description": "action_parity only: additionally require the worst per-dimension normalized action MAE (max over dims and samples) to stay <= this. A second, complementary guard to the chunk-cosine threshold."
+            },
             "greedy_token_exact": {
               "type": "boolean",
               "description": "LLMs only: additionally require greedy-decoded tokens to match the upstream exactly."

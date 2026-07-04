@@ -65,10 +65,9 @@ catalog:
   tokenizer_required: true
   processor_required: false
 status: draft
-notes: 'int8 high-fidelity variant of qwen2.5-1.5b-instruct — Qwen2.5-1.5B-Instruct converted
-  with the int8 absmax/per-block-32 config (quant/int8_absmax_perblock32.yaml) instead of
-  Apple''s 4bit registry preset. The int8 lane measured ~lossless on Qwen3-0.6B (95.8% argmax
-  / 100% top-5 vs the int4 sibling''s 79%). PARITY ON THIS MODEL IS NOT YET MEASURED — run
-  `coreai-fabric convert` then `verify` (greedy_parity vs the fp16 reference) BEFORE publishing;
-  fabric never fakes a parity number. Draft: no conversion has been run for this recipe yet.
-  Publishes into the Qwen2.5-1.5B-Instruct-CoreAI repo as the int8/ tier.'
+notes: 'int8 high-fidelity variant of qwen2.5-1.5b-instruct — Qwen2.5-1.5B-Instruct converted with the
+  int8 absmax/per-block-32 config (quant/int8_absmax_perblock32.yaml) instead of Apple''s 4bit registry
+  preset. The int8 lane measured ~lossless on Qwen3-0.6B (95.8% argmax / 100% top-5 vs the int4 sibling''s
+  79%). PARITY ON THIS MODEL IS NOT YET MEASURED — run `coreai-fabric convert` then `verify` (greedy_parity
+  vs the fp16 reference) BEFORE publishing; fabric never fakes a parity number. Draft: no conversion has
+  been run for this recipe yet. Publishes into the Qwen2.5-1.5B-Instruct-CoreAI repo as the int8/ tier.'
