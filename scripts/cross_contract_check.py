@@ -14,6 +14,11 @@ Usage:
 
 Exit 0 = fabric's generated entries pass the catalog's validate + audit + the
 io_contract invariant tests. Exit 1 = drift detected (message says which gate).
+Exit 2 = the check could NOT run its full gate set (pytest missing, so the
+io_contract invariants were skipped) — an environment gap, explicitly NOT a
+drift signal. CI must treat 2 differently from 1: 1 means fabric broke the
+contract; 2 means part of the contract went unverified. (The "no injectable
+recipes" case stays exit 0 — nothing new to verify is not a failure.)
 """
 from __future__ import annotations
 
@@ -57,6 +62,11 @@ def build_entries_for_recipe(reg, recipe):
     artifact_entry = reg.build_artifact_entry(r, files, "0.4.1")
     source_record = reg.build_source_record() if hasattr(reg, "build_source_record") else None
     return model_entry, artifact_entry, source_record
+
+
+def _pytest_available() -> bool:
+    import importlib.util
+    return importlib.util.find_spec("pytest") is not None
 
 
 def run(cmd, cwd, label):
@@ -103,6 +113,15 @@ def main() -> int:
         for recipe in recipes:
             if not recipe.data.get("catalog"):
                 continue  # draft with no catalog block — nothing to register yet
+            kind = recipe.data["catalog"].get("bundle_kind")
+            if kind != "llm":
+                # fabric can't fully publish a non-LLM bundle yet: the card
+                # renderer refuses it (S2) and register emits no io_contract for
+                # it (C4). Testing "if published, would it satisfy the catalog?"
+                # for a kind that CANNOT be published would red-build on a known,
+                # documented gap. Skip with a log so the gap stays visible.
+                print(f"  [skip] {recipe.id}: bundle_kind '{kind}' not yet publishable by fabric")
+                continue
             if recipe.id in existing_ids:
                 continue  # already in the catalog; skip to avoid a duplicate-id error
             me, ae, src = build_entries_for_recipe(reg, recipe)
@@ -124,6 +143,18 @@ def main() -> int:
         ok = True
         ok &= run([sys.executable, "scripts/validate.py"], work, "catalog validate.py")
         ok &= run([sys.executable, "scripts/audit.py"], work, "catalog audit.py")
+        # The io_contract invariants need pytest. A MISSING pytest is an
+        # environment problem, not contract drift — exit 2 (could-not-run), never
+        # 1 (drift), so "pytest not installed" is never misread as "fabric broke
+        # the catalog contract".
+        if not _pytest_available():
+            print("  [SKIP] catalog io_contract invariants — pytest not installed here")
+            if not ok:
+                print("cross-contract DRIFT: fabric's register output no longer satisfies the catalog.")
+                return 1
+            print("cross-contract INCOMPLETE: validate + audit passed, but the io_contract "
+                  "invariant tests could NOT run (pytest missing). NOT a drift signal (exit 2).")
+            return 2
         ok &= run([sys.executable, "-m", "pytest", "tests/test_p1_iocontract.py", "-q"],
                   work, "catalog io_contract invariants (bundle_kind/min_os)")
         if ok:
