@@ -27,18 +27,17 @@ conversion:
       num_steps: 10
       solver: euler
     normalization:
-      stats_source: "policy_preprocessor.json + policy_postprocessor.json (upstream); ships as norm_stats.json sidecar"
+      stats_source: "policy_preprocessor.json + policy_postprocessor.json (upstream); the split
+        graphs operate in the policy's normalized action space — the host un-normalizes with the
+        upstream processor stats. parity is measured in normalized space (analog of pre-detok logits)"
     graphs:
       - name: encode
       - name: denoise_step
 expected:
   bundle_files:
     - metadata.json
-    - encode/main.mlirb
-    - encode/main.hash
-    - denoise_step/main.mlirb
-    - denoise_step/main.hash
-    - norm_stats.json
+    - main.mlirb
+    - main.hash
 parity:
   gate_a:
     checks: [bundle_files_present, metadata_json_parses, metadata_matches_recipe]

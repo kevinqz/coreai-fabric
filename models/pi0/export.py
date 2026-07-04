@@ -63,25 +63,54 @@ def no_deepcopy():
         _copy.deepcopy = orig
 
 
-def _build_wrappers():
-    """venv-A only. Returns (encode_module, denoise_module, dummy_args_dict).
+# lerobot 0.5.1's PI0Config REJECTS these checkpoint fields (older-pi0 config drift).
+# All 8 are vestigial/runtime — grep-verified UNUSED in 0.5.1's pi0 code — so stripping
+# them keeps the architecture 0.5.1 builds identical to the checkpoint's state_dict.
+_DRIFT_FIELDS = ("num_steps", "proj_width", "attention_implementation", "train_state_proj",
+                 "resize_imgs_with_padding", "adapt_to_pi_aloha",
+                 "use_delta_joint_actions_aloha", "use_cache")
 
-    PI0_RANDOM_INIT=1 builds the policy from config with RANDOM weights (no 14GB
-    download) — the architecture (SigLIP + Gemma + expert) is constructed from
-    config alone, so this exercises full op-coverage for the probe while the real
-    weights download separately. PI0_CONFIG_DIR points at a dir with config.json.
-    """
+
+def _load_pi0_config(cfg_dir: str):
+    """Load the pi0 config, stripping the 8 drift fields into a temp dir so
+    PreTrainedConfig's strict draccus decode accepts it (dispatches on type: pi0)."""
+    import json
+    import tempfile
+    from pathlib import Path as _P
+    import lerobot.policies.pi0.modeling_pi0  # noqa: F401 — registers the 'pi0' draccus choice class
+    from lerobot.configs.policies import PreTrainedConfig
+    raw = json.loads((_P(cfg_dir) / "config.json").read_text())
+    stripped = {k: v for k, v in raw.items() if k not in _DRIFT_FIELDS}
+    tmp = _P(tempfile.mkdtemp(prefix="pi0cfg_"))
+    (tmp / "config.json").write_text(json.dumps(stripped))
+    return PreTrainedConfig.from_pretrained(str(tmp), local_files_only=True)
+
+
+def _load_policy(fp16: bool = False):
+    """venv-A. PI0_RANDOM_INIT=1 -> random weights from config (no download, op-coverage).
+    Else load REAL weights from PI0_CONFIG_DIR (a local mirror) with the drift-stripped
+    config passed in, so from_pretrained skips its own strict config parse."""
     import os
-    import torch
-    from lerobot.policies.pi0.modeling_pi0 import PI0Policy, make_att_2d_masks
-
+    from lerobot.policies.pi0.modeling_pi0 import PI0Policy
+    cfg_dir = os.environ.get("PI0_CONFIG_DIR", "build/_hf_mirror/pi0")
+    cfg = _load_pi0_config(cfg_dir)
     if os.environ.get("PI0_RANDOM_INIT") == "1":
-        from lerobot.configs.policies import PreTrainedConfig
-        cfg_dir = os.environ.get("PI0_CONFIG_DIR", "build/_hf_mirror/pi0")
-        cfg = PreTrainedConfig.from_pretrained(cfg_dir, local_files_only=True)  # dispatches on type: pi0
-        policy = PI0Policy(cfg).eval()   # random weights, no download — op-coverage only
+        policy = PI0Policy(cfg).eval()                      # random weights — op-coverage only
     else:
-        policy = PI0Policy.from_pretrained("lerobot/pi0").eval()
+        # Pass the stripped config in so from_pretrained loads the real state_dict from
+        # the local mirror without re-parsing (and rejecting) the drifted config.json.
+        policy = PI0Policy.from_pretrained(cfg_dir, config=cfg, local_files_only=True).eval()
+    if fp16:
+        policy = policy.half()
+    return policy
+
+
+def _build_wrappers(fp16: bool = False):
+    """venv-A only. Returns (encode_module, denoise_module, dummy_args_dict)."""
+    import torch
+    from lerobot.policies.pi0.modeling_pi0 import make_att_2d_masks
+
+    policy = _load_policy(fp16=fp16)
     m = policy.model  # PI0Pytorch
 
     class EncodeWrapper(torch.nn.Module):
@@ -106,12 +135,13 @@ def _build_wrappers():
                                   past_key_values=pkv, x_t=x_t, timestep=timestep)
 
     import torch as _t
+    fd = _t.float16 if fp16 else _t.float32   # float example inputs must match the model dtype
     d = dict(
-        img=_t.zeros(1, 3, 224, 224), imask=_t.ones(1, dtype=_t.bool),
+        img=_t.zeros(1, 3, 224, 224, dtype=fd), imask=_t.ones(1, dtype=_t.bool),
         tok=_t.zeros(1, TOK, dtype=_t.long), lmask=_t.ones(1, TOK, dtype=_t.bool),
-        state=_t.zeros(1, STATE_DIM), ppad=_t.ones(1, PREFIX_LEN, dtype=_t.bool),
-        xt=_t.zeros(1, CHUNK, ACT_DIM), t=_t.zeros(1),
-        cache=tuple(_t.zeros(1, KV_HEADS, PREFIX_LEN, HEAD_DIM) for _ in range(2 * N_LAYERS)),
+        state=_t.zeros(1, STATE_DIM, dtype=fd), ppad=_t.ones(1, PREFIX_LEN, dtype=_t.bool),
+        xt=_t.zeros(1, CHUNK, ACT_DIM, dtype=fd), t=_t.zeros(1, dtype=fd),
+        cache=tuple(_t.zeros(1, KV_HEADS, PREFIX_LEN, HEAD_DIM, dtype=fd) for _ in range(2 * N_LAYERS)),
     )
     return EncodeWrapper().eval(), DenoiseWrapper().eval(), d
 
@@ -132,40 +162,68 @@ def _unflatten_cache(tensors):
     return DynamicCache(legacy)   # transformers 5.x: ctor takes the per-layer (k,v) iterable
 
 
-def cmd_export(out: Path):
-    """venv-A: trace both graphs -> .pt2 (serialized, torch 2.9 -> loads unchanged in venv-B)."""
+#: consistent tensor names across the encode->denoise KV-cache boundary + the .aimodel I/O.
+_CACHE_NAMES = [f"cache_{i}" for i in range(2 * N_LAYERS)]         # 36 = k,v per 18 layers
+_ENC_INPUTS = ["img0", "img1", "img2", "imask0", "imask1", "imask2", "lang_tokens", "lang_masks"]
+_ENC_OUTPUTS = ["prefix_pad_masks", *_CACHE_NAMES]
+_DEN_INPUTS = ["state", "prefix_pad_masks", "x_t", "timestep", *_CACHE_NAMES]
+_DEN_OUTPUTS = ["velocity"]
+
+
+def cmd_export(out: Path, fp16: bool = True, free_weights: bool = False):
+    """venv-A: trace both graphs -> .pt2. fp16 halves the ~11.7GB encode.pt2 (fits ~30GB disk).
+    free_weights deletes the 14GB safetensors right after load (model is in RAM) to make room."""
+    import os
     import torch
-    enc, den, d = _build_wrappers()
+    enc, den, d = _build_wrappers(fp16=fp16)
+    if free_weights:
+        sf = Path(os.environ.get("PI0_CONFIG_DIR", "build/_hf_mirror/pi0")) / "model.safetensors"
+        if sf.exists():
+            sf.unlink()
+            print(f"freed {sf} (model is resident in RAM) — {_disk_free_gb():.1f}GB free")
+    out.mkdir(parents=True, exist_ok=True)
     enc_ep = torch.export.export(
         enc, args=(d["img"], d["img"], d["img"], d["imask"], d["imask"], d["imask"],
                    d["tok"], d["lmask"]), strict=False)
-    den_ep = torch.export.export(
-        den, args=(d["state"], d["ppad"], d["xt"], d["t"], *d["cache"]), strict=False)
-    out.mkdir(parents=True, exist_ok=True)
     torch.export.save(enc_ep, str(out / "encode.pt2"))
+    del enc_ep
+    print(f"ok: wrote {out}/encode.pt2 ({'fp16' if fp16 else 'fp32'}, prefix_len={PREFIX_LEN}) — "
+          f"{_disk_free_gb():.1f}GB free")
+    with no_deepcopy():
+        den_ep = torch.export.export(
+            den, args=(d["state"], d["ppad"], d["xt"], d["t"], *d["cache"]), strict=False)
     torch.export.save(den_ep, str(out / "denoise_step.pt2"))
-    print(f"ok: wrote {out}/encode.pt2 + denoise_step.pt2 (prefix_len={PREFIX_LEN})")
+    print(f"ok: wrote {out}/denoise_step.pt2 — {_disk_free_gb():.1f}GB free")
     print("next (venv-B): .venv/bin/python models/pi0/export.py --lower --out", out)
 
 
-def cmd_lower(out: Path):
-    """venv-B (fabric .venv): load each .pt2 -> coreai_torch lower -> <graph>/main.aimodel.
+def _disk_free_gb() -> float:
+    import shutil
+    return shutil.disk_usage("/").free / 1e9
 
-    Mirrors drivers/llm_export.py:156-170 (run_decompositions -> TorchConverter
-    -> add_exported_program -> to_coreai -> optimize -> save_asset)."""
+
+def cmd_lower(out: Path):
+    """venv-B: load both .pt2 -> ONE .aimodel with encode + denoise_step entrypoints (the
+    action_parity split contract). Deletes each .pt2 after adding it, to stay under ~30GB disk."""
     import torch
     from coreai_torch import TorchConverter, get_decomp_table
-    for name, outs in (("encode", ["prefix_pad_masks", "keyCache", "valueCache"]),
-                       ("denoise_step", ["velocity"])):
+
+    def _load(name):
         ep = torch.export.load(str(out / f"{name}.pt2"))
-        ep = ep.run_decompositions(get_decomp_table())
-        conv = TorchConverter().add_exported_program(ep, output_names=outs)
-        prog = conv.to_coreai()
-        prog.optimize()
-        (out / name).mkdir(parents=True, exist_ok=True)
-        prog.save_asset(str(out / name / "main.aimodel"))
-        print(f"ok: lowered {name} -> {out/name}/main.*")
-    print("next: write metadata.json (num_steps=10) + norm_stats.json, then coreai-fabric verify")
+        return ep.run_decompositions(get_decomp_table())
+
+    conv = TorchConverter()
+    conv.add_exported_program(_load("encode"), input_names=_ENC_INPUTS,
+                              output_names=_ENC_OUTPUTS, entrypoint_name="encode")
+    conv.add_exported_program(_load("denoise_step"), input_names=_DEN_INPUTS,
+                              output_names=_DEN_OUTPUTS, entrypoint_name="denoise_step")
+    prog = conv.to_coreai()
+    prog.optimize()
+    aimodel = out / f"{out.name}.aimodel"
+    prog.save_asset(str(aimodel))
+    print(f"ok: lowered pi0 -> {aimodel} (entrypoints: encode, denoise_step) — "
+          f"{_disk_free_gb():.1f}GB free")
+    print("next: write norm_stats.json (from policy_pre/postprocessor), then models/pi0/parity.py")
 
 
 def main():
@@ -173,8 +231,14 @@ def main():
     ap.add_argument("phase", nargs="?", default="export", choices=["export"])
     ap.add_argument("--lower", action="store_true", help="venv-B: lower the .pt2s to .aimodel")
     ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument("--fp32", action="store_true", help="export fp32 (default fp16 to fit disk)")
+    ap.add_argument("--free-weights", action="store_true",
+                    help="delete model.safetensors after load to reclaim ~14GB disk")
     args = ap.parse_args()
-    cmd_lower(args.out) if args.lower else cmd_export(args.out)
+    if args.lower:
+        cmd_lower(args.out)
+    else:
+        cmd_export(args.out, fp16=not args.fp32, free_weights=args.free_weights)
 
 
 if __name__ == "__main__":
