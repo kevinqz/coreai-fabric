@@ -539,6 +539,48 @@ def cmd_publish(args) -> int:
     return 0
 
 
+def cmd_mirror(args) -> int:
+    """S3 — mirror a published, canonical repo into a distribution org
+    (default `coreai-community`), preserving your namespace as the source of
+    truth. This is the "mirror depois" step: your namespace owns the canonical
+    repo; the org copy is a discovery surface. Records publish.mirror_namespace
+    so the next register emits the machine-readable mirrors[] link."""
+    root = find_root()
+    recipe = find_recipe(args.id, root)
+    published = recipe.data.get("published")
+    if not published or not published.get("hf_repo"):
+        err(f"{recipe.id} has no published block — publish to your namespace first, then mirror")
+        return 1
+    source = published["hf_repo"]
+    repo_name = source.split("/", 1)[1]
+    target = f"{args.to}/{repo_name}"
+    if source == target:
+        err(f"source and target are the same repo ({source}) — nothing to mirror")
+        return 1
+    print(f"mirror: {source}  ->  {target}")
+    if args.dry_run:
+        print("  dry-run: would create the target repo (private→public), copy the bundle +")
+        print("  card + LICENSE + reports from the canonical repo, and record")
+        print(f"  publish.mirror_namespace: {args.to} so register emits the mirrors[] link.")
+        return 0
+    import tempfile
+
+    from huggingface_hub import HfApi, snapshot_download
+    api = HfApi()
+    api.create_repo(target, repo_type="model", private=True, exist_ok=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        local = snapshot_download(source, local_dir=tmp)
+        api.upload_folder(repo_id=target, folder_path=local,
+                          commit_message=f"Mirror of {source}")
+    _set_private(api, target, False)
+    ok(f"mirrored -> https://huggingface.co/{target}")
+    recipe.data.setdefault("publish", {})["mirror_namespace"] = args.to
+    write_yaml(recipe.path, recipe.data)
+    ok(f"recorded publish.mirror_namespace: {args.to} ({recipe.path.name})")
+    print(f"next: coreai-fabric register {recipe.id} --catalog-path <path>  # emits mirrors[]")
+    return 0
+
+
 def _catalog_clone() -> Path | None:
     """Clone or fast-forward the catalog into ~/.cache/coreai-fabric/catalog so
     `publish --and-register` works without an explicit --catalog-path."""

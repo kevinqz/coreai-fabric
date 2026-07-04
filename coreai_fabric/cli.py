@@ -201,6 +201,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_pub.add_argument("--catalog-path", help="path to a coreai-catalog clone for --and-register "
                        "(default: auto-clone into ~/.cache/coreai-fabric/catalog)")
 
+    p_mirror = sub.add_parser("mirror", help="mirror a published canonical repo into a distribution org (e.g. coreai-community)")
+    p_mirror.add_argument("id")
+    p_mirror.add_argument("--to", default="coreai-community",
+                          help="target org for the mirror (default: coreai-community). Your "
+                          "namespace stays the canonical source of truth.")
+    p_mirror.add_argument("--dry-run", action="store_true",
+                          help="print the source→target plan, copy nothing")
+
     p_reg = sub.add_parser("register", help="generate catalog entries and open a PR to kevinqz/coreai-catalog")
     p_reg.add_argument("id")
     p_reg.add_argument("--catalog-path", help="path to a coreai-catalog clone (schemas + PR staging)")
@@ -236,6 +244,10 @@ def main(argv: list[str] | None = None) -> int:
         from .publish import cmd_publish
 
         return cmd_publish(args)
+    if args.command == "mirror":
+        from .publish import cmd_mirror
+
+        return cmd_mirror(args)
     if args.command == "register":
         from .register import cmd_register
 

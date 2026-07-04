@@ -63,6 +63,28 @@ def test_card_never_advertises_an_unpublished_sibling_variant():
     assert "`int4/`" not in card
 
 
+def test_mirror_dry_run_plans_source_to_target(capsys):
+    # S3: mirror maps the published canonical repo to the org copy, source of
+    # truth preserved. Dry-run copies nothing.
+    from types import SimpleNamespace
+
+    from coreai_fabric.publish import cmd_mirror
+    rc = cmd_mirror(SimpleNamespace(id="qwen3-0.6b-int8", to="coreai-community", dry_run=True))
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "kevinqz/Qwen3-0.6B-CoreAI" in out
+    assert "coreai-community/Qwen3-0.6B-CoreAI" in out
+
+
+def test_mirror_refuses_a_recipe_without_published_block():
+    # You can only mirror what's already published to your namespace.
+    from types import SimpleNamespace
+
+    from coreai_fabric.publish import cmd_mirror
+    rc = cmd_mirror(SimpleNamespace(id="qwen3-4b", to="coreai-community", dry_run=True))
+    assert rc == 1
+
+
 def test_publish_and_register_flag_parses():
     # S1: publish carries the seamless-flow flags (chaining is exercised e2e, not
     # here — it opens a real PR — but the flag must exist so the path is reachable).
