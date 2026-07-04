@@ -64,9 +64,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--revision", default=None, help="upstream HF revision to pin (optional)")
     parser.add_argument("--decode-len", type=int, default=16,
                         help="greedy tokens compared per prompt (default: 16)")
-    parser.add_argument("--n-prompts", type=int, default=4,
-                        help="number of seeded prompts to evaluate (default: 4; the "
-                        "Python reference runtime is slow, so this bounds wall-clock)")
+    parser.add_argument("--n-prompts", type=int, default=8,
+                        help="number of seeded prompts to evaluate (default: 8, the "
+                        "protocol floor; the Python reference runtime is slow so raise "
+                        "wall-clock is the only cost)")
+    parser.add_argument("--reference-dtype", choices=["float16", "float32"], default="float16",
+                        help="HF reference precision. Default float16 = the asset's own "
+                        "compute precision, so the metric isolates QUANTIZATION error, not "
+                        "the fp32->fp16 rounding the export already chose. float32 = the "
+                        "stricter 'vs fp32 oracle' number (what community cards quote).")
+    parser.add_argument("--flip-margin", type=float, default=0.1,
+                        help="near-tie budget (nats): a reference argmax disagreement counts "
+                        "as a real flip only when the reference top1-top2 logit margin exceeds "
+                        "this — at a near-tie the fp16/fp32 reference itself flips on noise, so "
+                        "counting it as a quant failure is misleading (default: 0.1).")
     parser.add_argument("--version", action="version",
                         version=f"coreai-fabric-parity-runner {__version__}")
     return parser
@@ -219,6 +230,18 @@ def run_per_token_logit_cosine(args) -> dict:
 _CACHE_SEQ_DIM = 3
 
 
+def _wilson_ci(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """95% Wilson score interval for a binomial proportion — so a headline rate
+    always carries its uncertainty (a small sample can't claim 'lossless')."""
+    if n == 0:
+        return (0.0, 0.0)
+    p = k / n
+    denom = 1 + z * z / n
+    center = (p + z * z / (2 * n)) / denom
+    half = (z * ((p * (1 - p) / n + z * z / (4 * n * n)) ** 0.5)) / denom
+    return (max(0.0, center - half), min(1.0, center + half))
+
+
 def run_greedy_parity(args) -> dict:
     """Real Gate B for a production stateful LLM asset: drive its KV-cache decode
     and, teacher-forced along the fp32 reference's greedy path, measure per-token
@@ -231,18 +254,21 @@ def run_greedy_parity(args) -> dict:
     from coreai.runtime import AIModel, NDArray
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
+    ref_dtype = torch.float16 if args.reference_dtype == "float16" else torch.float32
     tokenizer = AutoTokenizer.from_pretrained(args.upstream, revision=args.revision)
+    # Reference precision = the asset's OWN compute precision (float16) by
+    # default, so the metric isolates QUANTIZATION error rather than blaming the
+    # export's fp32->fp16 rounding on the quantizer (root-cause finding 3).
     ref_model = AutoModelForCausalLM.from_pretrained(
-        args.upstream, revision=args.revision, dtype=torch.float32
+        args.upstream, revision=args.revision, dtype=ref_dtype
     ).eval()
+    flip_margin = float(args.flip_margin)
 
     async def _run() -> dict:
         model = await AIModel.load(args.bundle)
         fn = model.load_function("main")
         desc = fn.desc
         states = list(getattr(desc, "state_names", None) or [])
-        # Contract detection — decline (never fake) if it's not the drivable
-        # stateful-LLM layout.
         if not ({"input_ids", "position_ids"} <= set(desc.input_names)
                 and "logits" in desc.output_names and states):
             return {
@@ -254,7 +280,6 @@ def run_greedy_parity(args) -> dict:
                     "->logits with keyCache/valueCache."),
             }
         in_dt = np.dtype(str(desc.input_descriptor("input_ids").dtype))
-        # State dims straight from the descriptor (general, not hardcoded).
         state_meta = {}
         for n in states:
             sd = desc.state_descriptor(n)
@@ -262,76 +287,84 @@ def run_greedy_parity(args) -> dict:
 
         decode_len = max(1, int(args.decode_len))
         prompts = PROMPTS[: max(1, int(args.n_prompts))]
-        matched = compared = 0
+        compared = argmax_hit = gated_hit = top5_hit = near_ties = 0
         sample = None
-
-        async def argmax_after(ids_seq, state):
-            """Prefill `ids_seq` (full) and return the argmax of the last logit."""
-            a = np.asarray([ids_seq], dtype=in_dt)
-            p = np.asarray([list(range(len(ids_seq)))], dtype=in_dt)
-            out = await fn(inputs={"input_ids": NDArray(a), "position_ids": NDArray(p)}, state=state)
-            return int(np.argmax(out["logits"].numpy()[0, -1]))
 
         for prompt in prompts:
             ids = tokenizer(prompt, return_tensors="pt")["input_ids"][0].tolist()
-            # fp32 reference greedy continuation via RAW argmax — deliberately
-            # NOT model.generate(), whose generation_config (repetition_penalty,
-            # etc.) would penalize the reference path but not the asset's raw
-            # argmax, unfairly deflating agreement. Both sides use raw argmax.
-            ref_tokens = []
+            # Reference greedy path via RAW argmax (never model.generate — its
+            # generation_config would unfairly deflate agreement). Capture the
+            # top1-top2 margin (near-tie budget) and top-5 at each step.
+            ref_steps = []  # (token, margin, top5_set)
             cur = list(ids)
             with torch.no_grad():
                 for _ in range(decode_len):
-                    rl = ref_model(input_ids=torch.tensor([cur], dtype=torch.long)).logits[0, -1]
-                    rt = int(torch.argmax(rl))
-                    ref_tokens.append(rt)
+                    rl = ref_model(input_ids=torch.tensor([cur], dtype=torch.long)).logits[0, -1].float()
+                    top = torch.topk(rl, 5)
+                    rt = int(top.indices[0])
+                    margin = float(top.values[0] - top.values[1])
+                    ref_steps.append((rt, margin, set(int(i) for i in top.indices.tolist())))
                     cur.append(rt)
-            if not ref_tokens:
+            if not ref_steps:
                 continue
-            # Fresh KV cache sized to the full teacher sequence.
-            maxlen = len(ids) + len(ref_tokens) + 1
+            maxlen = len(ids) + len(ref_steps) + 1
             state = {}
             for n, (shape, dt) in state_meta.items():
                 s = list(shape); s[_CACHE_SEQ_DIM] = maxlen
                 state[n] = NDArray(np.zeros(s, dtype=dt))
-            # Prefill the prompt, then teacher-force the reference tokens,
-            # checking the asset's argmax against each reference next-token.
             seq = list(ids)
-            asset_next = await argmax_after(seq, state)
+            a = np.asarray([seq], dtype=in_dt); p = np.asarray([list(range(len(seq)))], dtype=in_dt)
+            asset_next = int(np.argmax((await fn(inputs={"input_ids": NDArray(a), "position_ids": NDArray(p)}, state=state))["logits"].numpy()[0, -1]))
             asset_gen = []
-            for k, rt in enumerate(ref_tokens):
+            for k, (rt, margin, top5) in enumerate(ref_steps):
                 compared += 1
                 asset_gen.append(asset_next)
-                if asset_next == rt:
-                    matched += 1
-                seq.append(rt)  # advance along the REFERENCE path (aligned)
-                if k < len(ref_tokens) - 1:
-                    # incremental: feed the new (reference) token; position_ids is
-                    # the FULL range so offset = len-1 writes at the right slot.
-                    a = np.asarray([[rt]], dtype=in_dt)
-                    p = np.asarray([list(range(len(seq)))], dtype=in_dt)
-                    out = await fn(inputs={"input_ids": NDArray(a), "position_ids": NDArray(p)}, state=state)
-                    asset_next = int(np.argmax(out["logits"].numpy()[0, -1]))
+                hit = (asset_next == rt)
+                if hit:
+                    argmax_hit += 1
+                if margin <= flip_margin:
+                    near_ties += 1
+                # margin-gated: a disagreement only counts as a real flip when the
+                # reference is NOT at a near-tie (where fp16/fp32 flip on noise).
+                if hit or margin <= flip_margin:
+                    gated_hit += 1
+                if asset_next in top5:
+                    top5_hit += 1
+                seq.append(rt)
+                if k < len(ref_steps) - 1:
+                    a = np.asarray([[rt]], dtype=in_dt); p = np.asarray([list(range(len(seq)))], dtype=in_dt)
+                    asset_next = int(np.argmax((await fn(inputs={"input_ids": NDArray(a), "position_ids": NDArray(p)}, state=state))["logits"].numpy()[0, -1]))
             if sample is None:
                 sample = {
                     "prompt": prompt,
-                    "reference": tokenizer.decode(ref_tokens, skip_special_tokens=True),
+                    "reference": tokenizer.decode([s[0] for s in ref_steps], skip_special_tokens=True),
                     "asset_argmax": tokenizer.decode(asset_gen, skip_special_tokens=True),
                 }
 
-        rate = (matched / compared) if compared else 0.0
+        argmax_rate = (argmax_hit / compared) if compared else 0.0
+        gated_rate = (gated_hit / compared) if compared else 0.0
+        top5_rate = (top5_hit / compared) if compared else 0.0
+        lo, hi = _wilson_ci(gated_hit, compared)
         return {
             "metric": args.metric,
-            "value": rate,
+            # Primary value = margin-gated agreement (near-tie flips forgiven) —
+            # the fair per-token fidelity of the quantized asset vs the reference.
+            "value": gated_rate,
             "status": "measured",
-            "matched": matched,
+            "margin_gated_match_rate": gated_rate,
+            "margin_gated_ci95": [round(lo, 4), round(hi, 4)],
+            "argmax_match_rate": argmax_rate,
+            "top5_agreement_rate": top5_rate,
+            "matched": argmax_hit,
             "compared": compared,
-            "match_rate": rate,
-            "greedy_token_exact": compared > 0 and matched == compared,
+            "near_ties_excluded": near_ties,
+            "greedy_token_exact": compared > 0 and argmax_hit == compared,
             "n_prompts": len(prompts),
             "decode_len": decode_len,
+            # Full precision signature so numbers are only compared like-for-like.
+            "reference_dtype": args.reference_dtype,
+            "flip_margin_nats": flip_margin,
             "sample": sample,
-            "reference_dtype": "float32",
             "runner": f"coreai-fabric-parity-runner/{__version__}",
             "environment": _environment(),
         }

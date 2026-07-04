@@ -60,6 +60,45 @@ the runner reports `not_run` — never a fake number.
 `COREAI_FABRIC_PARITY_RUNNER`), not a fast/CI gate. Real tok/s throughput needs
 the on-device Swift runtime (macOS 27).
 
+#### Fair-measurement defaults (grounded in a 2026-07-03 root-cause study)
+
+A raw greedy-argmax-exact number is misleadingly low unless the experiment is
+fair. These are the DEFAULTS, so numbers are trustworthy and only compared
+like-for-like:
+
+- **Reference precision = the asset's own compute precision (float16)**, not
+  fp32. The export computes at fp16; referencing fp32 blames the fp32→fp16
+  rounding on the quantizer. `--reference-dtype float32` gives the stricter "vs
+  fp32 oracle" number (what community cards quote) as a labeled secondary.
+- **Margin-gated (near-tie budget):** a reference argmax disagreement counts as
+  a real flip only when the reference top1−top2 margin exceeds `--flip-margin`
+  (0.1 nats). At a near-tie the fp16/fp32 reference itself flips on noise;
+  counting that as a quant failure is misleading. The **primary `value` is the
+  margin-gated rate**; raw `argmax_match_rate`, `top5_agreement_rate`, and a
+  **Wilson 95% CI** are reported alongside as diagnostics.
+- **Sample floor N≥8 prompts.** A small window cannot claim high fidelity — the
+  CI makes the uncertainty explicit.
+- **Every number carries its precision signature** `(reference_dtype,
+  flip_margin, n_prompts, decode_len)`. Compare int8-vs-int8 and int4-vs-int4,
+  never across tiers.
+
+#### Quantization tier and the "lossless" rule
+
+Root-cause finding (verified against the community's own measurements): **int4
+does not survive on Qwen-family models** — the community ships **int8** for a
+near-lossless claim and has directly measured that int4 (k-means g32) fails
+their oracle gate, while Apple's macOS int4 preset additionally uses
+`symmetric_with_clipping`, which flips argmaxes on the fat-tailed LM head.
+Therefore:
+
+- **int4** is the size-optimized *shipping* tier (Apple's macOS default). Its
+  greedy_parity is measured and reported, but it is **never labeled "lossless."**
+- **"lossless" / near-lossless parity** may only be attached to an **int8**
+  (weight-only, per-block-32 or per-channel, symmetric absmax, **no clipping**;
+  attention/RoPE/RMSNorm kept high-precision) artifact with an adequate sample.
+- The certifying `benchmark_accuracy` gate stays `not_run` until Apple's
+  `coreai.llm.eval` ships — for everyone.
+
 ### `graph_output_cosine`
 For non-autoregressive models (vision, audio encoders, embeddings):
 1. Fix a deterministic input set (seeded; N ≥ 8 inputs appropriate to the
