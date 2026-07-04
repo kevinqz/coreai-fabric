@@ -161,6 +161,42 @@ def run_gate_b(root: Path, recipe: Recipe) -> dict:
             ),
         }
 
+    if gate["metric"] == "action_parity":
+        # The action lane is intrinsically TWO-VENV: the lerobot reference
+        # (transformers 5.3) cannot share coreai_torch's venv, so no single
+        # in-process runner can both produce the torch reference AND drive the
+        # asset. The committed two-venv harness (models/act/parity.py --compare
+        # for single-graph ACT; the split-export runner for pi0) measures on
+        # real hardware and drops its protocol JSON next to the bundle. verify
+        # RECORDS that measurement and (re)computes pass/fail from `value` (and
+        # the recipe's max_action_mae) vs the threshold — it never trusts a
+        # self-reported status. Absent the file, Gate B is honestly not_run.
+        measured = os.environ.get("COREAI_ACTION_PARITY_MEASURED")
+        mp = Path(measured) if measured else (
+            bundle_path(root, recipe).parent / "action-parity-measured.json")
+        if not mp.is_file():
+            return {**base, "status": "not_run",
+                    "reason": (
+                        "action_parity is measured by the two-venv harness "
+                        "(models/act/parity.py --compare, or the pi0 split-export "
+                        f"runner), which writes {mp.name} next to the bundle; none "
+                        "found. Run it to MEASURE fidelity — fabric never fakes a "
+                        "number.")}
+        m = json.loads(mp.read_text())
+        val = m.get("value")
+        if m.get("metric") != "action_parity" or not isinstance(val, (int, float)):
+            return {**base, "status": "not_run",
+                    "reason": f"{mp.name} is not a valid action_parity measurement"}
+        mae_cap = gate.get("max_action_mae")
+        mae = m.get("max_per_dim_mae")
+        mae_ok = mae_cap is None or (isinstance(mae, (int, float)) and mae <= mae_cap)
+        passed = val >= gate["threshold"] - gate["tolerance"] and mae_ok
+        result = {**base, "status": "passed" if passed else "failed", "value": val,
+                  "measurement_source": mp.name}
+        for key, v in m.items():  # record the harness output verbatim (value already drove pass)
+            result.setdefault(key, v)
+        return result
+
     runner = os.environ.get("COREAI_FABRIC_PARITY_RUNNER")
     # Auto-wire the bundled runner for the runnable metric so a novice MEASURES
     # fidelity by default — no undocumented env var to remember. It ships in the

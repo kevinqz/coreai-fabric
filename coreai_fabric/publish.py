@@ -25,11 +25,20 @@ UPSTREAM_LICENSE_FILES = ("LICENSE", "LICENSE.txt", "LICENSE.md", "NOTICE", "NOT
 _LOCAL_PATH_MARKERS = ("/Users/", "/home/")
 
 
-def fetch_upstream_license(hf_repo: str, revision: str | None, staging: Path) -> list[str]:
+def fetch_upstream_license(hf_repo: str, revision: str | None, staging: Path,
+                           root: Path | None = None,
+                           declared_license: str | None = None) -> list[str]:
     """Download the upstream LICENSE/NOTICE into staging (Apache-2.0 §4(a)/(d):
     a redistribution must ship a copy of the license + retain the NOTICE). The
     caller treats an absent-but-required license as a hard publish failure —
-    fabric never redistributes weights without their license text."""
+    fabric never redistributes weights without their license text.
+
+    Fallback: if the upstream ships NO license file but its model-card metadata
+    authoritatively DECLARES a known SPDX license (common for lerobot policies,
+    which tag `license:apache-2.0` yet ship no LICENSE), supply the canonical
+    license text + a provenance NOTICE. That gives recipients the full terms as
+    §4(a) requires — strictly more compliant than shipping license-less weights,
+    and only ever for a license fabric has canonical text for."""
     from huggingface_hub import hf_hub_download
     from huggingface_hub.utils import EntryNotFoundError
 
@@ -45,6 +54,29 @@ def fetch_upstream_license(hf_repo: str, revision: str | None, staging: Path) ->
         dest = staging / (name if name.startswith(("LICENSE", "NOTICE")) else f"upstream-{name}")
         dest.write_text(Path(path).read_text())
         written.append(dest.name)
+    if written:
+        return written
+
+    # No upstream license file — synthesize the canonical text iff the upstream
+    # DECLARES a license we have verbatim text for (never invent terms).
+    if root is not None and declared_license:
+        spdx = str(declared_license).strip().lower()
+        tmpl = root / "templates" / "licenses" / f"{spdx}.txt"
+        if tmpl.is_file():
+            rev = revision or "main"
+            header = (
+                "NOTE — supplied by coreai-fabric (the redistributor), not the upstream.\n"
+                f"The upstream {hf_repo} @ {rev} declares its license as "
+                f'"{declared_license}"\n'
+                "in its Hugging Face model-card metadata but ships no LICENSE file. Under\n"
+                f"Apache-2.0 §4(a) a redistribution must give recipients a copy of the\n"
+                f"License, so the canonical {declared_license} text is reproduced below\n"
+                "verbatim. Copyright in the underlying work remains with the upstream\n"
+                f"authors ({hf_repo}); see the model card for attribution.\n"
+                + "=" * 72 + "\n\n"
+            )
+            (staging / "LICENSE").write_text(header + tmpl.read_text())
+            return ["LICENSE"]
     return written
 
 
@@ -588,7 +620,9 @@ def cmd_publish(args) -> int:
         shutil.rmtree(staging)
     staging.mkdir(parents=True, exist_ok=True)
     try:
-        license_files = fetch_upstream_license(upstream["hf_repo"], revision_pin, staging)
+        license_files = fetch_upstream_license(
+            upstream["hf_repo"], revision_pin, staging,
+            root=root, declared_license=upstream.get("license"))
     except ImportError:
         err('huggingface_hub is not installed. Install: pip install "coreai-fabric[hf]"')
         return 1

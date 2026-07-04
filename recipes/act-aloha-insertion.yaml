@@ -1,0 +1,87 @@
+id: act-aloha-insertion
+upstream:
+  hf_repo: lerobot/act_aloha_sim_insertion_human
+  revision: 33259aa86eb45fdf85350280044a33d9d50e40c3
+  license: apache-2.0
+  license_terms: permissive
+  pipeline_tag: robotics
+  size_bytes: 206766560
+conversion:
+  tool: models/act/export.py
+  precision: float16
+  quantization: none
+  action:
+    embodiment: aloha_bimanual_14dof_sim
+    robot_required: true
+    action_space:
+      dim: 14
+      max_action_dim: 14
+      max_state_dim: 14
+      chunk_size: 100
+      convention: aloha_joint_position
+    sampling:
+      kind: act
+    normalization:
+      stats_source: config.json dataset_stats (MEAN_STD for state/action, IDENTITY visual);
+        BAKED INTO the traced graph (predict_action_chunk normalizes inputs + unnormalizes
+        outputs), so the asset is self-contained — no norm_stats.json sidecar
+    graphs:
+    - name: main
+expected:
+  bundle_files:
+  - metadata.json
+  - main.mlirb
+  - main.hash
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: action_parity
+    threshold: 0.999
+    tolerance: 0.001
+    max_action_mae: 0.05
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: ACT-Aloha-Insertion-CoreAI
+  collection: CoreAI · Apple on-device
+catalog:
+  name: ACT ALOHA Insertion (fabric)
+  family: LeRobot
+  bundle_kind: action
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: false
+    custom_kernel: false
+    patch_required: true
+    aot_required: false
+  capabilities:
+  - robotics
+  modalities:
+    input:
+    - image
+    - state
+    output:
+    - action
+  parameters: 51.6M
+  architecture: transformer
+  runner: CoreAIRunner
+  tokenizer_required: false
+  processor_required: true
+status: published
+notes: 'ACT (Action Chunking Transformer) policy — lerobot/act_aloha_sim_insertion_human,
+  apache-2.0. A DETERMINISTIC visuomotor policy: 1 camera (480x640) + proprioceptive state
+  (14) -> a 100-step action chunk (14 dims), single forward pass (no VLM, no flow-matching
+  sampler). SIM benchmark: trained on the ALOHA bimanual peg-insertion sim task — needs the
+  ALOHA bimanual embodiment (or the sim) to actuate; the output is inert without the robot.
+  Same architecture + IO contract as ACT-Aloha-TransferCube-CoreAI (the pipeline''s first
+  VLA), a different task checkpoint. Gate B = action_parity vs the torch reference on recorded
+  frames (DETERMINISTIC — no noise to fix, single graph).'
+published:
+  hf_repo: kevinqz/ACT-Aloha-Insertion-CoreAI
+  revision: 23768005e881635743c1619dbb52fe6e2761828d
+  date: '2026-07-04'
