@@ -39,6 +39,25 @@ greedy_parity comparing logits pre-detokenization).
 3. Convert an ACT policy (e.g. `lerobot/act_aloha_sim_transfer_cube_human`, apache, 0.21GB)
    end-to-end: export (venv-A) → lower (venv-B) → `.aimodel` → `action_parity` green.
    - **GATE 1:** if the runner or packaging is wrong, fix it here — cheaply — before pi0.
+   - **DONE (2026-07-04):** ACT single-graph proven twice — `kevinqz/ACT-Aloha-{TransferCube,Insertion}-CoreAI`,
+     `action_parity` ≈ 1.0. `models/act/{export,parity}.py` are the reference implementation;
+     `verify` records the two-venv measurement through the standard path.
+
+## Phase 1.5 — Diffusion Policy sampler lane (PROVEN — the direct pi0 rehearsal)
+> A Diffusion Policy is the tiny, VLM-free analog of pi0: a **split export** (`encode` runs
+> once + `denoise_step` the host drives N times) in ONE `.aimodel`, plus a host-side N-step
+> sampler loop. Same shape as pi0's flow-matching, minus the 4B VLM + SigLIP. Proving it
+> de-risks EVERYTHING about pi0 except the vision tower (Phase 2b).
+1.5a `.venv-lerobot/bin/python models/diffusion/export.py export --repo lerobot/diffusion_pusht --out build/diffusion-pusht`
+     then `--lower` in venv-B. Two entrypoints land in one asset via
+     `TorchConverter.add_exported_program(..., entrypoint_name="encode"/"denoise_step")`.
+     - **GATE 1.5a (op-coverage):** the denoise 1D-U-Net (Conv1d + GroupNorm + FiLM + sinusoidal
+       step-embed) must lower on coremltools 9.0. Probe `--only denoise` FIRST (cheapest).
+1.5b `action_parity` via `models/diffusion/parity.py`: the reference (torch encode+denoise) and
+     the asset run the **identical deterministic DDPM host loop** (`_ddpm_update`, posterior mean,
+     per-step variance = 0) — so the only difference is the exported graphs. Compares the NORMALIZED
+     action trajectory (min chunk-cosine + per-dim MAE + bootstrap CI). This is the reusable host
+     sampler pi0 needs (swap DDPM for the flow-matching Euler step).
 
 ## Phase 2 — resolve pi0's two unknowns (cheap probes, first pi0 disk spent here)
 4. `bash scripts/setup_vla_export.sh` → venv-A (disk gate: needs ~6GB headroom).

@@ -187,6 +187,55 @@ def test_assert_no_local_paths_catches_leak(tmp_path):
     assert assert_no_local_paths(tmp_path) == ["leak.json"]
 
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _no_upstream_license(monkeypatch):
+    """Make hf_hub_download behave as if the upstream ships no license file."""
+    from huggingface_hub.utils import EntryNotFoundError
+
+    def _raise(*a, **k):
+        raise EntryNotFoundError("no such file")
+
+    monkeypatch.setattr("huggingface_hub.hf_hub_download", _raise)
+
+
+def test_license_synthesized_for_declared_apache_when_upstream_ships_none(tmp_path, monkeypatch):
+    from coreai_fabric.publish import fetch_upstream_license
+    _no_upstream_license(monkeypatch)
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    written = fetch_upstream_license("lerobot/act_x", "abc123", staging,
+                                     root=_REPO_ROOT, declared_license="apache-2.0")
+    assert written == ["LICENSE"]
+    text = (staging / "LICENSE").read_text()
+    assert "Apache License" in text and "Version 2.0" in text  # canonical body present
+    assert "supplied by coreai-fabric" in text                 # provenance NOTICE
+    assert "lerobot/act_x" in text and "abc123" in text        # cites upstream + revision
+
+
+def test_license_not_synthesized_for_unknown_declared_license(tmp_path, monkeypatch):
+    # No canonical template for an arbitrary license => no synthesis (never invent
+    # terms). The caller then hard-fails or requires --allow-missing-license-file.
+    from coreai_fabric.publish import fetch_upstream_license
+    _no_upstream_license(monkeypatch)
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    written = fetch_upstream_license("o/m", "r", staging,
+                                     root=_REPO_ROOT, declared_license="some-proprietary-eula")
+    assert written == []
+    assert not (staging / "LICENSE").exists()
+
+
+def test_license_no_synthesis_without_root_or_license(tmp_path, monkeypatch):
+    # Backward-compat: called the old way (no root/declared_license), synthesis is off.
+    from coreai_fabric.publish import fetch_upstream_license
+    _no_upstream_license(monkeypatch)
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    assert fetch_upstream_license("o/m", "r", staging) == []
+
+
 def test_copyright_holder_parsed_from_license(tmp_path):
     from coreai_fabric.publish import copyright_holder_from_license
     (tmp_path / "LICENSE").write_text("Apache License 2.0\n\n   Copyright 2024 Alibaba Cloud\n")

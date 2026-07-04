@@ -117,3 +117,58 @@ def test_gate_b_benchmark_accuracy_blocked_upstream(tmp_path, monkeypatch):
     assert result["value"] is None
     assert "coreai.llm.eval" in result["reason"]
     assert "coming soon" in result["reason"]
+
+
+# ---- action_parity: the two-venv action lane records an on-hardware measurement ----
+
+def _action_recipe(tmp_path: Path) -> Recipe:
+    r = _recipe(tmp_path)
+    r.data["parity"]["gate_b"] = {"metric": "action_parity", "threshold": 0.999,
+                                  "tolerance": 0.001, "max_action_mae": 0.05}
+    return r
+
+
+def _write_measured(tmp_path: Path, payload: dict) -> None:
+    d = tmp_path / "build" / "x"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "action-parity-measured.json").write_text(json.dumps(payload))
+
+
+def test_gate_b_action_parity_not_run_without_measurement(tmp_path):
+    # No harness output next to the bundle => honestly not_run (never a faked number).
+    result = run_gate_b(tmp_path, _action_recipe(tmp_path))
+    assert result["status"] == "not_run"
+    assert result["value"] is None
+    assert "fabric never fakes" in result["reason"]
+
+
+def test_gate_b_action_parity_records_passing_measurement(tmp_path):
+    _write_measured(tmp_path, {"metric": "action_parity", "value": 0.99999,
+                               "max_per_dim_mae": 2.1e-07, "min_action_cosine": 0.99999})
+    result = run_gate_b(tmp_path, _action_recipe(tmp_path))
+    assert result["status"] == "passed"
+    assert result["value"] == 0.99999
+    assert result["measurement_source"] == "action-parity-measured.json"
+    assert result["max_per_dim_mae"] == 2.1e-07   # harness fields recorded verbatim
+
+
+def test_gate_b_action_parity_fails_when_mae_over_cap(tmp_path):
+    # Cosine passes but per-dim MAE exceeds the recipe cap => failed (both gates bind).
+    _write_measured(tmp_path, {"metric": "action_parity", "value": 0.9995,
+                               "max_per_dim_mae": 0.5})
+    result = run_gate_b(tmp_path, _action_recipe(tmp_path))
+    assert result["status"] == "failed"
+
+
+def test_gate_b_action_parity_fails_below_threshold(tmp_path):
+    _write_measured(tmp_path, {"metric": "action_parity", "value": 0.90,
+                               "max_per_dim_mae": 0.01})
+    result = run_gate_b(tmp_path, _action_recipe(tmp_path))
+    assert result["status"] == "failed"
+
+
+def test_gate_b_action_parity_rejects_malformed_measurement(tmp_path):
+    _write_measured(tmp_path, {"metric": "action_parity", "value": None})
+    result = run_gate_b(tmp_path, _action_recipe(tmp_path))
+    assert result["status"] == "not_run"
+    assert "not a valid" in result["reason"]

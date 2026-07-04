@@ -1,0 +1,87 @@
+id: diffusion-pusht
+upstream:
+  hf_repo: lerobot/diffusion_pusht
+  revision: 84a7c23178445c6bbf7e1a884ff497017910f653
+  license: apache-2.0
+  license_terms: permissive
+  pipeline_tag: robotics
+  size_bytes: 1050862408
+conversion:
+  tool: models/diffusion/export.py
+  precision: float16
+  quantization: none
+  action:
+    embodiment: pusht_planar_2dof_sim
+    robot_required: true
+    action_space:
+      dim: 2
+      max_action_dim: 2
+      max_state_dim: 2
+      chunk_size: 16
+      convention: pusht_ee_position
+    sampling:
+      kind: diffusion
+      num_steps: 100
+      solver: ddpm
+    normalization:
+      stats_source: as loaded by lerobot 0.5.1 (processor-based; the split graphs
+        operate in the policy's as-loaded action space — host un-normalizes the final
+        chunk with the upstream processor stats)
+    graphs:
+    - name: encode
+    - name: denoise_step
+expected:
+  bundle_files:
+  - metadata.json
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: action_parity
+    threshold: 0.999
+    tolerance: 0.001
+    max_action_mae: 0.05
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: Diffusion-PushT-CoreAI
+  collection: CoreAI · Apple on-device
+catalog:
+  name: Diffusion Policy PushT (fabric)
+  family: LeRobot
+  bundle_kind: action
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: false
+    custom_kernel: false
+    patch_required: true
+    aot_required: false
+  capabilities:
+  - robotics
+  modalities:
+    input:
+    - image
+    - state
+    output:
+    - action
+  parameters: 262.9M
+  architecture: diffusion
+  runner: CoreAIRunner
+  tokenizer_required: false
+  processor_required: true
+status: draft
+notes: 'Diffusion Policy (Chi et al. 2023) — lerobot/diffusion_pusht, apache-2.0. A
+  MULTI-STEP visuomotor policy: 1 camera (96x96) + agent-pos state (2) over 2 obs steps
+  -> a horizon-16 action trajectory (2 dims), sampled by a 100-step DDPM denoiser (conditional
+  1D U-Net, resnet18 + spatial-softmax vision). SPLIT export: an `encode` graph (obs ->
+  global conditioning, run once) + a `denoise_step` graph (host drives it 100x in the DDPM
+  loop) in ONE .aimodel. The N-step sampler + un-normalization run in host code — the tiny,
+  VLM-free analog of pi0''s flow-matching loop, proving the split-export sampler lane before
+  pi0. Gate B = action_parity: the converted split-export driven by a fixed deterministic
+  DDPM host loop vs the torch reference under the IDENTICAL loop, isolating numerical export
+  fidelity (NOT sampler stochasticity or task success). PushT is a 2D planar pushing sim task
+  — needs the sim/robot to actuate; the output is inert alone.'
