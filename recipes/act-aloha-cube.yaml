@@ -23,15 +23,15 @@ conversion:
       kind: act
     normalization:
       stats_source: config.json dataset_stats (MEAN_STD for state/action, IDENTITY visual);
-        ships as norm_stats.json
+        BAKED INTO the traced graph (predict_action_chunk normalizes inputs +
+        unnormalizes outputs), so the asset is self-contained — no norm_stats.json sidecar
     graphs:
-    - name: policy
+    - name: main
 expected:
   bundle_files:
   - metadata.json
-  - policy/main.mlirb
-  - policy/main.hash
-  - norm_stats.json
+  - main.mlirb
+  - main.hash
 parity:
   gate_a:
     checks:
