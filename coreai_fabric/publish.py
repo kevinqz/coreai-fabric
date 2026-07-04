@@ -431,6 +431,16 @@ def cmd_publish(args) -> int:
         for issue in license_errors:
             err(issue.render())
         return 1
+    if recipe.data["upstream"]["license_terms"] == "restricted":
+        # Hard stop, NOT ackable: a restricted upstream's converted weights are
+        # never redistributable. Index the upstream + ship the recipe instead
+        # (the reproducible recipe is fabric's own code and ships freely).
+        err(
+            "upstream license is restricted — fabric refuses to republish converted "
+            "weights of a restricted upstream (no --acknowledge bypass). Index the "
+            "upstream and ship the reproducible recipe instead."
+        )
+        return 1
     if recipe.data["upstream"]["license_terms"] == "review_required" and not args.acknowledge_license_review:
         err(
             "upstream license is review_required — a human must review the "

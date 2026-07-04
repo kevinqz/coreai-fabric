@@ -136,6 +136,52 @@ static-graph runner cannot score a stateful asset. So `verify` reports
 failure. When Apple ships the evaluator, the runner contract below gains a
 `benchmark_accuracy` implementation that shells to `coreai.llm.eval`.
 
+### `action_parity` (the runnable, robot-free Gate B for a VLA/robot policy)
+A robot policy (VLA) is not an LLM: it maps `(images, proprioceptive state,
+language instruction)` → a **continuous action chunk** `[chunk_size, action_dim]`,
+via an iterative flow-matching sampler (a fixed `num_steps`, e.g. 10). There is
+no vocabulary and no argmax, so `greedy_parity` does not apply. `action_parity`
+is the structural analog:
+
+- **Fair by construction — fix the noise.** The flow-matching sampler is
+  deterministic *given its initial noise*. `action_parity` **injects a fixed
+  seed noise** on both sides, exactly as `greedy_parity` teacher-forces the
+  reference's greedy path and never calls `generate`. This turns the sampler
+  into a deterministic function of `(observation, noise)`, making a numeric
+  comparison honest.
+- **Inputs are REAL, never invented.** Recorded `(images, state, instruction)`
+  from a published LeRobot dataset (flagship `lerobot/svla_so101_pickplace`);
+  the instruction is the dataset's real recorded `task` string.
+- **Reference:** the upstream policy in torch at `--reference-dtype` (default
+  `float16` to isolate quantization error; `float32` for the stricter oracle),
+  same fixed noise, same `num_steps`.
+- **Numbers (per sample, aggregated over N≥8 seeded frames across ≥2 episodes),
+  compared in NORMALIZED action space:** primary `value` = per-sample chunk
+  cosine reported as the **minimum** across samples (one worst frame can't hide
+  behind an average, matching the existing cosine metrics); diagnostics recorded
+  verbatim: `mean_action_cosine`, `max_normalized_mae`, `mean_normalized_mae`,
+  `per_dim_mae`, `first_action_mae` (the action actually executed under
+  receding-horizon control), and a **bootstrap 95% CI** on mean cosine (the
+  continuous-metric analog of `greedy_parity`'s Wilson CI).
+- **Precision + step signature.** The report tags `(num_steps, reference_dtype,
+  n_obs, chunk_len)` so tiers only compare like-for-like — the same rule as the
+  greedy_parity precision signature. A 10-step and a 4-step export are DIFFERENT
+  models with separately-measured fidelity; a reduced-step tier never cites the
+  10-step number.
+- **`not_run` (unmeasured, not a failure)** when the asset doesn't expose the
+  deterministic-noise sampler contract (no injectable noise / internal un-seeded
+  RNG), or when the preprocessing stats (`meta/stats.json` resize-pad + MEAN_STD)
+  don't hash-match on both sides — a silent stats mismatch would yield a
+  meaningless number. Mirrors the `greedy_parity` not_run discipline exactly.
+
+**What it PROVES:** the export computes the SAME function as the source policy —
+catching quantization drift, wrong normalization constants, image-preprocessing
+mismatch, a broken denoise loop, layer-fusion bugs. **What it does NOT prove
+(mandatory card label):** real-world task success, embodiment transfer, or
+closed-loop stability. The closed-loop success-rate eval (LIBERO/ManiSkill) is a
+separate future gate, `not_run` here — the VLA analog of `benchmark_accuracy`
+being blocked. Never conflate the two.
+
 ## Pass criteria
 
 ```

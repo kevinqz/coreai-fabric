@@ -105,6 +105,18 @@ def test_license_triage_flags_review_required_as_warning_not_error():
     assert not any(i.severity == "error" for i in issues)
 
 
+def test_license_triage_flags_restricted():
+    # The correctness gap: `restricted` previously had NO branch — a recipe
+    # hand-set to it sailed past triage AND publish, silently redistributing
+    # weights. It must now be flagged (and publish hard-refuses it).
+    data = _minimal_valid(id="x")
+    data["upstream"]["license"] = "cc-by-nc-4.0"
+    data["upstream"]["license_terms"] = "restricted"
+    issues = triage_license(Recipe(path=Path("recipes/x.yaml"), data=data))
+    assert any("restricted" in i.message for i in issues), \
+        "restricted must be triaged, not silently pass"
+
+
 def _minimal_valid(id: str) -> dict:
     return {
         "id": id,

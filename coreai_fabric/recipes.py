@@ -186,6 +186,21 @@ def triage_license(recipe: Recipe) -> list[Issue]:
                 hint="resolve the upstream license and set permissive or review_required",
             )
         )
+    if terms == "restricted":
+        # A restricted upstream must NEVER have its converted weights republished.
+        # It previously had no branch at all — a recipe hand-set to `restricted`
+        # sailed past triage AND publish (a silent weights redistribution). Flag
+        # it, and publish hard-refuses the weights path even with an ack.
+        issues.append(
+            Issue(
+                name,
+                "warning",
+                "upstream.license_terms",
+                f"upstream license '{license_id}' is restricted — its weights may NOT be republished",
+                hint="publish refuses the weights path for restricted (no --acknowledge bypass); "
+                "index the upstream + ship the recipe instead",
+            )
+        )
     if normalized in PERMISSIVE_LICENSES and terms == "review_required":
         issues.append(
             Issue(

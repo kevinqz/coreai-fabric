@@ -133,8 +133,8 @@
           "properties": {
             "metric": {
               "type": "string",
-              "enum": ["graph_output_cosine", "per_token_logit_cosine", "benchmark_accuracy", "greedy_parity"],
-              "description": "Parity metric vs the upstream model. `greedy_parity` = the RUNNABLE Gate B for a production stateful `coreai.llm.export` asset: drive its real KV-cache decode and, teacher-forced along the fp32 reference's greedy path, measure per-token argmax agreement (the community's 'X/Y token-exact vs fp32'). Runs on macOS 26 via the coreai-core Python runtime (slow → opt-in). `benchmark_accuracy` = task accuracy (e.g. tinyMMLU) via Apple's `coreai.llm.eval`, which is a stub in coreai-models 0.1.0 (not_run until it lands). `per_token_logit_cosine`/`graph_output_cosine` = raw fidelity of a STATIC-graph export. See docs/parity-protocol.md."
+              "enum": ["graph_output_cosine", "per_token_logit_cosine", "benchmark_accuracy", "greedy_parity", "action_parity"],
+              "description": "Parity metric vs the upstream model. `greedy_parity` = the RUNNABLE Gate B for a production stateful `coreai.llm.export` asset: drive its real KV-cache decode and, teacher-forced along the fp32 reference's greedy path, measure per-token argmax agreement (the community's 'X/Y token-exact vs fp32'). Runs on macOS 26 via the coreai-core Python runtime (slow → opt-in). `benchmark_accuracy` = task accuracy (e.g. tinyMMLU) via Apple's `coreai.llm.eval`, which is a stub in coreai-models 0.1.0 (not_run until it lands). `per_token_logit_cosine`/`graph_output_cosine` = raw fidelity of a STATIC-graph export. `action_parity` = the RUNNABLE, robot-free Gate B for a VLA/robot policy: fix the flow-matching sampler's initial noise (deterministic, like greedy_parity teacher-forces), feed recorded (images,state,instruction) from a LeRobot dataset, and compare the predicted action chunk vs the torch reference (min chunk cosine + per-dim MAE). Proves the export is NUMERICALLY FAITHFUL to the source policy — NOT real-world task success. See docs/parity-protocol.md."
             },
             "threshold": {
               "type": "number",
