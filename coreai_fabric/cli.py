@@ -181,7 +181,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_pub.add_argument("--acknowledge-license-review", action="store_true",
                        help="confirm a human reviewed a review_required license")
     p_pub.add_argument("--allow-unverified-parity", action="store_true",
-                       help="publish although Gate B has not passed (recorded honestly in the card)")
+                       help="publish although Gate B is NOT_RUN (unmeasured; recorded honestly)")
+    p_pub.add_argument("--publish-known-lossy-size-tier", action="store_true",
+                       help="publish although Gate B FAILED (measured-lossy, e.g. int4 on Qwen) "
+                       "as an explicit size-optimized tier — the card carries the measured number")
     p_pub.add_argument("--allow-missing-license-file", action="store_true",
                        help="publish even if no upstream LICENSE/NOTICE could be mirrored "
                        "(only for upstreams that genuinely ship none — fabric refuses by default)")

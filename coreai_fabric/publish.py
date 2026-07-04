@@ -378,18 +378,28 @@ def cmd_publish(args) -> int:
     if report["gate_a"]["status"] != "passed":
         err("Gate A has not passed — refusing to publish an unverified bundle")
         return 1
-    if report["gate_b"]["status"] != "passed":
+    gate_b_status = report["gate_b"]["status"]
+    if gate_b_status == "failed":
+        # A MEASURED failure is different from not-yet-measured — do not let it
+        # ship on the same flag as `not_run`. This is the int4-lossy-on-Qwen case
+        # (measured 0.81 < 0.9): publishable only as an explicit size tier.
+        val = report["gate_b"].get("argmax_match_rate") or report["gate_b"].get("value")
+        pct = f" (measured {round(100*val,1)}% argmax)" if isinstance(val, (int, float)) else ""
+        if not getattr(args, "publish_known_lossy_size_tier", False):
+            err(f"Gate B FAILED{pct} — this asset does NOT meet the fidelity bar. "
+                "It is not merely unmeasured; it is measured-lossy. Publish it only "
+                "as an explicit size-optimized tier with --publish-known-lossy-size-tier "
+                "(the card will carry the measured number + a size-tier caveat). For "
+                "high fidelity, use the int8 lane (conversion.compression_config).")
+            return 1
+        warn(f"publishing a MEASURED-LOSSY size tier{pct} — the card states so honestly")
+    elif gate_b_status != "passed":  # not_run
         if args.allow_unverified_parity:
-            warn(
-                "publishing WITHOUT numeric parity (gate B "
-                f"{report['gate_b']['status']}) — the model card will say so"
-            )
+            warn(f"publishing with gate B {gate_b_status} — the model card will say so")
         else:
-            err(
-                "Gate B has not passed. Numeric parity is the point of fabric; "
-                "pass --allow-unverified-parity only if you accept publishing "
-                "a structurally-valid but numerically-unproven artifact."
-            )
+            err("Gate B has not run (no parity number). Install the parity runner "
+                "and re-verify to MEASURE fidelity, or pass --allow-unverified-parity "
+                "to publish a structurally-valid but numerically-unproven artifact.")
             return 1
 
     license_errors = [i for i in triage_license(recipe) if i.severity == "error"]
