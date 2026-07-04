@@ -27,9 +27,12 @@ parity:
     - metadata_json_parses
     - metadata_matches_recipe
   gate_b:
-    metric: benchmark_accuracy
-    threshold: 0.999
-    tolerance: 0.02
+    # Runnable Gate B: per-token greedy argmax agreement vs the fp32 reference
+    # (the community's 'X/Y token-exact'). Driven on-device via the coreai-core
+    # Python runtime; opt-in through COREAI_FABRIC_PARITY_RUNNER (slow).
+    metric: greedy_parity
+    threshold: 0.9
+    tolerance: 0.05
 publish:
   hf_target_namespace: kevinqz
   repo_name: Qwen3-0.6B-CoreAI

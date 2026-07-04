@@ -33,6 +33,33 @@ for LLMs.
 
 ## Metrics (recipe `parity.gate_b.metric`)
 
+### `greedy_parity` (the runnable Gate B for production LLM assets)
+For a PRODUCTION stateful `coreai.llm.export` asset — the metric the community
+reports ("X/Y token-exact vs fp32"), and the one fabric can actually **run**
+(unlike `benchmark_accuracy`, which is blocked on Apple's stubbed evaluator):
+1. Fix a deterministic prompt set (seeded).
+2. For each prompt, compute the fp32 reference's greedy continuation (K tokens)
+   — the teacher path.
+3. Drive the asset's REAL KV-cache decode (`coreai-fabric-parity-runner`,
+   validated on macOS 26.6 / M4 Max) and, teacher-forced along the reference
+   tokens, record whether the asset's argmax equals the reference's next token
+   at each step.
+4. Report `value` = the fraction of per-token argmax agreements (`matched` /
+   `compared`), plus `greedy_token_exact` (all matched) and a decoded `sample`.
+
+Contract (general across LLM assets; all dims read from the descriptor):
+`input_ids` [1,seq] + `position_ids` [1,seq] (int32) → `logits` [1,seq,vocab],
+with `keyCache`/`valueCache` states [n_layers,1,n_kv_heads,seq,head_dim]. The
+decode contract (coreai-models `qwen3.py:86`, `offset = seq_len - query_len`):
+`input_ids` is the NEW token; `position_ids` is the FULL range `[0..pos]` (its
+length is the total sequence length). If an asset does not match this contract,
+the runner reports `not_run` — never a fake number.
+
+**Cost:** the coreai-core Python reference runtime is correct but SLOW
+(~0.16 tok/s on M4 Max), so `greedy_parity` is an **opt-in local** check (via
+`COREAI_FABRIC_PARITY_RUNNER`), not a fast/CI gate. Real tok/s throughput needs
+the on-device Swift runtime (macOS 27).
+
 ### `graph_output_cosine`
 For non-autoregressive models (vision, audio encoders, embeddings):
 1. Fix a deterministic input set (seeded; N ≥ 8 inputs appropriate to the

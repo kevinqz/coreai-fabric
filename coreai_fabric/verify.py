@@ -213,6 +213,12 @@ def run_gate_b(root: Path, recipe: Recipe) -> dict:
             "status": "failed",
             "reason": "parity runner did not emit valid JSON on stdout (see docs/parity-protocol.md)",
         }
+    # Respect an explicit not_run from the runner (e.g. the asset is not the
+    # drivable contract) — that is not a parity FAILURE, just unmeasured.
+    if runner_report.get("status") == "not_run":
+        return {**base, "status": "not_run",
+                "reason": runner_report.get("reason", "runner reported not_run"),
+                "value": runner_report.get("value")}
     value = runner_report.get("value")
     passed = (
         isinstance(value, (int, float))

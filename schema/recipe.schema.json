@@ -129,8 +129,8 @@
           "properties": {
             "metric": {
               "type": "string",
-              "enum": ["graph_output_cosine", "per_token_logit_cosine", "benchmark_accuracy"],
-              "description": "Parity metric vs the upstream model. `graph_output_cosine`/`per_token_logit_cosine` = raw fidelity of a STATIC-graph export (fabric's coreai-fabric-llm-export). `benchmark_accuracy` = the correct metric for a QUANTIZED production `coreai.llm.export` asset (task accuracy, e.g. tinyMMLU, must stay within tolerance of the upstream) — but Apple's evaluator (`coreai.llm.eval`) ships as a stub as of coreai-models 0.1.0, so this gate honestly reports not_run until it lands. See docs/parity-protocol.md."
+              "enum": ["graph_output_cosine", "per_token_logit_cosine", "benchmark_accuracy", "greedy_parity"],
+              "description": "Parity metric vs the upstream model. `greedy_parity` = the RUNNABLE Gate B for a production stateful `coreai.llm.export` asset: drive its real KV-cache decode and, teacher-forced along the fp32 reference's greedy path, measure per-token argmax agreement (the community's 'X/Y token-exact vs fp32'). Runs on macOS 26 via the coreai-core Python runtime (slow → opt-in). `benchmark_accuracy` = task accuracy (e.g. tinyMMLU) via Apple's `coreai.llm.eval`, which is a stub in coreai-models 0.1.0 (not_run until it lands). `per_token_logit_cosine`/`graph_output_cosine` = raw fidelity of a STATIC-graph export. See docs/parity-protocol.md."
             },
             "threshold": {
               "type": "number",
