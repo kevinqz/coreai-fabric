@@ -191,6 +191,7 @@ def build_artifact_entry(recipe: Recipe, files: list[dict], tool_version: str | 
     hf_repo = published["hf_repo"]
     owner, repo = hf_repo.split("/", 1)
     conv = recipe.data["conversion"]
+    pub = recipe.data.get("publish", {})
     provenance: dict = {
         "converted_by": {
             "tool": conv["tool"],
@@ -202,7 +203,7 @@ def build_artifact_entry(recipe: Recipe, files: list[dict], tool_version: str | 
     fmt = (recipe.data.get("expected") or {}).get("format_version")
     if fmt:
         provenance["format_version"] = fmt
-    return {
+    entry: dict = {
         "id": recipe.id,
         # Per the shared field contract the artifact group enum is unchanged
         # (zoo/official/external/unknown) while the MODEL gains source_group
@@ -229,6 +230,20 @@ def build_artifact_entry(recipe: Recipe, files: list[dict], tool_version: str | 
             "community_packaged": True,
         },
     }
+    # C3: a variant tier lives under `<variant>/` in the shared repo — scope the
+    # host path so int4/ and int8/ don't collide at the artifact level.
+    if pub.get("variant"):
+        entry["huggingface"]["path"] = pub["variant"]
+    # C3: the community mirror as machine-readable data (source <-> mirror), so
+    # the catalog's neutral-index claim is real. Same bytes, alternative host.
+    if pub.get("mirror_namespace"):
+        entry["mirrors"] = [{
+            "owner": pub["mirror_namespace"],
+            "repo": pub["repo_name"],
+            "url": f"https://huggingface.co/{pub['mirror_namespace']}/{pub['repo_name']}",
+            "revision": published["revision"],
+        }]
+    return entry
 
 
 def build_source_record() -> dict:
