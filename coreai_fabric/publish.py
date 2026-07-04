@@ -199,13 +199,19 @@ def render_model_card(root: Path, recipe, manifest: dict, report: dict,
     # snippet) and dispatch on bundle_kind. Best done alongside the first real
     # conversion of that kind, so the card is validated against a real asset.
     bundle_kind = catalog_block.get("bundle_kind")
+    if bundle_kind == "action":
+        # A robot policy gets the honest action card (needs-a-robot banner,
+        # action_parity, NO chat language) — never the LLM template.
+        return _render_action_card(root, recipe, manifest, report,
+                                   copyright_holder=copyright_holder,
+                                   collection_url=collection_url)
     if bundle_kind and bundle_kind != "llm":
         raise SystemExit(
-            f"publish: the model-card template is LLM-specific, but {recipe.id} is "
-            f"bundle_kind '{bundle_kind}'. Publishing now would label a {bundle_kind} "
-            f"asset as a chat model. Add templates/model-card-{bundle_kind}.md (honest "
-            f"hook + io_contract-driven snippet) and dispatch on bundle_kind first — "
-            f"fabric will not ship a card that misdescribes the asset."
+            f"publish: no card template for bundle_kind '{bundle_kind}' yet "
+            f"(only llm + action). Publishing {recipe.id} now would mislabel a "
+            f"{bundle_kind} asset. Author templates/model-card-{bundle_kind}.md + a "
+            f"dispatch branch in render_model_card first — fabric will not ship a "
+            f"card that misdescribes the asset."
         )
 
     # SotA discoverability metadata. base_model_relation: a CoreAI export is a
@@ -367,6 +373,121 @@ def render_model_card(root: Path, recipe, manifest: dict, report: dict,
         gate_a_status=report["gate_a"]["status"],
         gate_b_metric=gate_b["metric"],
         gate_b_status=gate_b["status"],
+    )
+
+
+def _render_action_card(root: Path, recipe, manifest: dict, report: dict,
+                        *, copyright_holder: str | None = None,
+                        collection_url: str | None = None) -> str:
+    """Card for a VLA/robot policy (bundle_kind: action). Honest by construction:
+    a needs-a-robot banner, action_parity verification (or an explicit not_run),
+    and NO chat language — a policy is not a chat model."""
+    from . import FABRIC_REPO_URL
+    upstream = recipe.data["upstream"]
+    conv = recipe.data["conversion"]
+    catalog_block = recipe.data.get("catalog") or {}
+    publish_cfg = recipe.data.get("publish") or {}
+    action = conv.get("action") or {}
+    repo_id = f"{publish_cfg.get('hf_target_namespace')}/{publish_cfg.get('repo_name')}"
+    template = (root / "templates" / "model-card-action.md").read_text()
+
+    quant = str(conv.get("quantization", "none")).strip()
+    is_quantized = quant.lower() not in ("", "none")
+    base_model_relation_line = "base_model_relation: quantized\n" if is_quantized else ""
+
+    tags = ["coreai", "core-ai", "coreai-fabric", "aimodel", "coreml", "apple",
+            "apple-silicon", "on-device", "robotics", "vla",
+            "vision-language-action", "action"]
+    if is_quantized:
+        tags.append(quant.lower())
+    seen: set[str] = set()
+    tags_block = "".join(f"- {t}\n" for t in tags if not (t in seen or seen.add(t)))
+
+    langs = catalog_block.get("languages") or upstream.get("languages")
+    language_block = ("language:\n" + "".join(f"- {l}\n" for l in langs)) if langs else ""
+
+    # Embodiment + sampling — from the recipe, never invented.
+    embodiment = (action.get("embodiment") or catalog_block.get("embodiment")
+                  or "the robot embodiment it was trained on (see the upstream card)")
+    sampling = ((action.get("sampling") or {}).get("kind")
+                or catalog_block.get("sampling") or "vision-language-action")
+    steps = (action.get("sampling") or {}).get("num_steps")
+
+    meta = _bundle_metadata(root, recipe)
+    min_os = catalog_block.get("min_os") or {}
+    min_os_str = f"macOS {min_os.get('macos', '27.0')}+ / iOS {min_os.get('ios', '27.0')}+"
+    main = bundle_path(root, recipe) / "main.mlirb"
+    size_str = _human_size(main.stat().st_size) if main.is_file() else "—"
+    facts_rows = [
+        ("Parameters", catalog_block.get("parameters", "—")),
+        ("Architecture", catalog_block.get("architecture", "—")),
+        ("Capabilities", ", ".join(catalog_block.get("capabilities", [])) or "—"),
+        ("Embodiment", embodiment),
+        ("Sampling", f"{sampling}" + (f" ({steps}-step)" if steps else "")),
+        ("Quantization / precision", f"{conv.get('quantization', '—')} / {conv.get('precision', '—')}"),
+        ("On-disk size", size_str),
+        ("Asset kind", "split-export policy: encode + denoise_step graphs + norm_stats sidecar"),
+        ("assetVersion", meta.get("assetVersion", "—")),
+    ]
+    facts_block = "".join(f"| {k} | {v} |\n" for k, v in facts_rows)
+
+    gb = report.get("gate_b", {})
+    if gb.get("metric") == "action_parity" and isinstance(gb.get("value"), (int, float)):
+        env = gb.get("environment", {})
+        dev = env.get("chip") or "Apple Silicon"
+        ref = {"float16": "fp16", "float32": "fp32"}.get(gb.get("reference_dtype"), gb.get("reference_dtype", "fp16"))
+        cos = round(100 * gb["value"], 1)
+        mae = gb.get("max_normalized_mae")
+        n = gb.get("compared") or gb.get("n_obs") or "N"
+        ds = gb.get("dataset", "recorded episodes")
+        evaluation_block = (
+            f"- **Gate B — action_parity: {cos}% min chunk-cosine"
+            + (f" · {round(mae, 4)} max normalized MAE" if isinstance(mae, (int, float)) else "")
+            + f"** vs the {ref} reference over {n} frames of `{ds}`, "
+            f"{gb.get('num_steps') or 'N'}-step, fixed-noise (measured on {dev})."
+        )
+    else:
+        evaluation_block = (
+            f"- **Gate B (action_parity): {gb.get('status', 'not_run')}** — "
+            "unmeasured pending a real conversion + `verify` on hardware. "
+            "fabric never fakes a parity number."
+        )
+
+    holder = copyright_holder or upstream.get("copyright_holder")
+    attribution = (f"Weights © {holder}, " if holder else "Weights ") + \
+        f"licensed **{upstream['license']}** — see the bundled `LICENSE`."
+
+    mirror_ns = publish_cfg.get("mirror_namespace")
+    mirror_line = (
+        f"> **Canonical:** [`{repo_id}`](https://huggingface.co/{repo_id}) — source of truth. "
+        + (f"**Mirror:** [`{mirror_ns}/{publish_cfg.get('repo_name')}`](https://huggingface.co/{mirror_ns}/{publish_cfg.get('repo_name')})."
+           if mirror_ns else ""))
+    collection_link = f"- [HF Collection]({collection_url})\n" if collection_url else ""
+
+    return template.format(
+        license=upstream["license"],
+        upstream_hf_repo=upstream["hf_repo"],
+        upstream_revision=manifest.get("input", {}).get("revision") or upstream.get("revision", "unpinned"),
+        base_model_relation_line=base_model_relation_line,
+        language_block=language_block,
+        tags_block=tags_block,
+        name=catalog_block.get("name", recipe.id),
+        embodiment=embodiment,
+        sampling=sampling,
+        recipe_id=recipe.id,
+        mirror_line=mirror_line,
+        facts_block=facts_block,
+        min_os=min_os_str,
+        gate_a_status=report["gate_a"]["status"],
+        evaluation_block=evaluation_block,
+        attribution=attribution,
+        collection_link=collection_link,
+        recipe_url=f"{FABRIC_REPO_URL}/blob/main/recipes/{recipe.id}.yaml",
+        tool=manifest.get("tool", conv["tool"]),
+        tool_version=manifest.get("tool_version") or "(version not reported)",
+        precision=conv["precision"],
+        quantization=conv["quantization"],
+        date=today(),
     )
 
 

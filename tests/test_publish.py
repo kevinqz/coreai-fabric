@@ -95,6 +95,22 @@ def test_publish_and_register_flag_parses():
     assert args.catalog_path == "/tmp/cat"
 
 
+def test_action_card_is_honest_and_not_chat():
+    # A robot policy (bundle_kind: action) renders the ACTION card, not the LLM
+    # one: a needs-a-robot banner, action_parity, robotics pipeline, and ZERO chat
+    # language. This is what replaced the S2 hard-stop for the action kind.
+    recipe = copy.deepcopy(find_recipe("qwen3-0.6b", REPO_ROOT))
+    recipe.data["catalog"]["bundle_kind"] = "action"
+    recipe.data["catalog"]["capabilities"] = ["vision-language-action", "robotics"]
+    recipe.data["upstream"]["pipeline_tag"] = "robotics"
+    card = render_model_card(REPO_ROOT, recipe, MANIFEST, REPORT)
+    assert "needs a matching robot to actuate" in card
+    assert "CoreAILanguageModel" not in card    # NOT a chat model
+    assert "LanguageModelSession" not in card
+    assert "action_parity" in card
+    assert "pipeline_tag: robotics" in card
+
+
 def test_card_refuses_to_mislabel_a_non_llm_bundle():
     # S2: the LLM card template (chat hook, KV-cache prose, CoreAILanguageModel
     # example) must NOT render for a non-LLM bundle — a whisper .aimodel is not a
