@@ -6,6 +6,7 @@ import copy
 import json
 from pathlib import Path
 
+import pytest
 import yaml
 
 from coreai_fabric.publish import render_model_card
@@ -60,6 +61,15 @@ def test_card_never_advertises_an_unpublished_sibling_variant():
     card = render_model_card(REPO_ROOT, int8, MANIFEST, REPORT)
     assert "## Quantization variants" not in card
     assert "`int4/`" not in card
+
+
+def test_card_refuses_to_mislabel_a_non_llm_bundle():
+    # S2: the LLM card template (chat hook, KV-cache prose, CoreAILanguageModel
+    # example) must NOT render for a non-LLM bundle — a whisper .aimodel is not a
+    # chat model. fabric fails loud with the fix instead of shipping a lying card.
+    recipe = find_recipe("whisper-large-v3-turbo", REPO_ROOT)  # bundle_kind: asr
+    with pytest.raises(SystemExit, match="bundle_kind 'asr'"):
+        render_model_card(REPO_ROOT, recipe, MANIFEST, REPORT)
 
 
 class _FakeCollection:

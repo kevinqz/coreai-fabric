@@ -191,6 +191,23 @@ def render_model_card(root: Path, recipe, manifest: dict, report: dict,
     publish_cfg = recipe.data.get("publish") or {}
     repo_id = f"{publish_cfg.get('hf_target_namespace')}/{publish_cfg.get('repo_name')}"
 
+    # S2: the rich card template is LLM-specific — a chat hook, a "stateful
+    # KV-cache chat" asset description, and a CoreAILanguageModel Swift example.
+    # Rendering it for a non-LLM bundle would MISLABEL the asset (a whisper .aimodel
+    # is not a chat model). Fail loud with the fix rather than ship a lying card:
+    # author a per-kind template (honest hook + the io_contract-driven Swift
+    # snippet) and dispatch on bundle_kind. Best done alongside the first real
+    # conversion of that kind, so the card is validated against a real asset.
+    bundle_kind = catalog_block.get("bundle_kind")
+    if bundle_kind and bundle_kind != "llm":
+        raise SystemExit(
+            f"publish: the model-card template is LLM-specific, but {recipe.id} is "
+            f"bundle_kind '{bundle_kind}'. Publishing now would label a {bundle_kind} "
+            f"asset as a chat model. Add templates/model-card-{bundle_kind}.md (honest "
+            f"hook + io_contract-driven snippet) and dispatch on bundle_kind first — "
+            f"fabric will not ship a card that misdescribes the asset."
+        )
+
     # SotA discoverability metadata. base_model_relation: a CoreAI export is a
     # `quantized` derivative when the preset compresses weights — NOT `finetune`
     # (HF's default, and what the community's own cards wrongly show). Omit it
