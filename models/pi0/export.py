@@ -102,6 +102,19 @@ def _load_policy(fp16: bool = False):
         policy = PI0Policy.from_pretrained(cfg_dir, config=cfg, local_files_only=True).eval()
     if fp16:
         policy = policy.half()
+        # fp16 gotcha: the gemma action expert upcasts internally and hands action_out_proj
+        # an fp32 tensor while the proj weight is fp16 -> "mat1 Float / mat2 Half". Cast each
+        # projection's input to its own weight dtype via a forward-pre-hook (traceable through
+        # torch.export). Covers the out/in/state projections defensively.
+        def _cast_in(module, args):
+            if args and hasattr(args[0], "to"):
+                return (args[0].to(module.weight.dtype), *args[1:])
+            return args
+        m = policy.model
+        for attr in ("action_out_proj", "action_in_proj", "state_proj"):
+            proj = getattr(m, attr, None)
+            if proj is not None and hasattr(proj, "weight"):
+                proj.register_forward_pre_hook(_cast_in)
     return policy
 
 
@@ -218,9 +231,17 @@ def cmd_lower(out: Path):
     conv.add_exported_program(_load("denoise_step"), input_names=_DEN_INPUTS,
                               output_names=_DEN_OUTPUTS, entrypoint_name="denoise_step")
     prog = conv.to_coreai()
+    # to_coreai has fully consumed both staged ExportedPrograms — free the big .pt2 (up to
+    # ~13GB) BEFORE optimize()/save_asset writes the .aimodel, so the two never coexist on
+    # this ~95%-full disk.
+    for name in ("encode", "denoise_step"):
+        p = out / f"{name}.pt2"
+        if p.exists():
+            p.unlink()
+    print(f"freed encode/denoise .pt2 — {_disk_free_gb():.1f}GB free")
     prog.optimize()
     aimodel = out / f"{out.name}.aimodel"
-    prog.save_asset(str(aimodel))
+    prog.save_asset(aimodel)   # MUST be a Path ending in .aimodel (save_asset checks .suffix)
     print(f"ok: lowered pi0 -> {aimodel} (entrypoints: encode, denoise_step) — "
           f"{_disk_free_gb():.1f}GB free")
     print("next: write norm_stats.json (from policy_pre/postprocessor), then models/pi0/parity.py")

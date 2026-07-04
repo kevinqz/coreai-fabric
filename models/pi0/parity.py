@@ -68,14 +68,18 @@ def _euler_torch(enc, den, obs, num_steps):
     return x_t.float().numpy()
 
 
-def cmd_reference(out: Path, n_frames: int, seed: int, num_steps: int):
-    """venv-A: torch encode + denoise Euler loop (fp32) -> reference action chunks."""
+def cmd_reference(out: Path, n_frames: int, seed: int, num_steps: int, fp16: bool = True):
+    """venv-A: torch encode + denoise Euler loop -> reference action chunks. fp16 (default)
+    matches the fp16 asset so parity isolates export/lowering error (not fp16 quantization);
+    --fp32 falls back if fp16 CPU torch chokes on an op."""
     import numpy as np
     import torch  # noqa: F401
-    enc, den, _ = pi0_export._build_wrappers(fp16=False)   # fp32 reference (robust on CPU)
+    enc, den, _ = pi0_export._build_wrappers(fp16=fp16)
+    import torch as _t
+    fd = _t.float16 if fp16 else _t.float32
     refs, imgs, states, noises = [], [], [], []
     for i in range(n_frames):
-        obs = _obs(seed + i, __import__("torch").float32)
+        obs = _obs(seed + i, fd)                        # reference compute dtype (matches asset)
         ref = _euler_torch(enc, den, obs, num_steps)
         img, imask, tok, lmask, state, noise = obs
         refs.append(ref)
@@ -117,26 +121,29 @@ def cmd_compare(out: Path, bundle: Path):
         except Exception:  # noqa: BLE001
             return {"metric": "action_parity", "value": None, "status": "not_run",
                     "reason": "asset lacks encode + denoise_step entrypoints"}
-        f32 = np.float32
+        # Cast each input to the asset's OWN traced dtype (an fp16-exported asset needs fp16
+        # x_t/state/imgs/timestep; coreai may also narrow int64 tokens to int32). Never assume.
+        def nd(fn, name, arr):
+            dt = np.dtype(str(fn.desc.input_descriptor(name).dtype))
+            return NDArray(np.asarray(arr).astype(dt))
 
         async def drive(i):
             im = images[i]                                   # [3,3,224,224]
-            enc_in = {"img0": NDArray(im[0:1].astype(f32)), "img1": NDArray(im[1:2].astype(f32)),
-                      "img2": NDArray(im[2:3].astype(f32)),
-                      "imask0": NDArray(np.ones((1,), bool)), "imask1": NDArray(np.ones((1,), bool)),
-                      "imask2": NDArray(np.ones((1,), bool)),
-                      "lang_tokens": NDArray(np.zeros((1, C.TOK), np.int64)),
-                      "lang_masks": NDArray(np.ones((1, C.TOK), bool))}
+            enc_in = {"img0": nd(enc, "img0", im[0:1]), "img1": nd(enc, "img1", im[1:2]),
+                      "img2": nd(enc, "img2", im[2:3]),
+                      "imask0": nd(enc, "imask0", np.ones((1,), bool)),
+                      "imask1": nd(enc, "imask1", np.ones((1,), bool)),
+                      "imask2": nd(enc, "imask2", np.ones((1,), bool)),
+                      "lang_tokens": nd(enc, "lang_tokens", np.zeros((1, C.TOK))),
+                      "lang_masks": nd(enc, "lang_masks", np.ones((1, C.TOK)))}
             eo = await enc(inputs=enc_in)
             ppad = eo["prefix_pad_masks"]
-            cache = {n: eo[n] for n in C._CACHE_NAMES}
+            cache = {n: eo[n] for n in C._CACHE_NAMES}     # already the asset's dtype (its outputs)
             x_t = noises[i:i + 1].astype(np.float64)
             dt = -1.0 / num_steps
-            st = states[i:i + 1].astype(f32)
             for step in range(num_steps):
-                t = np.asarray([1.0 + step * dt], dtype=f32)
-                din = {"state": NDArray(st), "prefix_pad_masks": ppad,
-                       "x_t": NDArray(x_t.astype(f32)), "timestep": NDArray(t)}
+                din = {"state": nd(den, "state", states[i:i + 1]), "prefix_pad_masks": ppad,
+                       "x_t": nd(den, "x_t", x_t), "timestep": nd(den, "timestep", [1.0 + step * dt])}
                 din.update({n: cache[n] for n in C._CACHE_NAMES})
                 vo = await den(inputs=din)
                 v_t = vo["velocity"].numpy().astype(np.float64)
@@ -182,11 +189,12 @@ def main():
     ap.add_argument("--n-frames", type=int, default=4)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--num-steps", type=int, default=10)
+    ap.add_argument("--fp32", action="store_true", help="fp32 reference (fallback if fp16 CPU chokes)")
     args = ap.parse_args()
     if args.compare:
         cmd_compare(args.out, args.bundle or (args.out / f"{args.out.name}.aimodel"))
     else:
-        cmd_reference(args.out, args.n_frames, args.seed, args.num_steps)
+        cmd_reference(args.out, args.n_frames, args.seed, args.num_steps, fp16=not args.fp32)
 
 
 if __name__ == "__main__":
