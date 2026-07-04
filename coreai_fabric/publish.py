@@ -412,6 +412,7 @@ def _render_action_card(root: Path, recipe, manifest: dict, report: dict,
     sampling = ((action.get("sampling") or {}).get("kind")
                 or catalog_block.get("sampling") or "vision-language-action")
     steps = (action.get("sampling") or {}).get("num_steps")
+    _graphs = action.get("graphs") or []
 
     meta = _bundle_metadata(root, recipe)
     min_os = catalog_block.get("min_os") or {}
@@ -426,7 +427,9 @@ def _render_action_card(root: Path, recipe, manifest: dict, report: dict,
         ("Sampling", f"{sampling}" + (f" ({steps}-step)" if steps else "")),
         ("Quantization / precision", f"{conv.get('quantization', '—')} / {conv.get('precision', '—')}"),
         ("On-disk size", size_str),
-        ("Asset kind", "split-export policy: encode + denoise_step graphs + norm_stats sidecar"),
+        ("Asset kind", (
+            f"split-export policy ({', '.join(g.get('name', '?') for g in _graphs)}) + norm_stats"
+            if len(_graphs) > 1 else "single-graph policy + norm_stats sidecar")),
         ("assetVersion", meta.get("assetVersion", "—")),
     ]
     facts_block = "".join(f"| {k} | {v} |\n" for k, v in facts_rows)

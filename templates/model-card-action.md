@@ -19,9 +19,10 @@ library_name: coreai
 > fine-tune on your robot's data before expecting useful behavior.
 
 An Apple Core AI conversion of
-[{upstream_hf_repo}](https://huggingface.co/{upstream_hf_repo}) — a **{sampling}
-vision-language-action policy** (images + proprioceptive state + language → a
-continuous action chunk). Produced by [coreai-fabric]({recipe_url}) and indexed by
+[{upstream_hf_repo}](https://huggingface.co/{upstream_hf_repo}) — a **robot policy**
+that maps images + proprioceptive state (+ a language instruction, when the model
+uses one) to a continuous action chunk ({sampling} sampler). Produced by
+[coreai-fabric]({recipe_url}) and indexed by
 [coreai-catalog](https://github.com/kevinqz/coreai-catalog).
 
 ## Model facts

@@ -1,0 +1,92 @@
+id: act-aloha-cube
+upstream:
+  hf_repo: lerobot/act_aloha_sim_transfer_cube_human
+  revision: ba73b2766f1371cdc133ca4efb97eb090d744625
+  license: apache-2.0
+  license_terms: permissive
+  pipeline_tag: robotics
+  size_bytes: 210000000
+conversion:
+  tool: models/act/export.py
+  precision: float16
+  quantization: none
+  action:
+    embodiment: aloha_bimanual_14dof_sim
+    robot_required: true
+    action_space:
+      dim: 14
+      max_action_dim: 14
+      max_state_dim: 14
+      chunk_size: 100
+      convention: aloha_joint_position
+    sampling:
+      kind: act
+    normalization:
+      stats_source: config.json dataset_stats (MEAN_STD for state/action, IDENTITY visual);
+        ships as norm_stats.json
+    graphs:
+    - name: policy
+expected:
+  bundle_files:
+  - metadata.json
+  - policy/main.mlirb
+  - policy/main.hash
+  - norm_stats.json
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: action_parity
+    threshold: 0.999
+    tolerance: 0.001
+    max_action_mae: 0.05
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: ACT-Aloha-TransferCube-CoreAI
+  collection: CoreAI · Apple on-device
+catalog:
+  name: ACT ALOHA Transfer-Cube (fabric)
+  family: LeRobot
+  bundle_kind: action
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: false
+    custom_kernel: false
+    patch_required: true
+    aot_required: false
+  capabilities:
+  - robotics
+  modalities:
+    input:
+    - image
+    - state
+    output:
+    - action
+  parameters: 51.6M
+  architecture: transformer
+  runner: CoreAIRunner
+  tokenizer_required: false
+  processor_required: true
+status: published
+notes: 'ACT (Action Chunking Transformer) policy — lerobot/act_aloha_sim_transfer_cube_human,
+  apache-2.0. A DETERMINISTIC visuomotor policy: 1 camera (480x640) + proprioceptive state
+  (14) -> a 100-step action chunk (14 dims), single forward pass (no VLM, no flow-matching
+  sampler). SIM benchmark: trained on the ALOHA bimanual transfer-cube sim task — needs the
+  ALOHA bimanual embodiment (or the sim) to actuate; the output is inert without the robot.
+  Gate B = action_parity vs the torch reference on recorded frames (DETERMINISTIC — no noise
+  to fix, single graph). Gate B action_parity = 1.0 min-cosine / 0.0 MAE over 8 frames (M4
+  Max) — the export is NUMERICALLY EXACT vs the torch reference as loaded by lerobot 0.5.1.
+  Proof-grade caveats, honestly: parity measured on fixed-seed observations (a deterministic
+  policy exports identically regardless of input), and lerobot 0.5.1 warns on this older checkpoint''s
+  normalization buffers (the asset faithfully reproduces the source AS LOADED). THE FIRST
+  VLA/action conversion — proves the whole pipeline (two-venv export/lower + .aimodel + action_parity)
+  before pi0.'
+published:
+  hf_repo: kevinqz/ACT-Aloha-TransferCube-CoreAI
+  revision: 17c4a61a513045e0252803077d1969b44f014210
+  date: '2026-07-04'
