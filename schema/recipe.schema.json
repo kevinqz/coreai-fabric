@@ -83,6 +83,45 @@
           "type": "string",
           "minLength": 1,
           "description": "Passed to the converter as --compute-precision. Verified vocabulary: float16, bfloat16, float32."
+        },
+        "action": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "VLA/robot-policy conversion (bundle_kind: action). Declares the split-export shape + the policy's I/O so the host can drive the sampler loop and action_parity can verify it. A policy is inert without its embodiment — these fields are load-bearing, never guessed.",
+          "properties": {
+            "embodiment": { "type": "string", "description": "Target robot family (e.g. so100_so101_6dof). Honest label of what the action chunk actuates — NOT a claim of task success." },
+            "robot_required": { "type": "boolean", "description": "Always true for a policy: the output is inert without a matching robot." },
+            "action_space": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "dim": { "type": "integer", "minimum": 1, "description": "Real robot action dims." },
+                "max_action_dim": { "type": "integer", "minimum": 1, "description": "Model's padded action width." },
+                "max_state_dim": { "type": "integer", "minimum": 1, "description": "Model's padded state width." },
+                "chunk_size": { "type": "integer", "minimum": 1, "description": "Actions emitted per inference." },
+                "convention": { "type": "string", "description": "Coordinate convention (e.g. joint_position_delta); per-embodiment, from the upstream card, never guessed." }
+              }
+            },
+            "sampling": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "kind": { "type": "string", "enum": ["flow_matching", "autoregressive_fast", "diffusion", "act"], "description": "The action-head sampler family." },
+                "num_steps": { "type": "integer", "minimum": 1, "description": "Fixed sampler steps (e.g. 10). Part of the asset's identity + parity signature — a reduced-step variant is a DIFFERENT model with its own measured action_parity." },
+                "solver": { "type": "string", "description": "Integrator (e.g. euler)." }
+              }
+            },
+            "normalization": {
+              "type": "object",
+              "additionalProperties": true,
+              "description": "Un-normalization scheme per stream + where the stats ship (a bundle sidecar). A silent stats mismatch produces meaningless actions — action_parity hash-checks it."
+            },
+            "graphs": {
+              "type": "array",
+              "description": "Split-export graphs (e.g. encode, denoise_step) — each separately exported so the host drives the N-step loop and num_steps is a runtime input, not a baked constant.",
+              "items": { "type": "object", "additionalProperties": false, "required": ["name"], "properties": { "name": { "type": "string" } } }
+            }
+          }
         }
       }
     },

@@ -193,10 +193,44 @@ def build_model_entry(recipe: Recipe, files: list[dict], *, notes_suffix: str = 
 
 def _io_contract(catalog_block: dict, upstream_repo: str) -> dict | None:
     """A typed integration contract for the bundle kinds fabric produces and
-    verifies today. LLM = the KV-cache chat asset: text in, text out, a stateful
-    streaming session, entrypoint CoreAILanguageModel. Other kinds return None
-    (see C4 note above) until fabric emits + verifies them."""
-    if catalog_block.get("bundle_kind") != "llm":
+    verifies today. LLM = the KV-cache chat asset (text->text, stateful streaming,
+    CoreAILanguageModel). ACTION = a VLA/robot policy (obs in, action chunk out,
+    NON-stateful, host-driven sampler). Other kinds return None until fabric emits
+    + verifies them — the catalog's fabric-io_contract test then forces coverage."""
+    kind = catalog_block.get("bundle_kind")
+    if kind == "action":
+        # A policy is NOT chat: honest non-stateful, non-streaming; obs modalities
+        # in, a continuous action chunk out via a host-driven sampler loop.
+        inputs = [
+            {"name": m, "modality": m}
+            for m in (catalog_block.get("modalities", {}) or {}).get("input", [])
+        ] or [{"name": "observation", "modality": "image"}]
+        contract = {
+            "entrypoint": {
+                "framework": "CoreAIRunner",
+                "type": "CoreAIRunner",
+                "init_pattern": "load the encode + denoise_step graphs; host drives the N-step sampler + un-normalization",
+            },
+            "inputs": inputs,
+            "outputs": [{
+                "name": "action_chunk",
+                "swift_type": "[[Float]]",
+                "decoding": {
+                    "detokenization": "host-driven flow-matching sampler (N steps); "
+                    "un-normalize the action chunk with norm_stats.json",
+                },
+            }],
+            "session": {"stateful": False, "streaming": False},
+        }
+        files = {}
+        if catalog_block.get("tokenizer_required"):
+            files["tokenizer_ref"] = "tokenizer"
+        if catalog_block.get("processor_required"):
+            files["processor_ref"] = "norm_stats.json"
+        if files:
+            contract["files"] = files
+        return contract
+    if kind != "llm":
         return None
     prompt_input = {"name": "prompt", "modality": "text", "swift_type": "String"}
     ctx = catalog_block.get("context_length")

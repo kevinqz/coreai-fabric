@@ -102,6 +102,25 @@ def test_llm_model_entry_carries_a_typed_io_contract():
     assert _schema_errors("model.schema.json", entry) == []
 
 
+def test_action_model_carries_a_typed_io_contract():
+    # VLA lane: a robot policy is agent-ready too — obs modalities in, an action
+    # chunk out, NON-stateful (not chat). Emitted so the catalog's E6 test accepts
+    # a fabric VLA instead of rejecting it as untyped.
+    recipe = _published_recipe()
+    recipe.data["catalog"]["bundle_kind"] = "action"
+    recipe.data["catalog"]["capabilities"] = ["vision-language-action", "robotics"]
+    recipe.data["catalog"]["modalities"] = {"input": ["image", "text", "state"], "output": ["action"]}
+    recipe.data["catalog"]["processor_required"] = True
+    entry = build_model_entry(recipe, FAKE_FILES)
+    io = entry["io_contract"]
+    assert io["entrypoint"]["type"] == "CoreAIRunner"
+    assert io["session"] == {"stateful": False, "streaming": False}   # NOT chat
+    assert io["outputs"][0]["name"] == "action_chunk"
+    assert {i["modality"] for i in io["inputs"]} == {"image", "text", "state"}
+    assert io["files"]["processor_ref"] == "norm_stats.json"
+    assert _schema_errors("model.schema.json", entry) == []
+
+
 def test_non_llm_bundle_gets_no_fabricated_io_contract():
     # C4 is honest: a bundle kind fabric can't yet describe truthfully gets NO
     # io_contract rather than a wrong one — the catalog's fabric-io_contract
