@@ -1,0 +1,89 @@
+id: vqbet-pusht
+upstream:
+  hf_repo: lerobot/vqbet_pusht
+  revision: 15c2d0af889c401c7e5db7a07499d3b498afc276
+  license: apache-2.0
+  license_terms: permissive
+  pipeline_tag: robotics
+  size_bytes: 158152042
+conversion:
+  tool: models/vqbet/export.py
+  precision: float16
+  quantization: none
+  action:
+    embodiment: pusht_planar_2dof_sim
+    robot_required: true
+    action_space:
+      dim: 2
+      max_action_dim: 2
+      max_state_dim: 2
+      chunk_size: 5
+      convention: pusht_ee_position
+    sampling:
+      kind: vqbet
+    normalization:
+      stats_source: as loaded by lerobot 0.5.1 (processor-based; the graph operates in the
+        policy's as-loaded action space — host un-normalizes with upstream processor stats)
+    graphs:
+    - name: main
+expected:
+  bundle_files:
+  - metadata.json
+  - main.mlirb
+  - main.hash
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: action_parity
+    threshold: 0.999
+    tolerance: 0.001
+    max_action_mae: 0.05
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: VQ-BeT-PushT-CoreAI
+  collection: CoreAI · Apple on-device
+catalog:
+  name: VQ-BeT PushT greedy (fabric)
+  family: LeRobot
+  bundle_kind: action
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: false
+    custom_kernel: false
+    patch_required: true
+    aot_required: false
+  capabilities:
+  - robotics
+  modalities:
+    input:
+    - image
+    - state
+    output:
+    - action
+  parameters: 26.0M
+  architecture: transformer
+  runner: CoreAIRunner
+  tokenizer_required: false
+  processor_required: true
+status: published
+notes: 'VQ-BeT (Lee et al. 2024) — lerobot/vqbet_pusht, apache-2.0. A visuomotor policy that
+  maps a stack of 5 observations (1 camera 96x96 + agent-pos state 2) -> an action chunk (5
+  steps x 2 dims) in a SINGLE forward pass (residual VQ-VAE codebook + minGPT + offset head).
+  GREEDY/DETERMINISTIC variant: the source rollout picks codes with torch.multinomial (stochastic);
+  this conversion selects codes by argmax (greedy) — a standard, valid deterministic inference
+  mode — so the asset is reproducible and parity is exact. The card must NOT imply the stochastic
+  sampler. Single-graph like ACT (the VQ codebook gather + argmax + GPT all lower on coremltools
+  9.0). Gate B = action_parity of the greedy export vs the greedy torch reference (multinomial->argmax
+  on BOTH sides). A vestigial mlp_hidden_dim config field (unused by lerobot 0.5.1''s architecture;
+  state_dict loads clean without it) was stripped for load compat. PushT is a 2D planar pushing
+  sim task — needs the sim/robot to actuate; the output is inert alone.'
+published:
+  hf_repo: kevinqz/VQ-BeT-PushT-CoreAI
+  revision: 23a73f647ea0c036ee6b6d47c7455e9e6299e84a
+  date: '2026-07-04'

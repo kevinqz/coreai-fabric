@@ -106,7 +106,7 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "kind": { "type": "string", "enum": ["flow_matching", "autoregressive_fast", "diffusion", "act"], "description": "The action-head sampler family." },
+                "kind": { "type": "string", "enum": ["flow_matching", "autoregressive_fast", "diffusion", "act", "vqbet"], "description": "The action-head sampler family." },
                 "num_steps": { "type": "integer", "minimum": 1, "description": "Fixed sampler steps (e.g. 10). Part of the asset's identity + parity signature — a reduced-step variant is a DIFFERENT model with its own measured action_parity." },
                 "solver": { "type": "string", "description": "Integrator (e.g. euler)." }
               }
