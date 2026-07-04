@@ -81,6 +81,23 @@ def test_model_entry_carries_measured_parity_into_catalog():
     assert build_model_entry(recipe, FAKE_FILES, report=report)["size"]["fidelity_tier"] == "size"
 
 
+def test_recipe_traits_reach_catalog_as_separate_facet():
+    # Architecture/inference traits (moe, mla, …) are emitted as a `traits`
+    # facet, never mixed into the capabilities vocabulary — and still validate.
+    recipe = _published_recipe()
+    recipe.data["catalog"]["traits"] = ["moe"]
+    entry = build_model_entry(recipe, FAKE_FILES)
+    assert _schema_errors("model.schema.json", entry) == []
+    assert entry["traits"] == ["moe"]
+    assert "moe" not in entry["capabilities"]   # a trait never leaks into tasks
+
+
+def test_recipe_without_traits_omits_the_facet():
+    # Most models have no special trait; register must not emit an empty list.
+    entry = build_model_entry(_published_recipe(), FAKE_FILES)
+    assert "traits" not in entry
+
+
 def test_artifact_entry_validates_against_catalog_schema():
     entry = build_artifact_entry(_published_recipe(), FAKE_FILES, tool_version="0.0-test")
     assert _schema_errors("artifact.schema.json", entry) == []

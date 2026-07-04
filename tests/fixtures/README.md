@@ -3,7 +3,9 @@
 `model.schema.json`, `artifact.schema.json`, and `source.schema.json` are
 verbatim SNAPSHOTS of the coreai-catalog schemas, refreshed 2026-07-03 after
 the catalog's P1 wave (they now include `bundle_kind`, `min_os`, `io_contract`,
-and `upstream_repo` on the model schema).
+and `upstream_repo` on the model schema) and again after the taxonomy
+standardization (`capabilities` is now a controlled enum and architecture/
+inference traits moved to a separate `traits` facet).
 
 They exist ONLY so the register generator can be tested OFFLINE. They are NOT
 the drift guard — vendored snapshots always re-stale over time. The real drift

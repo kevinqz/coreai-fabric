@@ -229,8 +229,31 @@
         },
         "capabilities": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 },
+          "description": "What the model DOES — its tasks/behaviors. Controlled vocabulary mirrored from the catalog model schema; extend it there first, never ad-hoc. Architecture/inference properties (moe, mla, hybrid-llm, diffusion-lm, speculative-decoding) are NOT capabilities — put those in `traits`.",
+          "items": {
+            "type": "string",
+            "enum": [
+              "agentic", "audio-understanding", "chat", "code-generation",
+              "document-ocr", "embedding", "gui-grounding", "image-generation",
+              "image-text-similarity", "image-to-3d", "instance-segmentation",
+              "instruction-following", "monocular-depth", "music-generation",
+              "object-detection", "promptable-segmentation", "reasoning",
+              "reranking", "robotics", "speech-to-text", "super-resolution",
+              "text-generation", "text-to-audio", "text-to-speech",
+              "text-to-video", "video-classification", "vision-language",
+              "vision-language-action", "visual-document-retrieval"
+            ]
+          },
           "minItems": 1,
+          "uniqueItems": true
+        },
+        "traits": {
+          "type": "array",
+          "description": "What the model IS inside — architecture or inference technique, orthogonal to what it does. Optional; most models have none. Controlled vocabulary mirrored from the catalog model schema.",
+          "items": {
+            "type": "string",
+            "enum": ["moe", "mla", "hybrid-llm", "diffusion-lm", "speculative-decoding"]
+          },
           "uniqueItems": true
         },
         "modalities": {

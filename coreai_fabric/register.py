@@ -114,6 +114,10 @@ def build_model_entry(recipe: Recipe, files: list[dict], *, notes_suffix: str = 
         "source_path": recipe_url(recipe),
         "artifact_ref": recipe.id,
         "capabilities": list(catalog_block["capabilities"]),
+        # Architecture/inference traits (moe, mla, …) are orthogonal to the task
+        # list; emit them only when the recipe declares them, so the capabilities
+        # facet stays a clean controlled vocabulary of what the model DOES.
+        **({"traits": list(catalog_block["traits"])} if catalog_block.get("traits") else {}),
         "bundle_kind": catalog_block["bundle_kind"],
         "min_os": {"macos": min_os["macos"], "ios": min_os["ios"]},
         # Upstream repo (org/name) is the discovery dedup key; fabric holds it verbatim.
