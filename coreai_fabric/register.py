@@ -181,7 +181,47 @@ def build_model_entry(recipe: Recipe, files: list[dict], *, notes_suffix: str = 
     pub = recipe.data.get("publish", {})
     if pub.get("variant"):
         entry["variant_group"] = f"{pub.get('hf_target_namespace')}/{pub.get('repo_name')}"
+    # C4: emit a typed io_contract so a fabric model is as agent-ready as the
+    # official ones (not just a bundle). None for bundle kinds fabric can't yet
+    # describe truthfully — the catalog's every-fabric-model-has-io_contract
+    # test then FORCES the contract to be added, never silently skipped.
+    io = _io_contract(catalog_block, recipe.data["upstream"]["hf_repo"])
+    if io:
+        entry["io_contract"] = io
     return entry
+
+
+def _io_contract(catalog_block: dict, upstream_repo: str) -> dict | None:
+    """A typed integration contract for the bundle kinds fabric produces and
+    verifies today. LLM = the KV-cache chat asset: text in, text out, a stateful
+    streaming session, entrypoint CoreAILanguageModel. Other kinds return None
+    (see C4 note above) until fabric emits + verifies them."""
+    if catalog_block.get("bundle_kind") != "llm":
+        return None
+    prompt_input = {"name": "prompt", "modality": "text", "swift_type": "String"}
+    ctx = catalog_block.get("context_length")
+    if isinstance(ctx, int):
+        prompt_input["constraints"] = {"max_context": ctx}
+    contract = {
+        "entrypoint": {
+            "framework": "CoreAILanguageModels",
+            "type": "CoreAILanguageModel",
+            "init_pattern": "let model = try await CoreAILanguageModel(resourcesAt: bundleURL)",
+        },
+        "inputs": [prompt_input],
+        "outputs": [{
+            "name": "response",
+            "swift_type": "String",
+            "decoding": {
+                "detokenization": f"embedded tokenizer ({upstream_repo}); "
+                "LanguageModelSession.respond(to:) returns detokenized text",
+            },
+        }],
+        "session": {"stateful": True, "streaming": True},
+    }
+    if catalog_block.get("tokenizer_required"):
+        contract["files"] = {"tokenizer_ref": "macos/tokenizer"}
+    return contract
 
 
 def build_artifact_entry(recipe: Recipe, files: list[dict], tool_version: str | None) -> dict:
@@ -424,6 +464,15 @@ def _apply_and_open_pr(
     _bump_artifact_count(catalog_path / "artifacts.yaml")
     _ensure_source_record(catalog_path / "sources.yaml", source_record)
 
+    # E5: appending a model makes the public counts (README, llms.txt, agent.json,
+    # site, ...) stale. Bump them to canonical BEFORE the gate, so the count-sync
+    # check passes and the PR arrives green instead of tripping catalog CI. The
+    # gate below re-verifies, so a --fix that misses a surface still fails loud.
+    cc = catalog_path / "scripts" / "check_counts.py"
+    if cc.exists():
+        subprocess.run([sys.executable, str(cc), "--fix"], cwd=catalog_path,
+                       capture_output=True, text=True)
+
     # Replay the catalog's OWN CI gate locally so the PR arrives green. Mirrors
     # .github/workflows/validate.yml, not a 3-script subset — otherwise a PR can
     # pass here and still fail catalog CI. Missing scripts (older checkout) are
@@ -432,6 +481,7 @@ def _apply_and_open_pr(
         ([sys.executable, "scripts/validate.py"], "validate", "scripts/validate.py"),
         ([sys.executable, "scripts/audit.py"], "audit", "scripts/audit.py"),
         ([sys.executable, "scripts/generate.py"], "generate", "scripts/generate.py"),
+        ([sys.executable, "scripts/check_counts.py"], "check_counts", "scripts/check_counts.py"),
         ([sys.executable, "scripts/doc_test.py"], "doc_test", "scripts/doc_test.py"),
         ([sys.executable, "scripts/generate_templates.py", "--check"], "templates --check", "scripts/generate_templates.py"),
         ([sys.executable, "scripts/injection_lint.py"], "injection_lint", "scripts/injection_lint.py"),

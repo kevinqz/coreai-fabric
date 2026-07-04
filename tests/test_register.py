@@ -81,6 +81,37 @@ def test_model_entry_carries_measured_parity_into_catalog():
     assert build_model_entry(recipe, FAKE_FILES, report=report)["size"]["fidelity_tier"] == "size"
 
 
+def test_llm_model_entry_carries_a_typed_io_contract():
+    # C4: a fabric LLM is as agent-ready as the official entries — a typed
+    # io_contract (CoreAILanguageModel entrypoint, text->text, stateful+streaming
+    # session, tokenizer ref), derived truthfully from the recipe.
+    recipe = _published_recipe()
+    entry = build_model_entry(recipe, FAKE_FILES)
+    io = entry["io_contract"]
+    assert io["entrypoint"]["type"] == "CoreAILanguageModel"
+    assert io["inputs"][0]["modality"] == "text"
+    assert io["outputs"][0]["swift_type"] == "String"
+    assert io["session"] == {"stateful": True, "streaming": True}
+    ctx = recipe.data["catalog"].get("context_length")
+    if ctx:
+        assert io["inputs"][0]["constraints"]["max_context"] == ctx
+    if recipe.data["catalog"].get("tokenizer_required"):
+        assert io["files"]["tokenizer_ref"] == "macos/tokenizer"
+    # The upstream repo is named in the detokenization note (no invented vocab).
+    assert recipe.data["upstream"]["hf_repo"] in io["outputs"][0]["decoding"]["detokenization"]
+    assert _schema_errors("model.schema.json", entry) == []
+
+
+def test_non_llm_bundle_gets_no_fabricated_io_contract():
+    # C4 is honest: a bundle kind fabric can't yet describe truthfully gets NO
+    # io_contract rather than a wrong one — the catalog's fabric-io_contract
+    # test then forces a real one to be authored before it can be registered.
+    recipe = _published_recipe()
+    recipe.data["catalog"]["bundle_kind"] = "asr"
+    entry = build_model_entry(recipe, FAKE_FILES)
+    assert "io_contract" not in entry
+
+
 def test_recipe_traits_reach_catalog_as_separate_facet():
     # Architecture/inference traits (moe, mla, …) are emitted as a `traits`
     # facet, never mixed into the capabilities vocabulary — and still validate.
