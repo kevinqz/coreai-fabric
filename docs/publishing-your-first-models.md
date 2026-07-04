@@ -7,19 +7,23 @@ credentials or your machine's toolchain).
 
 ## What's already done for you
 
-- **3 production recipes are scaffolded, validated, and committed** — a small
-  Apache-2.0 size ladder, all using Apple's tested 4bit macOS presets:
+- **One conversion is already published + live**, and an Apache-2.0 size ladder
+  is scaffolded, validated, and committed. Each Qwen model has an **int8
+  high-fidelity tier** (lead with this) and an **int4 size tier**:
 
-  | recipe id | upstream | preset ctx | publishes to |
-  |---|---|---|---|
-  | `qwen3-0.6b` | Qwen/Qwen3-0.6B | 8192 | `kevinqz/Qwen3-0.6B-CoreAI` |
-  | `qwen2.5-1.5b-instruct` | Qwen/Qwen2.5-1.5B-Instruct | 32768 | `kevinqz/Qwen2.5-1.5B-Instruct-CoreAI` |
-  | `qwen3-4b` | Qwen/Qwen3-4B | 40960 | `kevinqz/Qwen3-4B-CoreAI` |
+  | recipe id | upstream | tier | ctx | publishes to | status |
+  |---|---|---|---|---|---|
+  | `qwen3-0.6b-int8` | Qwen/Qwen3-0.6B | int8 (high-fidelity) | 8192 | `kevinqz/Qwen3-0.6B-CoreAI` | **published + verified** |
+  | `qwen3-0.6b` | Qwen/Qwen3-0.6B | int4 (size) | 8192 | same repo, `int4/` | draft (measured-lossy, 79%) |
+  | `qwen3-4b-int8` · `qwen3-4b` | Qwen/Qwen3-4B | int8 · int4 | 40960 | `kevinqz/Qwen3-4B-CoreAI` | draft (int8 **unmeasured**) |
+  | `qwen2.5-1.5b-instruct-int8` · `…` | Qwen/Qwen2.5-1.5B-Instruct | int8 · int4 | 32768 | `kevinqz/Qwen2.5-1.5B-Instruct-CoreAI` | draft (int8 **unmeasured**) |
 
-  All three pass `coreai-fabric validate`, and their generated catalog entries
-  pass the **live catalog's** validate + audit + io_contract gates
-  (cross-contract CI). `qwen3-0.6b` was additionally run end-to-end on real
-  hardware — see `docs/validation-log.md`.
+  `qwen3-0.6b-int8` was run end-to-end on real hardware, **passed Gate B
+  (greedy_parity: 100% margin-gated / 95.8% argmax), and is published + in the
+  catalog** — <https://huggingface.co/kevinqz/Qwen3-0.6B-CoreAI>. All recipes
+  pass `coreai-fabric validate`, and their generated catalog entries pass the
+  **live catalog's** validate + audit + io_contract + count-sync gates
+  (cross-contract CI). See `docs/validation-log.md`.
 
   > **Namespace note.** All three publish to **your** namespace (`kevinqz`) —
   > your namespace is the source of truth. `coreai-community` is a real, separate
@@ -92,38 +96,54 @@ weights**; it only uploads to the `--namespace` you set (here, `kevinqz`).
 
 ### Step 3 — Run the pipeline (per model)
 
-Each recipe walks convert → verify → publish → register. Example, `qwen3-0.6b`:
+Each recipe walks convert → verify → publish → register. Lead with the **int8**
+(high-fidelity) tier — `qwen3-0.6b-int8` below is exactly what was published:
 
 ```bash
-coreai-fabric convert  qwen3-0.6b          # runs coreai.llm.export → 4bit KV-cache asset (~320 MB)
-coreai-fabric verify   qwen3-0.6b          # Gate A passes; Gate B = not_run (expected — see below)
-coreai-fabric publish  qwen3-0.6b --allow-unverified-parity   # uploads to huggingface.co/kevinqz/…
-coreai-fabric register qwen3-0.6b --catalog-path ../coreai-catalog   # opens the catalog PR (needs gh)
+coreai-fabric convert  qwen3-0.6b-int8     # coreai.llm.export + int8 compression config → KV-cache asset
+coreai-fabric verify   qwen3-0.6b-int8     # Gate A + Gate B (greedy_parity) BOTH pass — no escape flag
+coreai-fabric publish  qwen3-0.6b-int8     # uploads to huggingface.co/kevinqz/Qwen3-0.6B-CoreAI (int8/ tier)
+coreai-fabric register qwen3-0.6b-int8 --catalog-path ../coreai-catalog   # opens the catalog PR (needs gh)
 ```
 
-Repeat for `qwen2.5-1.5b-instruct` and `qwen3-4b`. `register` needs a local
-clone of `coreai-catalog` (`--catalog-path`) **and the GitHub CLI authenticated**
+The int8 siblings `qwen3-4b-int8` and `qwen2.5-1.5b-instruct-int8` follow the
+same flow — but their parity is **not yet measured** (only Qwen3-0.6B has been
+run on hardware), so `verify` them on your Mac before `publish`; don't publish an
+unmeasured tier as if it were the 0.6B result. `register` needs a local clone of
+`coreai-catalog` (`--catalog-path`) **and the GitHub CLI authenticated**
 (`gh auth login`, Step 1); it validates the entry, replays the catalog's own CI
-locally, and opens a PR (forking if you lack push access). To preview without
-`gh` first, run `coreai-fabric register <id> --dry-run` (prints the YAML, opens
-nothing). After the PR merges: `coreai-fabric register <id> --mark-merged`.
+locally (incl. count-sync — it bumps the counts for you), and opens a PR (forking
+if you lack push access). Preview without `gh` via
+`coreai-fabric register <id> --dry-run`. After the PR merges:
+`coreai-fabric register <id> --mark-merged`.
 
-## The one honest caveat: `--allow-unverified-parity`
+## Gate B is real now — and the int8 lane passes it
 
-Every production publish currently needs `--allow-unverified-parity`, and this
-is **correct, not a workaround**:
+An earlier draft of this guide said "every production publish needs
+`--allow-unverified-parity`" because Apple's `coreai.llm.eval` is a stub. That is
+no longer the default reality:
 
-- The production asset is quantized (4bit) + stateful (KV-cache). Its correct
-  Gate B is **benchmark accuracy** vs upstream, not raw logit fidelity.
-- Apple's evaluator for that (`coreai.llm.eval`) is a **stub** in
-  coreai-models 0.1.0 ("Evaluation support is coming soon"), so Gate B honestly
-  reports `not_run` — fabric refuses to fake a parity number.
-- The model card records this plainly, and the catalog entry lands as
-  `status: needs_review`. When Apple ships the evaluator, drop the flag and
-  Gate B runs for real.
+- fabric ships a general **`greedy_parity`** runner (KV-cache decode, teacher-
+  forced along the fp16 reference's greedy path, margin-gated, Wilson CI) that
+  drives a *stateful* asset on-device. It measures **fidelity to the reference**
+  — not task accuracy — and the card says exactly that.
+- The **int8 lane passes it.** `qwen3-0.6b-int8` measured **100% margin-gated /
+  95.8% exact-argmax / 100% top-5** on an M4 Max and is **published, live, and in
+  the catalog**: <https://huggingface.co/kevinqz/Qwen3-0.6B-CoreAI>. It needed
+  **no** escape flag.
+- **Lead with int8 (high-fidelity), not int4.** Apple's macOS int4 preset uses
+  lossy `symmetric_with_clipping` — the same Qwen3-0.6B measures only 79% argmax
+  at int4. The int8 config (`quant/int8_absmax_perblock32.yaml`, absmax / no
+  clipping) is ~lossless. int4 is a real *size* tier, not the default.
+- The escape flags are now **exceptions**, each forcing a conscious choice:
+  `--allow-unverified-parity` only for a genuine `not_run` (a metric fabric can't
+  yet drive); `--publish-known-lossy-size-tier` only for a **failed** Gate B
+  (e.g. int4), which the card then labels as a measured size tier. fabric never
+  fakes a number and never relabels one.
 
-So: Gate A (structure) is proven; numeric quality parity waits on upstream. You
-are publishing a structurally-verified, honestly-labelled artifact.
+So the honest default is: **convert → verify (Gate B runs for real) → publish the
+tier that passes.** See `docs/parity-protocol.md` for the metric and
+`docs/validation-log.md` for the measured runs.
 
 ## SotA distribution: own your namespace, mirror into `coreai-community`
 
