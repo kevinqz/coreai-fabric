@@ -47,7 +47,49 @@ def recipe_url(recipe: Recipe) -> str:
     return f"{FABRIC_REPO_URL}/blob/main/recipes/{recipe.id}.yaml"
 
 
-def build_model_entry(recipe: Recipe, files: list[dict], *, notes_suffix: str = "") -> dict:
+#: Fields of a greedy_parity gate_b report that belong in the catalog `evaluation`.
+_EVAL_KEYS = ("metric", "status", "reason", "margin_gated_match_rate", "margin_gated_ci95",
+              "argmax_match_rate", "top5_agreement_rate", "matched", "compared",
+              "greedy_token_exact", "reference_dtype", "flip_margin_nats")
+
+
+def _catalog_evaluation(report: dict | None) -> dict | None:
+    """The measured parity signature (from build/<id>/parity-report.json gate_b),
+    verbatim, for the catalog `evaluation` field — so the number reaches the
+    catalog instead of dying as a note. None when unmeasured."""
+    if not report:
+        return None
+    gb = report.get("gate_b", {})
+    ev = {k: gb[k] for k in _EVAL_KEYS if k in gb and gb[k] is not None}
+    if not ev.get("metric"):
+        return None
+    if isinstance(gb.get("runner"), str):
+        ev["runner"] = gb["runner"]
+    env = gb.get("environment", {})
+    if env.get("chip") or env.get("os"):
+        ev["measured_on"] = f"{env.get('chip','')} {env.get('os','')}".strip()
+    return ev
+
+
+def _fidelity_tier(quantization: str, report: dict | None) -> str | None:
+    """size (lossy, e.g. int4) / high_fidelity (~lossless, e.g. int8) / balanced —
+    from the MEASURED gate_b when available, else the quantization tier."""
+    gb = (report or {}).get("gate_b", {})
+    status = gb.get("status")
+    if status == "passed":
+        return "high_fidelity"
+    if status == "failed":
+        return "size"
+    q = str(quantization).lower()
+    if q in ("int8", "8bit"):
+        return "high_fidelity"
+    if q in ("int4", "4bit"):
+        return "size"
+    return None
+
+
+def build_model_entry(recipe: Recipe, files: list[dict], *, notes_suffix: str = "",
+                      report: dict | None = None) -> dict:
     catalog_block = recipe.data.get("catalog")
     if not catalog_block:
         raise SystemExit(
@@ -123,6 +165,18 @@ def build_model_entry(recipe: Recipe, files: list[dict], *, notes_suffix: str = 
         entry["architecture"] = catalog_block["architecture"]
     if isinstance(catalog_block.get("streaming"), bool):
         entry["streaming"] = catalog_block["streaming"]
+    # C1/E3: carry the MEASURED parity signature + fidelity tier into the catalog
+    # (so the number lives as data, not a note), and the variant_group tying
+    # int4/int8 tiers of one repo together (C2).
+    tier = _fidelity_tier(conv["quantization"], report)
+    if tier:
+        entry["size"]["fidelity_tier"] = tier
+    evaluation = _catalog_evaluation(report)
+    if evaluation:
+        entry["evaluation"] = evaluation
+    pub = recipe.data.get("publish", {})
+    if pub.get("variant"):
+        entry["variant_group"] = f"{pub.get('hf_target_namespace')}/{pub.get('repo_name')}"
     return entry
 
 
@@ -247,11 +301,19 @@ def _tool_version_from_manifest(root: Path, recipe: Recipe) -> str | None:
     return None
 
 
-def _notes_suffix_from_report(root: Path, recipe: Recipe) -> str:
+def _load_parity_report(root: Path, recipe: Recipe) -> dict | None:
     rpath = parity_report_path(root, recipe)
     if not rpath.is_file():
+        return None
+    try:
+        return json.loads(rpath.read_text())
+    except json.JSONDecodeError:
+        return None
+
+
+def _notes_suffix_from_report(report: dict | None) -> str:
+    if not report:
         return ""
-    report = json.loads(rpath.read_text())
     return (
         f" Parity: gate A {report['gate_a']['status']}, "
         f"gate B {report['gate_b']['status']}."
@@ -276,8 +338,9 @@ def cmd_register(args) -> int:
 
     files = _resolve_published_digests(recipe)
     tool_version = _tool_version_from_manifest(root, recipe)
+    report = _load_parity_report(root, recipe)
     model_entry = build_model_entry(
-        recipe, files, notes_suffix=_notes_suffix_from_report(root, recipe)
+        recipe, files, notes_suffix=_notes_suffix_from_report(report), report=report
     )
     artifact_entry = build_artifact_entry(recipe, files, tool_version)
     source_record = build_source_record()

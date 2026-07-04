@@ -54,6 +54,33 @@ def test_model_entry_validates_against_catalog_schema():
     assert _schema_errors("model.schema.json", entry) == []
 
 
+def test_model_entry_carries_measured_parity_into_catalog():
+    # C1/E3/C2: the measured greedy_parity signature reaches the catalog as data
+    # (not a note), with a fidelity_tier and a variant_group — and still validates.
+    recipe = _published_recipe()
+    recipe.data["publish"]["variant"] = "int8"
+    report = {
+        "gate_a": {"status": "passed"},
+        "gate_b": {"metric": "greedy_parity", "status": "passed", "value": 1.0,
+                   "margin_gated_match_rate": 1.0, "margin_gated_ci95": [0.9, 1.0],
+                   "argmax_match_rate": 0.958, "top5_agreement_rate": 1.0,
+                   "matched": 46, "compared": 48, "greedy_token_exact": False,
+                   "reference_dtype": "float16", "flip_margin_nats": 0.1,
+                   "runner": "coreai-fabric-parity-runner/0.1.0",
+                   "environment": {"chip": "Apple M4 Max", "os": "macOS 26.6"}},
+    }
+    entry = build_model_entry(recipe, FAKE_FILES, report=report)
+    assert _schema_errors("model.schema.json", entry) == []
+    assert entry["evaluation"]["metric"] == "greedy_parity"
+    assert entry["evaluation"]["argmax_match_rate"] == 0.958
+    assert entry["evaluation"]["measured_on"].startswith("Apple M4 Max")
+    assert entry["size"]["fidelity_tier"] == "high_fidelity"   # Gate B passed
+    assert entry["variant_group"] == "kevinqz/Qwen3-0.6B-CoreAI"
+    # A failed report → the size tier, honestly.
+    report["gate_b"]["status"] = "failed"
+    assert build_model_entry(recipe, FAKE_FILES, report=report)["size"]["fidelity_tier"] == "size"
+
+
 def test_artifact_entry_validates_against_catalog_schema():
     entry = build_artifact_entry(_published_recipe(), FAKE_FILES, tool_version="0.0-test")
     assert _schema_errors("artifact.schema.json", entry) == []

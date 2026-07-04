@@ -106,7 +106,12 @@
         "parameters": { "type": "string" },
         "precision": { "type": "string" },
         "quantization": { "type": "string" },
-        "artifact_size": { "type": "string" }
+        "artifact_size": { "type": "string" },
+        "fidelity_tier": {
+          "type": "string",
+          "enum": ["size", "balanced", "high_fidelity"],
+          "description": "Quantization tier vs fidelity. `size` = size-optimized, lossy (e.g. int4 on Qwen — measured ~79% greedy argmax); `high_fidelity` = near-lossless (e.g. int8 absmax — ~96%/100%); `balanced` = in between. A `size`-tier model MUST NOT be described as lossless (audit-enforced)."
+        }
       }
     },
     "runtime": {
@@ -289,6 +294,31 @@
       "type": "string",
       "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
       "examples": ["Qwen/Qwen3-0.6B"]
+    },
+    "variant_group": {
+      "type": "string",
+      "description": "Groups multiple quantization tiers of the SAME conversion (e.g. an int4 and int8 variant published to one HF repo). Models sharing a variant_group are tiers of one asset — consumers pick by size/fidelity. Typically the shared HF repo id."
+    },
+    "evaluation": {
+      "description": "Measured fidelity of a quantized conversion vs the reference (the greedy_parity signature from fabric's parity runner). Carries the numbers verbatim so they reach the catalog instead of dying as a note. Absent/pending when not measured — never guessed.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "metric": { "type": "string", "enum": ["greedy_parity", "benchmark_accuracy", "per_token_logit_cosine", "graph_output_cosine"] },
+        "status": { "type": "string", "enum": ["passed", "failed", "not_run", "pending"] },
+        "reason": { "type": "string" },
+        "margin_gated_match_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "margin_gated_ci95": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
+        "argmax_match_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "top5_agreement_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "matched": { "type": "integer", "minimum": 0 },
+        "compared": { "type": "integer", "minimum": 0 },
+        "greedy_token_exact": { "type": "boolean" },
+        "reference_dtype": { "type": "string" },
+        "flip_margin_nats": { "type": "number" },
+        "runner": { "type": "string" },
+        "measured_on": { "type": "string" }
+      }
     },
     "io_contract": {
       "description": "Machine-readable typed Swift-IO contract (redteam C1/C2/C6/C7, spec §3.3). Authored from the .aimodel bundle's real metadata (metadata.json / recipe.json in the pinned HF revision) plus the apple/coreai-models Swift API. Absent when the contract could not be verified — never guessed.",
