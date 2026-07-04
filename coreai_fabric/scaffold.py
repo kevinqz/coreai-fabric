@@ -269,14 +269,14 @@ def cmd_new(args) -> int:
 
 
 def _default_gate_b(pipeline_tag: str | None, production: bool = False) -> dict:
-    """Gate B defaults. Static-graph exports follow the zoo PORTING convention
-    (cosine >= 0.999, plus greedy-token-exact for LLMs). A PRODUCTION
-    coreai.llm.export asset is quantized + stateful, so its correct metric is
-    benchmark_accuracy (task accuracy vs upstream) — which is blocked upstream
-    until Apple ships coreai.llm.eval, so verify reports it not_run. See
-    docs/parity-protocol.md."""
+    """Gate B defaults. A PRODUCTION coreai.llm.export asset is quantized +
+    stateful; its RUNNABLE Gate B is `greedy_parity` (per-token greedy argmax
+    agreement vs the fp16 reference, on-device via the coreai-core runtime) — so
+    the novice's scaffold reaches a gate that actually MEASURES fidelity, not the
+    `benchmark_accuracy` task-eval that is blocked upstream (Apple's
+    coreai.llm.eval stub) and always reports not_run. See docs/parity-protocol.md."""
     if production:
-        return {"metric": "benchmark_accuracy", "threshold": 0.999, "tolerance": 0.02}
+        return {"metric": "greedy_parity", "threshold": 0.9, "tolerance": 0.05}
     if pipeline_tag == "text-generation":
         return {
             "metric": "per_token_logit_cosine",

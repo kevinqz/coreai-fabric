@@ -139,11 +139,13 @@ def _variants_table(recipe, root: Path) -> str:
     return (
         "\n## Quantization variants\n\n"
         "This repo ships multiple tiers of the same conversion. Greedy fidelity is "
-        "per-token argmax agreement vs the fp16 reference (see Evaluation).\n\n"
+        "per-token argmax agreement vs the fp16 reference (see Evaluation) — the "
+        "numbers below are measured, or `pending` until you run the parity runner.\n\n"
         "| Variant | Quant | On-disk | Greedy argmax | Top-5 |\n"
         "|---|---|---|---|---|\n" + "\n".join(rows) + "\n\n"
-        "**int4** is the size-optimized tier; **int8** is the high-fidelity "
-        "(~lossless) tier. Pick by your size/quality budget.\n"
+        "**int4** is the size-optimized tier; **int8** is the high-fidelity tier. "
+        "Pick by your size/quality budget — the measured numbers above tell you the "
+        "fidelity cost, so you never guess.\n"
     )
 
 
@@ -189,6 +191,15 @@ def render_model_card(root: Path, recipe, manifest: dict, report: dict,
     quant = str(conv.get("quantization", "none")).strip()
     is_quantized = quant.lower() not in ("", "none")
     base_model_relation_line = "base_model_relation: quantized\n" if is_quantized else ""
+    # Real quantization label + caveat so the card NEVER mislabels the tier (an
+    # int8 asset must not be called "4-bit", and vice-versa — session learning).
+    quant_label = {"4bit": "4-bit", "int8": "int8", "none": "uncompressed (fp16)"}.get(
+        quant.lower(), quant)
+    quant_caveat = {
+        "4bit": "4-bit quantized — the size-optimized tier; expect small quality deltas vs. fp16",
+        "int8": "int8 quantized — the high-fidelity tier, near-lossless vs. fp16",
+        "none": "uncompressed (fp16) — full precision",
+    }.get(quant.lower(), f"{quant_label} quantized")
 
     # Tags = accurate descriptors that also happen to be the facets the whole
     # Core AI ecosystem is found under: both spellings (coreai/core-ai) to bridge
@@ -317,6 +328,8 @@ def render_model_card(root: Path, recipe, manifest: dict, report: dict,
         mirror_line=mirror_line,
         facts_block=facts_block,
         variants_block=variants_block,
+        quant_label=quant_label,
+        quant_caveat=quant_caveat,
         min_os=min_os_str,
         evaluation_block=evaluation_block,
         attribution=attribution,

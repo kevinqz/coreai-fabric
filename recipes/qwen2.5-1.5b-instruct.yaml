@@ -29,9 +29,9 @@ parity:
     - metadata_json_parses
     - metadata_matches_recipe
   gate_b:
-    metric: benchmark_accuracy
-    threshold: 0.999
-    tolerance: 0.02
+    metric: greedy_parity
+    threshold: 0.9
+    tolerance: 0.05
 publish:
   hf_target_namespace: kevinqz
   repo_name: Qwen2.5-1.5B-Instruct-CoreAI

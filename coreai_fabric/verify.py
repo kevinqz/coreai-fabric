@@ -162,6 +162,14 @@ def run_gate_b(root: Path, recipe: Recipe) -> dict:
         }
 
     runner = os.environ.get("COREAI_FABRIC_PARITY_RUNNER")
+    # Auto-wire the bundled runner for the runnable metric so a novice MEASURES
+    # fidelity by default — no undocumented env var to remember. It ships in the
+    # `[convert]` extra; we only fall back to not_run if it is genuinely absent.
+    if not runner and gate["metric"] == "greedy_parity":
+        import shutil as _sh
+        auto = _sh.which("coreai-fabric-parity-runner")
+        if auto:
+            runner = auto
     if not runner:
         return {
             **base,

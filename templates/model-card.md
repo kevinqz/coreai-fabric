@@ -60,8 +60,8 @@ A complete, buildable example lives at
 
 - **Intended use:** general on-device chat / text generation. Inherits the base
   model's capabilities, languages, and biases.
-- **Limitations:** 4-bit quantized, so expect small quality deltas vs. the fp16
-  base. Numeric accuracy is **not yet independently evaluated** — see Evaluation.
+- **Limitations:** {quant_caveat}. See the Evaluation section for the measured
+  greedy fidelity vs the fp16 reference.
 
 ## Evaluation (parity)
 
@@ -90,7 +90,7 @@ revision to reproduce this conversion) · [`LICENSE`](./LICENSE) (upstream terms
 
 {attribution} This artifact is a **converted + quantized derivative** of the base
 model (the Apache-2.0 §4(b) change notice): weights were converted to Apple Core
-AI format and 4-bit quantized. The conversion itself is community work.
+AI format and quantized to {quant_label}. The conversion itself is community work.
 
 ## Links
 

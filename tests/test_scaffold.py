@@ -35,10 +35,12 @@ def _run_new(tmp_path, monkeypatch, argv: list[str]) -> int:
     return cmd_new(args)
 
 
-def test_default_gate_b_production_is_benchmark_accuracy():
+def test_default_gate_b_production_is_greedy_parity():
+    # The novice's scaffold must reach the RUNNABLE Gate B (greedy_parity), not
+    # benchmark_accuracy (permanently not_run on Apple's stubbed evaluator).
     gb = _default_gate_b("text-generation", production=True)
-    assert gb["metric"] == "benchmark_accuracy"
-    # No greedy_token_exact — that's a static-graph notion, not for a KV-cache asset.
+    assert gb["metric"] == "greedy_parity"
+    assert gb["metric"] != "benchmark_accuracy"  # must not scaffold a never-runs gate
     assert "greedy_token_exact" not in gb
 
 
@@ -59,7 +61,7 @@ def test_production_scaffold_wires_registry_name_and_gate(tmp_path, monkeypatch)
     conv = data["conversion"]
     assert conv["tool"] == "coreai.llm.export"
     assert conv["apple_registry_name"] == "qwen3-0.6b"
-    assert data["parity"]["gate_b"]["metric"] == "benchmark_accuracy"
+    assert data["parity"]["gate_b"]["metric"] == "greedy_parity"
 
 
 def test_scaffolded_production_recipe_is_schema_valid(tmp_path, monkeypatch):
