@@ -37,6 +37,7 @@ publish:
   hf_target_namespace: kevinqz
   repo_name: Qwen3-0.6B-CoreAI
   collection: CoreAI · Apple on-device
+  variant: int4
 catalog:
   name: Qwen3 0.6B (fabric)
   family: Qwen

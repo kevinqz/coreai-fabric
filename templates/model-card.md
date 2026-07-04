@@ -10,10 +10,10 @@ library_name: coreai
 
 # {name}
 
-**4-bit Apple Core AI chat model — runs fully on-device on Apple Silicon
+**Apple Core AI chat model — runs fully on-device on Apple Silicon
 (iPhone / iPad / Mac, macOS/iOS 27+).**
 
-A **stateful KV-cache chat** `.aimodel` — an Apple Core AI conversion of
+A quantized **stateful KV-cache chat** `.aimodel` — an Apple Core AI conversion of
 [{upstream_hf_repo}](https://huggingface.co/{upstream_hf_repo}), with an embedded
 tokenizer + chat template. Produced by
 [coreai-fabric]({recipe_url}) and indexed by
@@ -24,6 +24,7 @@ tokenizer + chat template. Produced by
 | Field | Value |
 |---|---|
 {facts_block}
+{variants_block}
 
 ## Use it
 

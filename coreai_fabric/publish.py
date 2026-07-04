@@ -95,6 +95,58 @@ def assert_no_local_paths(staging: Path) -> list[str]:
     return leaks
 
 
+def sibling_variants(recipe, root: Path) -> list:
+    """All recipes publishing into the SAME repo (namespace+repo_name) that
+    declare a `publish.variant` — the tiers of a multi-variant repo. Returns
+    [(variant, recipe, parity_report_or_None)] sorted by variant name."""
+    from .recipes import load_all_recipes
+    pub = recipe.data.get("publish", {})
+    key = (pub.get("hf_target_namespace"), pub.get("repo_name"))
+    out = []
+    for r in load_all_recipes(root):
+        rp = r.data.get("publish", {})
+        if rp.get("variant") and (rp.get("hf_target_namespace"), rp.get("repo_name")) == key:
+            rpath = parity_report_path(root, r)
+            report = None
+            if rpath.is_file():
+                try:
+                    report = json.loads(rpath.read_text())
+                except json.JSONDecodeError:
+                    pass
+            out.append((rp["variant"], r, report))
+    return sorted(out, key=lambda x: x[0])
+
+
+def _variants_table(recipe, root: Path) -> str:
+    """A 'Quantization variants' comparison table across the repo's tiers —
+    each variant's quant, on-disk size, and measured greedy_parity (or pending)."""
+    sibs = sibling_variants(recipe, root)
+    if len(sibs) < 2:
+        return ""
+    rows = []
+    for variant, r, report in sibs:
+        conv = r.data["conversion"]
+        quant = conv.get("quantization", "—")
+        main = bundle_path(root, r) / "main.mlirb"
+        size = _human_size(main.stat().st_size) if main.is_file() else "—"
+        gb = (report or {}).get("gate_b", {}) if report else {}
+        if isinstance(gb.get("argmax_match_rate"), (int, float)):
+            argmax = f"{round(100*gb['argmax_match_rate'],1)}%"
+            top5 = f"{round(100*gb.get('top5_agreement_rate',0),1)}%" if isinstance(gb.get("top5_agreement_rate"), (int, float)) else "—"
+        else:
+            argmax = top5 = "pending"
+        rows.append(f"| `{variant}/` | {quant} | {size} | {argmax} | {top5} |")
+    return (
+        "\n## Quantization variants\n\n"
+        "This repo ships multiple tiers of the same conversion. Greedy fidelity is "
+        "per-token argmax agreement vs the fp16 reference (see Evaluation).\n\n"
+        "| Variant | Quant | On-disk | Greedy argmax | Top-5 |\n"
+        "|---|---|---|---|---|\n" + "\n".join(rows) + "\n\n"
+        "**int4** is the size-optimized tier; **int8** is the high-fidelity "
+        "(~lossless) tier. Pick by your size/quality budget.\n"
+    )
+
+
 def _human_size(num_bytes: int) -> str:
     step = float(num_bytes)
     for unit in ("B", "KB", "MB", "GB"):
@@ -192,23 +244,30 @@ def render_model_card(root: Path, recipe, manifest: dict, report: dict,
         ("assetVersion", meta.get("assetVersion", "—")),
     ]
     facts_block = "".join(f"| {k} | {v} |\n" for k, v in facts_rows)
+    variants_block = _variants_table(recipe, root)
 
     # ---- Evaluation block: real greedy-parity when measured, honest pending otherwise ----
     gb = report.get("gate_b", {})
     if gb.get("metric") == "greedy_parity" and isinstance(gb.get("value"), (int, float)):
-        matched, compared = gb.get("matched"), gb.get("compared")
-        pct = round(100 * gb["value"], 1)
+        compared = gb.get("compared")
         env = gb.get("environment", {})
         dev = env.get("chip") or "Apple Silicon"
-        frac = f"{matched}/{compared} " if matched is not None and compared is not None else ""
+        ref = {"float16": "fp16", "float32": "fp32"}.get(gb.get("reference_dtype"), gb.get("reference_dtype", "fp16"))
+
+        def _pct(k):
+            v = gb.get(k)
+            return f"{round(100 * v, 1)}%" if isinstance(v, (int, float)) else "—"
+        gated = _pct("value")  # margin_gated_match_rate (the primary)
+        ci = gb.get("margin_gated_ci95")
+        ci_str = f" (95% CI {round(100*ci[0],1)}–{round(100*ci[1],1)}%)" if isinstance(ci, list) and len(ci) == 2 else ""
         evaluation_block = (
-            f"- **Gate B — greedy fidelity vs fp32: {frac}({pct}%) token-exact.** "
-            "Per-token greedy argmax agreement with the fp32 reference (raw argmax, "
-            f"teacher-forced), measured on-device ({dev}, macOS {env.get('os','').replace('macOS ','')}). "
-            "This is *fidelity to the reference*, not a quality verdict — a quantized "
-            "asset makes some different-but-often-valid greedy choices, and the output "
-            "stays coherent. Reproduce with `coreai-fabric verify` + the parity runner "
-            "(see `parity-report.json`)."
+            f"- **Gate B — greedy fidelity vs the {ref} reference: {gated} margin-gated"
+            f"{ci_str}** · {_pct('argmax_match_rate')} exact-argmax · {_pct('top5_agreement_rate')} "
+            f"top-5, over {compared} teacher-forced tokens, measured on-device ({dev}, "
+            f"{env.get('os','')}). Margin-gated forgives near-tie flips (where even the "
+            "reference flips on rounding noise). This is *fidelity to the reference*, not a "
+            "quality verdict. Reproduce with `coreai-fabric verify` + the parity runner "
+            "(`parity-report.json`)."
         )
         sm = gb.get("sample")
         if sm and sm.get("prompt"):
@@ -257,6 +316,7 @@ def render_model_card(root: Path, recipe, manifest: dict, report: dict,
         repo_id=repo_id,
         mirror_line=mirror_line,
         facts_block=facts_block,
+        variants_block=variants_block,
         min_os=min_os_str,
         evaluation_block=evaluation_block,
         attribution=attribution,
@@ -359,11 +419,18 @@ def cmd_publish(args) -> int:
         return 1
     holder = copyright_holder_from_license(staging)
 
+    # Multi-variant repo (community layout): a `publish.variant` tier lands its
+    # bundle + reports under `<variant>/`, while the shared card + LICENSE sit at
+    # the repo root and the card compares all tiers.
+    variant = publish_cfg.get("variant")
+    bundle_repo_path = f"{variant}/{bundle.name}" if variant else bundle.name
     card = render_model_card(root, recipe, manifest, report, copyright_holder=holder)
     (staging / "README.md").write_text(card)
-    (staging / "parity-report.json").write_text(json.dumps(report, indent=2) + "\n")
+    report_dir = (staging / variant) if variant else staging
+    report_dir.mkdir(parents=True, exist_ok=True)
+    (report_dir / "parity-report.json").write_text(json.dumps(report, indent=2) + "\n")
     if manifest:
-        (staging / "reproduce-manifest.json").write_text(
+        (report_dir / "reproduce-manifest.json").write_text(
             json.dumps(sanitize_manifest(manifest, root), indent=2) + "\n")
 
     # Last-line privacy guard: no absolute local path may reach a public repo.
@@ -375,8 +442,9 @@ def cmd_publish(args) -> int:
 
     if args.dry_run:
         print(f"would publish to https://huggingface.co/{repo_id}")
-        print(f"  fileset: {bundle.name}/ + " + ", ".join(sorted(p.name for p in staging.iterdir())))
-        print("--- model card ---")
+        staged = sorted(str(p.relative_to(staging)) for p in staging.rglob("*") if p.is_file())
+        print(f"  fileset: {bundle_repo_path}/ + " + ", ".join(staged))
+        print("--- model card (repo root README.md) ---")
         print(card)
         return 0
 
@@ -389,8 +457,8 @@ def cmd_publish(args) -> int:
     print(f"creating repo (private): {repo_id}")
     api.create_repo(repo_id=repo_id, repo_type="model", exist_ok=True, private=True)
     _set_private(api, repo_id, True)
-    print(f"uploading bundle {bundle.name} + card + license (private) ...")
-    api.upload_folder(repo_id=repo_id, folder_path=str(bundle), path_in_repo=bundle.name,
+    print(f"uploading bundle -> {bundle_repo_path} + card + license (private) ...")
+    api.upload_folder(repo_id=repo_id, folder_path=str(bundle), path_in_repo=bundle_repo_path,
                       commit_message=f"coreai-fabric: {recipe.id} asset")
     info = api.upload_folder(repo_id=repo_id, folder_path=str(staging), path_in_repo=".",
                              commit_message=f"coreai-fabric: {recipe.id} card + license + reports")

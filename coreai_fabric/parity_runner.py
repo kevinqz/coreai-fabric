@@ -62,9 +62,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tolerance", type=float, required=True)
     parser.add_argument("--report-json", default="-", help="'-' writes the report to stdout")
     parser.add_argument("--revision", default=None, help="upstream HF revision to pin (optional)")
-    parser.add_argument("--decode-len", type=int, default=16,
-                        help="greedy tokens compared per prompt (default: 16)")
-    parser.add_argument("--n-prompts", type=int, default=8,
+    import os
+    parser.add_argument("--decode-len", type=int,
+                        default=int(os.environ.get("COREAI_PARITY_DECODE_LEN", "16")),
+                        help="greedy tokens compared per prompt (default: 16, or "
+                        "$COREAI_PARITY_DECODE_LEN)")
+    parser.add_argument("--n-prompts", type=int,
+                        default=int(os.environ.get("COREAI_PARITY_N_PROMPTS", "8")),
                         help="number of seeded prompts to evaluate (default: 8, the "
                         "protocol floor; the Python reference runtime is slow so raise "
                         "wall-clock is the only cost)")
