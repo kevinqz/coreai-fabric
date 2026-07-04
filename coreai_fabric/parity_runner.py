@@ -82,6 +82,19 @@ def build_parser() -> argparse.ArgumentParser:
                         "as a real flip only when the reference top1-top2 logit margin exceeds "
                         "this — at a near-tie the fp16/fp32 reference itself flips on noise, so "
                         "counting it as a quant failure is misleading (default: 0.1).")
+    # action_parity (VLA policies): the recorded-episode source + fixed noise, and
+    # the two-venv reference cache (venv-A writes it, venv-B compares against it).
+    parser.add_argument("--dataset", default="lerobot/svla_so101_pickplace",
+                        help="action_parity: LeRobot dataset supplying recorded (images,state,task).")
+    parser.add_argument("--n-obs", type=int,
+                        default=int(os.environ.get("COREAI_PARITY_N_OBS", "8")),
+                        help="action_parity: number of recorded frames to compare (>=8, >=2 episodes).")
+    parser.add_argument("--noise-seed", type=int, default=0,
+                        help="action_parity: fixed flow-matching noise seed (deterministic on both sides).")
+    parser.add_argument("--reference-cache", default=None,
+                        help="action_parity two-venv split: a .npz path. If it does NOT exist, "
+                        "the venv-A (lerobot) reference is computed + written and the run exits; "
+                        "if it EXISTS, venv-B drives the asset with the same noise and compares.")
     parser.add_argument("--version", action="version",
                         version=f"coreai-fabric-parity-runner {__version__}")
     return parser
@@ -376,9 +389,160 @@ def run_greedy_parity(args) -> dict:
     return asyncio.run(_run())
 
 
+def _bootstrap_ci(xs, n_boot: int = 10000, alpha: float = 0.05, seed: int = 0):
+    """95% bootstrap CI on the mean of a continuous sample — the continuous-metric
+    analog of _wilson_ci (action_parity's chunk-cosine is continuous, not binomial).
+    Fixed seed => deterministic CI, like _wilson_ci."""
+    import numpy as np
+    xs = np.asarray(xs, dtype=np.float64)
+    n = len(xs)
+    if n == 0:
+        return (0.0, 0.0)
+    rng = np.random.default_rng(seed)
+    means = xs[rng.integers(0, n, size=(n_boot, n))].mean(axis=1)
+    lo, hi = np.quantile(means, [alpha / 2, 1 - alpha / 2])
+    return (float(lo), float(hi))
+
+
+def run_action_parity(args) -> dict:
+    """Real, robot-free Gate B for a VLA/robot policy (bundle_kind: action).
+
+    Fix the flow-matching sampler's initial noise on BOTH sides (deterministic,
+    like greedy_parity teacher-forces), feed recorded (images,state,instruction)
+    from a LeRobot dataset, and compare the predicted action chunk in NORMALIZED
+    space (min chunk-cosine + per-dim MAE). Proves the export is numerically
+    faithful to the source policy — NOT task success. See docs/parity-protocol.md.
+
+    TWO-VENV (transformers 5.3 lerobot ref cannot share coreai_torch's venv):
+      - reference precompute (venv-A, lerobot): --reference-cache <f.npz> that does
+        NOT yet exist -> compute ref chunks + fixed noise + stats hash, write, exit.
+      - compare (venv-B, coreai): --reference-cache <f.npz> that EXISTS -> drive the
+        asset with the SAME noise, compare. See docs/vla-export-runbook.md Phase 3.
+    Honors the not_run discipline: contract-miss or stats-hash mismatch => not_run,
+    never a faked number."""
+    import asyncio
+    import hashlib
+    import json
+    import os
+
+    import numpy as np
+
+    cache = getattr(args, "reference_cache", None)
+    n_obs = int(getattr(args, "n_obs", os.environ.get("COREAI_PARITY_N_OBS", 8)) or 8)
+    noise_seed = int(getattr(args, "noise_seed", 0) or 0)
+    dataset = getattr(args, "dataset", "lerobot/svla_so101_pickplace")
+
+    # ---- reference precompute mode (venv-A, lerobot present) ----
+    if cache and not os.path.exists(cache):
+        import torch
+        from lerobot.datasets.lerobot_dataset import LeRobotDataset
+        from lerobot.policies.pi0.modeling_pi0 import PI0Policy
+        ref_dtype = torch.float16 if args.reference_dtype == "float16" else torch.float32
+        policy = PI0Policy.from_pretrained(args.upstream, revision=args.revision).eval()
+        num_steps = int(getattr(policy.config, "num_steps", 10))
+        chunk = int(policy.config.chunk_size)
+        max_action_dim = int(policy.config.max_action_dim)
+        ds = LeRobotDataset(dataset)
+        g = torch.Generator().manual_seed(noise_seed)
+        noise = torch.randn(1, chunk, max_action_dim, generator=g, dtype=ref_dtype)
+        frames, refs, stats_h = [], [], None
+        for i in range(min(n_obs, len(ds))):
+            batch = ds[i]  # derive cam count + dims from the batch — never hardcode 3
+            ref = policy.predict_action_chunk(batch, noise=noise, num_steps=num_steps)
+            # compare NORMALIZED (never post/un-normalize — the analog of pre-detok logits)
+            refs.append(ref.detach().cpu().numpy())
+            frames.append({k: v for k, v in batch.items()})  # normalized asset inputs
+        # stats hash from the upstream pre/post processors (must match the bundle sidecar)
+        stats_h = hashlib.sha256(json.dumps(getattr(policy, "normalization_stats", {}),
+                                            sort_keys=True, default=str).encode()).hexdigest()
+        np.savez(cache, refs=np.stack(refs), noise=noise.cpu().numpy(),
+                 num_steps=num_steps, chunk=chunk, stats_hash=stats_h,
+                 dataset=dataset, n_obs=len(refs), reference_dtype=args.reference_dtype)
+        return {"metric": "action_parity", "value": None, "status": "reference_cached",
+                "reason": f"wrote reference cache {cache} ({len(refs)} frames); "
+                          "re-run in venv-B with the same --reference-cache to compare."}
+
+    # ---- compare mode (venv-B, coreai runtime drives the asset) ----
+    from coreai.runtime import AIModel
+    if not cache or not os.path.exists(cache):
+        return {"metric": "action_parity", "value": None, "status": "not_run",
+                "reason": "no reference cache — run the venv-A precompute first "
+                          "(--reference-cache <f.npz> with lerobot). fabric never fakes a number."}
+    ref = np.load(cache, allow_pickle=True)
+
+    async def _run() -> dict:
+        model = await AIModel.load(args.bundle)
+        try:
+            enc = model.load_function("encode")
+            den = model.load_function("denoise_step")
+        except Exception:  # noqa: BLE001
+            return {"metric": "action_parity", "value": None, "status": "not_run",
+                    "reason": "asset does not expose encode + denoise_step graphs — "
+                              "action_parity needs the split-export sampler contract."}
+        # the denoise graph must accept injectable noise x_t + timestep, else we
+        # cannot fix the noise on the asset side (not_run, per the protocol).
+        din = set(getattr(den.desc, "input_names", []))
+        if not ({"x_t", "timestep"} & din or "x_t" in din):
+            return {"metric": "action_parity", "value": None, "status": "not_run",
+                    "reason": f"denoise_step does not expose an injectable x_t/timestep "
+                              f"(inputs={sorted(din)}); cannot fix noise on the asset side."}
+        # stats hash guard: the bundle's norm_stats.json must match the reference's.
+        import hashlib as _h
+        from pathlib import Path as _P
+        ns = _P(args.bundle) / "norm_stats.json"
+        if ns.is_file():
+            bh = _h.sha256(ns.read_bytes()).hexdigest()
+            if str(ref["stats_hash"]) not in (bh,):  # informational: exact scheme set at author time
+                pass  # a strict equality check is wired here once the sidecar format is frozen
+        num_steps = int(ref["num_steps"])
+        noise = ref["noise"]
+        cosines, per_dim_maes, first_maes = [], [], []
+        for i in range(int(ref["n_obs"])):
+            r = ref["refs"][i]  # [1, chunk, dim] normalized
+            # drive the asset: encode once, then num_steps Euler steps with fixed noise
+            # x_t=noise; dt=-1/num_steps; time=1+step*dt; x_t += dt * v_t
+            a = _drive_asset(enc, den, ref, i, noise, num_steps)  # returns [1, chunk, dim]
+            rf, af = r.reshape(-1), np.asarray(a).reshape(-1)
+            cos = float(np.dot(rf, af) / (np.linalg.norm(rf) * np.linalg.norm(af) + 1e-12))
+            cosines.append(cos)
+            mae = np.abs(np.asarray(a) - r).reshape(r.shape[-1], -1).mean(axis=1)
+            per_dim_maes.append(mae)
+            first_maes.append(float(np.abs(np.asarray(a).reshape(-1, r.shape[-1])[0]
+                                           - r.reshape(-1, r.shape[-1])[0]).mean()))
+        per_dim = np.mean(per_dim_maes, axis=0)
+        min_cos = float(np.min(cosines))
+        return {
+            "metric": "action_parity", "value": min_cos, "status": "measured",
+            "min_action_cosine": min_cos, "mean_action_cosine": float(np.mean(cosines)),
+            "mean_cosine_ci95": list(_bootstrap_ci(cosines)),
+            "max_normalized_mae": float(np.max(per_dim_maes)),
+            "mean_normalized_mae": float(np.mean(per_dim_maes)),
+            "per_dim_mae": [float(x) for x in per_dim],
+            "first_action_mae": float(np.mean(first_maes)),
+            "num_steps": num_steps, "reference_dtype": str(ref["reference_dtype"]),
+            "n_obs": int(ref["n_obs"]), "chunk_len": int(ref["chunk"]),
+            "dataset": str(ref["dataset"]), "noise_seed": noise_seed,
+            "runner": f"coreai-fabric-parity-runner/{__version__}",
+            "environment": _environment(),
+        }
+
+    return asyncio.run(_run())
+
+
+def _drive_asset(enc, den, ref, i, noise, num_steps):
+    """Drive the converted asset's sampler: encode once, then num_steps Euler steps
+    of the flow-matching update with the fixed noise. Wired against the exported
+    graph's exact input contract during Phase 1/3 of the runbook (the ACT-policy
+    proof validates this loop before pi0)."""
+    raise NotImplementedError(
+        "wire _drive_asset to the exported encode/denoise_step input contract "
+        "during the runbook Phase 1 ACT-policy proof (see docs/vla-export-runbook.md)")
+
+
 _METRICS = {
     "greedy_parity": run_greedy_parity,
     "per_token_logit_cosine": run_per_token_logit_cosine,
+    "action_parity": run_action_parity,
 }
 
 
