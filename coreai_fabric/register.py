@@ -235,9 +235,14 @@ def build_artifact_entry(recipe: Recipe, files: list[dict], tool_version: str | 
         },
     }
     # C3: a variant tier lives under `<variant>/` in the shared repo — scope the
-    # host path so int4/ and int8/ don't collide at the artifact level.
+    # host path so int4/ and int8/ don't collide at the artifact level. Follow
+    # the catalog's existing convention (gemma-4-e2b-vision, efficientsam3):
+    # `path` is the browsable `tree/main/<subdir>` and `url` includes it, so the
+    # audit's `url == base + "/" + path` integrity check holds.
     if pub.get("variant"):
-        entry["huggingface"]["path"] = pub["variant"]
+        subpath = f"tree/main/{pub['variant']}"
+        entry["huggingface"]["path"] = subpath
+        entry["huggingface"]["url"] = f"https://huggingface.co/{hf_repo}/{subpath}"
     # C3: the community mirror as machine-readable data (source <-> mirror), so
     # the catalog's neutral-index claim is real. Same bytes, alternative host.
     if pub.get("mirror_namespace"):

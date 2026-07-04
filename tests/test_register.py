@@ -153,6 +153,21 @@ def test_artifact_entry_shared_field_contract():
     }
 
 
+def test_variant_artifact_url_follows_catalog_subdir_convention():
+    # A variant tier lives in a `<variant>/` subdir of the shared repo. The
+    # artifact's hf.url + path must match the catalog's existing convention
+    # (gemma-4-e2b-vision, efficientsam3): path == "tree/main/<variant>" and
+    # url == base + "/" + path — otherwise the catalog's URL-consistency audit
+    # (`url == base/path`) flags it, as it did on the first int8 publish.
+    recipe = _published_recipe()
+    recipe.data["publish"]["variant"] = "int8"
+    entry = build_artifact_entry(recipe, FAKE_FILES, tool_version="0.0-test")
+    hf = entry["huggingface"]
+    assert hf["path"] == "tree/main/int8"
+    assert hf["url"] == "https://huggingface.co/coreai-community/qwen3-0.6b-coreai/tree/main/int8"
+    assert _schema_errors("artifact.schema.json", entry) == []
+
+
 def test_artifact_without_any_host_block_is_rejected_by_catalog_schema():
     entry = build_artifact_entry(_published_recipe(), FAKE_FILES, tool_version=None)
     del entry["huggingface"]

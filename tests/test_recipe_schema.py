@@ -33,15 +33,25 @@ def test_seed_recipes_are_honest_drafts():
     # Committed seed recipes stay `draft`: converted/verified describe LOCAL
     # build/ state (disposable, gitignored), so they are reset before commit.
     # Real conversion/verification runs are recorded in docs/validation-log.md,
-    # not in the status field. Status leaves draft in the committed tree only
-    # at publish (when the artifact exists somewhere durable).
+    # not in the status field. Status leaves draft in the committed tree ONLY
+    # at publish — and then an honest `published` block (hf_repo + revision)
+    # must back the claim with a durable artifact.
+    PUBLISHED_STATES = {"published", "registered"}
     for recipe in load_all_recipes(REPO_ROOT):
-        assert recipe.status == "draft", (
-            f"{recipe.id} is committed with status '{recipe.status}' — "
-            "converted/verified refer to disposable build/ state; reset to "
-            "draft before committing (see docs/validation-log.md)"
-        )
-        assert "published" not in recipe.data
+        pub = recipe.data.get("published")
+        if recipe.status in PUBLISHED_STATES:
+            assert pub and pub.get("hf_repo") and pub.get("revision"), (
+                f"{recipe.id} is '{recipe.status}' but has no published block "
+                "(hf_repo + revision) — a published status must point to a "
+                "durable artifact, never an empty claim"
+            )
+        else:
+            assert recipe.status == "draft", (
+                f"{recipe.id} is committed with status '{recipe.status}' — "
+                "converted/verified refer to disposable build/ state; reset to "
+                "draft before committing (see docs/validation-log.md)"
+            )
+            assert pub is None, f"{recipe.id} is draft but carries a published block"
 
 
 def test_garbage_recipe_rejected_with_aggregated_errors():

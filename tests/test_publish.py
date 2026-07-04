@@ -52,6 +52,16 @@ def test_card_omits_relation_for_uncompressed_export():
     assert "4bit" not in fm["tags"]
 
 
+def test_card_never_advertises_an_unpublished_sibling_variant():
+    # Publishing int8 while its int4 sibling is only drafted (no `published`
+    # block) must NOT put an `int4/` row on the card — that would advertise a
+    # repo subdir that 404s. A lone real tier drops the comparison table.
+    int8 = find_recipe("qwen3-0.6b-int8", REPO_ROOT)
+    card = render_model_card(REPO_ROOT, int8, MANIFEST, REPORT)
+    assert "## Quantization variants" not in card
+    assert "`int4/`" not in card
+
+
 class _FakeCollection:
     slug = "kevinqz/coreai-apple-on-device-abc123"
 

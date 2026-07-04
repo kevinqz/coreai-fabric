@@ -96,24 +96,31 @@ def assert_no_local_paths(staging: Path) -> list[str]:
 
 
 def sibling_variants(recipe, root: Path) -> list:
-    """All recipes publishing into the SAME repo (namespace+repo_name) that
-    declare a `publish.variant` — the tiers of a multi-variant repo. Returns
-    [(variant, recipe, parity_report_or_None)] sorted by variant name."""
+    """The variant tiers ACTUALLY present in the repo (namespace+repo_name):
+    the tier being published now (the current recipe) plus any already
+    published. A recipe that merely *targets* the repo but hasn't been
+    published is excluded — otherwise the card would advertise a `<variant>/`
+    subdir that 404s (e.g. a drafted int4 next to a just-published int8).
+    Returns [(variant, recipe, parity_report_or_None)] sorted by variant name."""
     from .recipes import load_all_recipes
     pub = recipe.data.get("publish", {})
     key = (pub.get("hf_target_namespace"), pub.get("repo_name"))
     out = []
     for r in load_all_recipes(root):
         rp = r.data.get("publish", {})
-        if rp.get("variant") and (rp.get("hf_target_namespace"), rp.get("repo_name")) == key:
-            rpath = parity_report_path(root, r)
-            report = None
-            if rpath.is_file():
-                try:
-                    report = json.loads(rpath.read_text())
-                except json.JSONDecodeError:
-                    pass
-            out.append((rp["variant"], r, report))
+        if not rp.get("variant") or (rp.get("hf_target_namespace"), rp.get("repo_name")) != key:
+            continue
+        # In the repo iff it's the current publish or was already published.
+        if r.id != recipe.id and not r.data.get("published"):
+            continue
+        rpath = parity_report_path(root, r)
+        report = None
+        if rpath.is_file():
+            try:
+                report = json.loads(rpath.read_text())
+            except json.JSONDecodeError:
+                pass
+        out.append((rp["variant"], r, report))
     return sorted(out, key=lambda x: x[0])
 
 
