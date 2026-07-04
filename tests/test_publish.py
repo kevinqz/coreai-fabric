@@ -63,6 +63,16 @@ def test_card_never_advertises_an_unpublished_sibling_variant():
     assert "`int4/`" not in card
 
 
+def test_publish_and_register_flag_parses():
+    # S1: publish carries the seamless-flow flags (chaining is exercised e2e, not
+    # here — it opens a real PR — but the flag must exist so the path is reachable).
+    from coreai_fabric.cli import build_parser
+    args = build_parser().parse_args(
+        ["publish", "qwen3-0.6b-int8", "--and-register", "--catalog-path", "/tmp/cat"])
+    assert args.and_register is True
+    assert args.catalog_path == "/tmp/cat"
+
+
 def test_card_refuses_to_mislabel_a_non_llm_bundle():
     # S2: the LLM card template (chat hook, KV-cache prose, CoreAILanguageModel
     # example) must NOT render for a non-LLM bundle — a whisper .aimodel is not a

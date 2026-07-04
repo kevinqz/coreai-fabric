@@ -194,6 +194,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_pub.add_argument("--allow-missing-license-file", action="store_true",
                        help="publish even if no upstream LICENSE/NOTICE could be mirrored "
                        "(only for upstreams that genuinely ship none — fabric refuses by default)")
+    p_pub.add_argument("--and-register", action="store_true",
+                       help="S1 seamless flow: after a successful publish, register the model "
+                       "into the catalog (opens the catalog PR — needs an authenticated `gh`). "
+                       "Clones the catalog into ~/.cache/coreai-fabric/catalog if no path given.")
+    p_pub.add_argument("--catalog-path", help="path to a coreai-catalog clone for --and-register "
+                       "(default: auto-clone into ~/.cache/coreai-fabric/catalog)")
 
     p_reg = sub.add_parser("register", help="generate catalog entries and open a PR to kevinqz/coreai-catalog")
     p_reg.add_argument("id")

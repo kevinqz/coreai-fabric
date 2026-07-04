@@ -533,8 +533,46 @@ def cmd_publish(args) -> int:
     recipe.data["status"] = "published"
     write_yaml(recipe.path, recipe.data)
     ok(f"recipe status -> published ({recipe.path.name})")
+    if getattr(args, "and_register", False):
+        return _chain_register(recipe.id, getattr(args, "catalog_path", None))
     print(f"next: coreai-fabric register {recipe.id} --catalog-path ../coreai-catalog --dry-run")
     return 0
+
+
+def _catalog_clone() -> Path | None:
+    """Clone or fast-forward the catalog into ~/.cache/coreai-fabric/catalog so
+    `publish --and-register` works without an explicit --catalog-path."""
+    import subprocess
+
+    from . import CATALOG_REPO_URL
+    dest = Path.home() / ".cache" / "coreai-fabric" / "catalog"
+    if (dest / ".git").is_dir():
+        subprocess.run(["git", "-C", str(dest), "pull", "--ff-only"],
+                       capture_output=True, text=True)
+        return dest
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    r = subprocess.run(["git", "clone", "--depth", "1", f"{CATALOG_REPO_URL}.git", str(dest)],
+                       capture_output=True, text=True)
+    return dest if r.returncode == 0 else None
+
+
+def _chain_register(recipe_id: str, catalog_path) -> int:
+    """S1 — the seamless publish→index handoff: after a successful publish, run
+    the register flow so the catalog PR opens in the same command. Opt-in via
+    --and-register; the register step still needs an authenticated `gh`."""
+    from types import SimpleNamespace
+
+    from .register import cmd_register
+    if not catalog_path:
+        catalog_path = _catalog_clone()
+        if catalog_path is None:
+            warn(f"published, but --and-register could not obtain a catalog clone; "
+                 f"run `coreai-fabric register {recipe_id} --catalog-path <path>` yourself")
+            return 0
+        print(f"--and-register: using catalog clone at {catalog_path}")
+    print(f"--and-register: registering {recipe_id} into the catalog ...")
+    return cmd_register(SimpleNamespace(
+        id=recipe_id, catalog_path=str(catalog_path), dry_run=False, mark_merged=False))
 
 
 def _set_private(api, repo_id: str, private: bool) -> None:
