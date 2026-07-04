@@ -45,12 +45,43 @@ CHUNK, ACT_DIM, STATE_DIM, TOK = 50, 32, 32, 48
 N_LAYERS, KV_HEADS, HEAD_DIM = 18, 1, 256                    # gemma_2b prefix cache dims (VERIFIED)
 
 
+import contextlib
+
+
+@contextlib.contextmanager
+def no_deepcopy():
+    """denoise_step deepcopies the KV cache internally (lerobot ~:918); deepcopy fails
+    on a FakeTensor during torch.export ("Cannot access data pointer"). Identity-copy is
+    safe here — we export a SINGLE step and drive it with fresh inputs, never mutating a
+    shared cache. Runbook edit #1."""
+    import copy as _copy
+    orig = _copy.deepcopy
+    _copy.deepcopy = lambda x, memo=None: x
+    try:
+        yield
+    finally:
+        _copy.deepcopy = orig
+
+
 def _build_wrappers():
-    """venv-A only. Returns (encode_module, denoise_module, dummy_args_dict)."""
+    """venv-A only. Returns (encode_module, denoise_module, dummy_args_dict).
+
+    PI0_RANDOM_INIT=1 builds the policy from config with RANDOM weights (no 14GB
+    download) — the architecture (SigLIP + Gemma + expert) is constructed from
+    config alone, so this exercises full op-coverage for the probe while the real
+    weights download separately. PI0_CONFIG_DIR points at a dir with config.json.
+    """
+    import os
     import torch
     from lerobot.policies.pi0.modeling_pi0 import PI0Policy, make_att_2d_masks
 
-    policy = PI0Policy.from_pretrained("lerobot/pi0").eval()
+    if os.environ.get("PI0_RANDOM_INIT") == "1":
+        from lerobot.configs.policies import PreTrainedConfig
+        cfg_dir = os.environ.get("PI0_CONFIG_DIR", "build/_hf_mirror/pi0")
+        cfg = PreTrainedConfig.from_pretrained(cfg_dir, local_files_only=True)  # dispatches on type: pi0
+        policy = PI0Policy(cfg).eval()   # random weights, no download — op-coverage only
+    else:
+        policy = PI0Policy.from_pretrained("lerobot/pi0").eval()
     m = policy.model  # PI0Pytorch
 
     class EncodeWrapper(torch.nn.Module):
@@ -93,7 +124,12 @@ def _flatten_cache(pkv):
 
 
 def _unflatten_cache(tensors):
-    return [(tensors[2 * i], tensors[2 * i + 1]) for i in range(len(tensors) // 2)]
+    # lerobot 0.5.1's pi_gemma/paligemma expert expects a transformers Cache (it calls
+    # .get_seq_length()), not a legacy list. Rebuild a DynamicCache from the crossed-in
+    # KV tensors (the split-export boundary carries the cache as plain tensors).
+    from transformers.cache_utils import DynamicCache
+    legacy = tuple((tensors[2 * i], tensors[2 * i + 1]) for i in range(len(tensors) // 2))
+    return DynamicCache(legacy)   # transformers 5.x: ctor takes the per-layer (k,v) iterable
 
 
 def cmd_export(out: Path):

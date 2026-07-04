@@ -39,8 +39,9 @@ def probe_export(which: str, tmp: Path) -> dict:
     enc, den, d = pi0_export._build_wrappers()
     tmp.mkdir(parents=True, exist_ok=True)
     if which == "denoise":
-        ep = torch.export.export(den, args=(d["state"], d["ppad"], d["xt"], d["t"], *d["cache"]),
-                                 strict=False)
+        with pi0_export.no_deepcopy():
+            ep = torch.export.export(den, args=(d["state"], d["ppad"], d["xt"], d["t"], *d["cache"]),
+                                     strict=False)
         # resolve prefix_len from a real encode forward (GATE 2a)
         with torch.no_grad():
             enc_out = enc(d["img"], d["img"], d["img"], d["imask"], d["imask"], d["imask"],
