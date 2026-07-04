@@ -108,6 +108,28 @@ def build_command(recipe: Recipe, tool: str, output: Path) -> list[str]:
     upstream = recipe.data["upstream"]
     out_dir = output.parent.parent  # build/<id>/<id>.aimodel -> build/
     registry_name = conv.get("apple_registry_name")
+    compression_config = conv.get("compression_config")
+
+    # HIGH-FIDELITY (int8) path: a custom coreai-opt quantization_config YAML.
+    # Root-cause study (2026-07-03): Apple's macOS registry preset is int4 with
+    # symmetric_with_clipping, which is genuinely lossy on Qwen (79% argmax);
+    # int8 absmax/per-block-32 (no clipping) is ~lossless (96% argmax / 100%
+    # top-5). This path passes --compression-config so a recipe can ship the
+    # int8 (or any custom) tier. Needs --experimental + --compute-precision.
+    if tool == "coreai.llm.export" and compression_config:
+        cfg_path = out_dir.parent / compression_config  # repo root = build/'s parent
+        cmd = [
+            tool, upstream["hf_repo"],
+            "--experimental",
+            "--compute-precision", str(conv["precision"]),
+            "--compression-config", str(cfg_path),
+            "--output-dir", str(out_dir),
+            "--output-name", recipe.id,
+            "--overwrite",
+        ]
+        for key, value in sorted((conv.get("args") or {}).items()):
+            cmd += [f"--{key}", str(value)]
+        return cmd
 
     # PRODUCTION path: Apple's coreai.llm.export with a registry short-name
     # auto-resolves the TESTED compression preset for that model (e.g. qwen3-0.6b

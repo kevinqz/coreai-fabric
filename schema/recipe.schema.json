@@ -66,6 +66,10 @@
           "pattern": "^[a-z0-9][a-z0-9.-]*$",
           "description": "For tool `coreai.llm.export` (Apple's production exporter): the Apple model-registry short-name (e.g. `qwen3-0.6b`, from `coreai.model.registry --list-models`). When set, convert drives `coreai.llm.export <short-name>` and lets Apple's TESTED compression preset resolve — this produces the production KV-cache chat asset that passes parity. `precision`/`quantization` are then documentation only (the preset wins). Absent = raw HF-ID export (requires `--experimental`, uses this recipe's precision/quantization, and typically does NOT clear the parity bar)."
         },
+        "compression_config": {
+          "type": "string",
+          "description": "HIGH-FIDELITY path: a repo-relative path to a coreai-opt `quantization_config` YAML (e.g. `quant/int8_absmax_perblock32.yaml`). When set, convert drives `coreai.llm.export <hf_repo> --experimental --compute-precision <precision> --compression-config <path>` — used for the int8 tier that is ~lossless on models where Apple's int4 registry preset is not (root-cause study 2026-07-03). Mutually exclusive with `apple_registry_name`."
+        },
         "args": {
           "type": "object",
           "description": "Extra converter arguments passed through verbatim as --key value pairs (e.g. platform: macOS). For script tools these document the script's verified flags."

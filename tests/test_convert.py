@@ -106,6 +106,23 @@ def test_coreai_llm_export_registry_name_uses_preset(tmp_path):
     assert "--overwrite" in joined
 
 
+def test_compression_config_int8_lane(tmp_path):
+    # HIGH-FIDELITY int8 lane: a compression_config recipe drives
+    # `--experimental --compute-precision --compression-config <path>`, and does
+    # NOT use the preset --compression flag or a registry short-name.
+    recipe = _recipe(tool="coreai.llm.export")
+    recipe.data["conversion"]["compression_config"] = "quant/int8_absmax_perblock32.yaml"
+    recipe.data["conversion"]["precision"] = "float16"
+    cmd = build_command(recipe, "coreai.llm.export", bundle_path(tmp_path, recipe))
+    joined = " ".join(cmd)
+    assert cmd[1] == "Qwen/Qwen3-0.6B"           # raw HF id
+    assert "--experimental" in joined
+    assert "--compute-precision float16" in joined
+    assert "--compression-config" in joined
+    assert joined.endswith("quant/int8_absmax_perblock32.yaml") or "quant/int8_absmax_perblock32.yaml" in joined
+    assert "--compression none" not in joined and "--compression 4bit" not in joined
+
+
 def test_known_tool_sets_are_consistent():
     assert REVISION_CAPABLE_TOOLS <= LLM_EXPORT_TOOLS
 
