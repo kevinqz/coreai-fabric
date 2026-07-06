@@ -1,0 +1,95 @@
+# coreai-fabric recipe — VLA-JEPA LIBERO (LeRobot)
+# Status: draft. This recipe has NOT been converted yet.
+id: vla-jepa-libero
+upstream:
+  hf_repo: lerobot/VLA-JEPA-LIBERO
+  revision: 735d9f692981e286ade093b5046627eda876e5d0
+  license: apache-2.0
+  license_terms: permissive
+  pipeline_tag: robotics
+  size_bytes: 6163226671
+conversion:
+  tool: models/vla_jepa/export.py
+  min_tool_version: 0.4.1
+  args:
+    policy: lerobot/VLA-JEPA-LIBERO
+    dtype: bfloat16
+  quantization: none
+  precision: bfloat16
+  action:
+    embodiment: libero_10
+    robot_required: true
+    action_space:
+      dim: 7
+      max_action_dim: 7
+      max_state_dim: 8
+      chunk_size: 7
+      convention: libero_7dof_action_with_gripper
+    sampling:
+      kind: flow_matching
+      num_steps: 4
+      solver: euler
+    normalization:
+      stats_source: policy_preprocessor.json + policy_postprocessor.json (upstream);
+        action normalization is MIN_MAX, state normalization is MEAN_STD, visual
+        normalization is IDENTITY per VLAJEPAConfig.
+    graphs:
+    - name: qwen_context
+    - name: action_denoise_step
+expected:
+  bundle_files:
+  - metadata.json
+  - main.mlirb
+  - main.hash
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: action_parity
+    threshold: 0.995
+    tolerance: 0.001
+    max_action_mae: 0.05
+    max_relative_action_mae: 0.1
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: VLA-JEPA-LIBERO-CoreAI
+  collection: CoreAI · Apple on-device
+catalog:
+  name: VLA-JEPA LIBERO (fabric)
+  family: LeRobot
+  bundle_kind: action
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: true
+    custom_kernel: false
+    patch_required: false
+    aot_required: false
+  capabilities:
+  - vision-language-action
+  - robotics
+  modalities:
+    input:
+    - image
+    - text
+    - state
+    output:
+    - action
+  parameters: 3B
+  architecture: transformer
+  runner: CoreAIRunner
+  tokenizer_required: true
+  processor_required: true
+status: draft
+notes: 'VLA-JEPA LIBERO policy from the LeRobot VLA-JEPA collection. Upstream
+  card: VLA-JEPA combines Qwen3-VL-2B-Instruct, V-JEPA2, and a flow-matching
+  DiT action head; inference uses Qwen + the action head, while the JEPA world
+  model is training-only. Contract from config: two 224x224 RGB cameras
+  (observation.images.image, observation.images.image2), state_dim=8,
+  action_dim=7, chunk_size=7, n_action_steps=7, num_inference_timesteps=4,
+  jepa_encoder_name=facebook/vjepa2-vitl-fpc64-256. No Core AI conversion or
+  Gate B measurement has been run yet; see docs/vla-jepa-export-runbook.md.'
