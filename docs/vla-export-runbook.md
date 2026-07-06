@@ -86,6 +86,26 @@ greedy_parity comparing logits pre-detokenization).
 9. Publish (`coreai-fabric publish pi0-base`) — the action card + honest "needs a matching
    robot to actuate" banner already render (bundle_kind: action). Register into the catalog.
 
+## SmolVLA real-frame replay (credibility upgrade)
+For SmolVLA, `models/smolvla/parity.py` remains the deterministic synthetic
+stress harness used during export bring-up. Once a bundle exists, run the
+recorded-frame replay to measure conversion fidelity on real SO-101 camera
+pixels:
+
+```bash
+.venv-lerobot/bin/python models/smolvla/replay_dataset.py reference --out build/smolvla-so101 --dataset lerobot/svla_so101_pickplace --episode 0 --n-frames 8
+.venv/bin/python models/smolvla/replay_dataset.py --compare --out build/smolvla-so101 --bundle build/smolvla-so101/smolvla-so101.aimodel
+coreai-fabric verify smolvla-so101
+```
+
+The replay writes both `real-frame-parity.json` (explicit provenance label) and
+the standard `action-parity-measured.json` consumed by `verify`. The public
+dataset uses `up`/`side` cameras while the policy was trained for
+`front`/`wrist`; the harness records that OOD rig mapping in the report. It also
+uses the fixed zero-language baseline from `models/smolvla/parity.py`, so treat
+the result as numeric conversion fidelity on real pixels/state, never as
+closed-loop task success.
+
 ## Standing disk rule
 This machine runs ~95% full. Phases 0–1 cost nothing pi0-specific; the first pi0 byte is
 only written at step 4. Never start a phase whose peak disk exceeds current headroom —

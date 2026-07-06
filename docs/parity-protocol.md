@@ -152,6 +152,12 @@ is the structural analog:
 - **Inputs are REAL, never invented.** Recorded `(images, state, instruction)`
   from a published LeRobot dataset (flagship `lerobot/svla_so101_pickplace`);
   the instruction is the dataset's real recorded `task` string.
+  Family-specific harnesses may document an honest camera-rig mismatch (for
+  example SmolVLA's public SO-101 replay maps `up`/`side` cameras onto the
+  policy's `front`/`wrist` slots and leaves the third slot empty). If a harness
+  cannot reconstruct the exact tokenizer path yet, it must say so and report a
+  fixed-language baseline explicitly; that is still a real-recorded-pixel/state
+  conversion-fidelity test, not a task-success claim.
 - **Reference:** the upstream policy in torch at `--reference-dtype` (default
   `float16` to isolate quantization error; `float32` for the stricter oracle),
   same fixed noise, same `num_steps`.
@@ -168,6 +174,11 @@ is the structural analog:
   greedy_parity precision signature. A 10-step and a 4-step export are DIFFERENT
   models with separately-measured fidelity; a reduced-step tier never cites the
   10-step number.
+- **Standard handoff file.** The harness writes `action-parity-measured.json`
+  next to the bundle; `coreai-fabric verify` records that file and recomputes
+  pass/fail from the recipe thresholds. Supplemental reports (for example
+  `real-frame-parity.json`) may be emitted, but the standard file is the Gate B
+  contract.
 - **`not_run` (unmeasured, not a failure)** when the asset doesn't expose the
   deterministic-noise sampler contract (no injectable noise / internal un-seeded
   RNG), or when the preprocessing stats (`meta/stats.json` resize-pad + MEAN_STD)

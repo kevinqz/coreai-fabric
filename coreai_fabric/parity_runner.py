@@ -509,7 +509,7 @@ def run_action_parity(args) -> dict:
             rf, af = r.reshape(-1), np.asarray(a).reshape(-1)
             cos = float(np.dot(rf, af) / (np.linalg.norm(rf) * np.linalg.norm(af) + 1e-12))
             cosines.append(cos)
-            mae = np.abs(np.asarray(a) - r).reshape(r.shape[-1], -1).mean(axis=1)
+            mae = np.abs(np.asarray(a) - r).reshape(-1, r.shape[-1]).mean(axis=0)
             per_dim_maes.append(mae)
             first_maes.append(float(np.abs(np.asarray(a).reshape(-1, r.shape[-1])[0]
                                            - r.reshape(-1, r.shape[-1])[0]).mean()))

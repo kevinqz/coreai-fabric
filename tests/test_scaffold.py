@@ -53,6 +53,7 @@ def test_default_gate_b_static_llm_stays_logit_cosine():
 def test_production_scaffold_wires_registry_name_and_gate(tmp_path, monkeypatch):
     rc = _run_new(tmp_path, monkeypatch, [
         "Qwen/Qwen3-0.6B", "--offline", "--license", "apache-2.0",
+        "--namespace", "kevinqz",
         "--pipeline-tag", "text-generation",
         "--tool", "coreai.llm.export", "--apple-registry-name", "qwen3-0.6b",
     ])
@@ -71,6 +72,7 @@ def test_scaffolded_production_recipe_is_schema_valid(tmp_path, monkeypatch):
     # "written" recipe that fails schema breaks every downstream step.
     _run_new(tmp_path, monkeypatch, [
         "Qwen/Qwen3-0.6B", "--offline", "--license", "apache-2.0",
+        "--namespace", "kevinqz",
         "--pipeline-tag", "text-generation",
         "--tool", "coreai.llm.export", "--apple-registry-name", "qwen3-0.6b",
     ])
@@ -93,6 +95,7 @@ def test_variant_int8_scaffolds_the_verified_lane(tmp_path, monkeypatch):
     # and honest that parity on THIS model is unmeasured.
     rc = _run_new(tmp_path, monkeypatch, [
         "Qwen/Qwen3-8B", "--offline", "--license", "apache-2.0",
+        "--namespace", "kevinqz",
         "--pipeline-tag", "text-generation", "--tool", "coreai.llm.export",
         "--variant", "int8", "--id", "qwen3-8b-int8",
     ])
@@ -113,6 +116,7 @@ def test_variant_int8_rejects_apple_registry_name(tmp_path, monkeypatch):
     # Mutually exclusive: int8 is the compression-config lane, not a preset.
     rc = _run_new(tmp_path, monkeypatch, [
         "Qwen/Qwen3-8B", "--offline", "--license", "apache-2.0",
+        "--namespace", "kevinqz",
         "--pipeline-tag", "text-generation", "--tool", "coreai.llm.export",
         "--variant", "int8", "--apple-registry-name", "qwen3-8b", "--id", "qwen3-8b-x",
     ])
@@ -138,6 +142,7 @@ def test_production_scaffold_resolves_real_quantization(tmp_path, monkeypatch):
     monkeypatch.setattr(scaffold, "preset_compression", lambda name, platform: "4bit")
     _run_new(tmp_path, monkeypatch, [
         "Qwen/Qwen3-4B", "--offline", "--license", "apache-2.0",
+        "--namespace", "kevinqz",
         "--pipeline-tag", "text-generation",
         "--tool", "coreai.llm.export", "--apple-registry-name", "qwen3-4b",
     ])
@@ -175,6 +180,7 @@ def test_registry_name_rejected_without_production_tool(tmp_path, monkeypatch):
     # the flag only means something for Apple's coreai.llm.export.
     rc = _run_new(tmp_path, monkeypatch, [
         "Qwen/Qwen3-0.6B", "--offline", "--license", "apache-2.0",
+        "--namespace", "kevinqz",
         "--apple-registry-name", "qwen3-0.6b",  # default --tool is the fabric driver
     ])
     assert rc == 1

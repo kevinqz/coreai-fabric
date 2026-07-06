@@ -152,6 +152,16 @@ def test_gate_b_action_parity_records_passing_measurement(tmp_path):
     assert result["max_per_dim_mae"] == 2.1e-07   # harness fields recorded verbatim
 
 
+def test_gate_b_action_parity_prefers_relative_mae_when_declared(tmp_path):
+    recipe = _action_recipe(tmp_path)
+    recipe.data["parity"]["gate_b"]["max_relative_action_mae"] = 0.1
+    _write_measured(tmp_path, {"metric": "action_parity", "value": 0.99999,
+                               "max_per_dim_mae": 1.5, "max_relative_action_mae": 0.02})
+    result = run_gate_b(tmp_path, recipe)
+    assert result["status"] == "passed"
+    assert result["max_relative_action_mae"] == 0.02
+
+
 def test_gate_b_action_parity_fails_when_mae_over_cap(tmp_path):
     # Cosine passes but per-dim MAE exceeds the recipe cap => failed (both gates bind).
     _write_measured(tmp_path, {"metric": "action_parity", "value": 0.9995,

@@ -186,7 +186,7 @@ def cmd_compare(out: Path, bundle: Path):
             r = refs[i].reshape(-1)
             a = np.asarray(traj, dtype=np.float64).reshape(-1)
             cosines.append(float(np.dot(r, a) / (np.linalg.norm(r) * np.linalg.norm(a) + 1e-12)))
-            per_dim_maes.append(np.abs(np.asarray(traj) - refs[i]).reshape(refs[i].shape[-1], -1).mean(axis=1))
+            per_dim_maes.append(np.abs(np.asarray(traj) - refs[i]).reshape(-1, refs[i].shape[-1]).mean(axis=0))
 
         cos = np.asarray(cosines)
         per_dim = np.mean(per_dim_maes, axis=0)

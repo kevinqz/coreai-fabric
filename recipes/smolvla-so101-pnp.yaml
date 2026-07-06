@@ -85,7 +85,7 @@ notes: 'SmolVLA VLA policy for the SO-ARM101 (the ~US$100 open-source LeRobot ar
   a Gemma-style action expert, same flow-matching Euler loop as pi0 (chunk 50, 6-DOF actions
   padded to 32, 10-step Euler): 3 cameras (512x512) + proprioceptive state + a language instruction
   -> a 50-step action chunk. Split-export into ONE .aimodel: encode (SmolVLM2 prefix -> 241-token
-  KV cache) + denoise_step (expert, host drives 10x). fp32, coreai- optimized. Upstream edge-inference/smolvla-so101-pick-orange
+  KV cache) + denoise_step (expert, host drives 10x). fp32, coreai- optimized. Upstream anikitakis/vla_so101_pick_n_place_full_expert
   (apache-2.0, base lerobot/smolvla_base). IMPORTANT FIDELITY NOTE: SmolVLM2''s vision graph
   has an op that specializes catastrophically when torch.export traces it with degenerate
   (all-zero / identical) camera images — the lowered encode then produces a plausible KV cache
