@@ -1,6 +1,6 @@
 """`coreai-fabric-llm-export` — fabric's own LLM converter executable.
 
-Validated end-to-end on real hardware (Apple M4 Max, macOS 26.6,
+Validated end-to-end on real hardware (Apple Silicon, macOS 26,
 coreai-torch 0.4.1 + coreai-core 1.0.0b2 from PyPI, transformers 4.57.3):
 torch.export -> TorchConverter -> to_coreai() -> optimize() -> save_asset()
 produces a loadable `.aimodel` whose outputs match the upstream PyTorch

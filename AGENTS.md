@@ -39,7 +39,7 @@ coreai-fabric validate
 ```
 
 For converting and Gate B you also need the Apple conversion stack (macOS on
-Apple Silicon; VERIFIED on macOS 26.6 / M4 Max, 2026-07-03 — macOS 27 is NOT
+Apple Silicon; VERIFIED on macOS 26 / Apple Silicon, 2026-07-03 — macOS 27 is NOT
 required to convert or to run Gate B):
 
 ```bash
@@ -105,7 +105,7 @@ Toolchain reality (verified on real hardware 2026-07-03 — full detail in
   `coreai-torch` executable anywhere.
 - Fabric ships `coreai-fabric-llm-export` (installed by `pip install -e
   ".[convert]"`), a driver over that library. Validated end-to-end on
-  qwen3-0.6b on macOS 26.6. Static logits graph, `--compression none` only.
+  qwen3-0.6b on macOS 26. Static logits graph, `--compression none` only.
 - Apple's full-featured CLIs (`coreai.llm.export` — KV-cache assets,
   quantization presets) come from an **apple/coreai-models checkout** (the
   package is NOT on PyPI). `build_command` emits the same verified flag
@@ -145,7 +145,7 @@ coreai-fabric verify qwen3-0.6b
   Protocol: `docs/parity-protocol.md`. Fabric ships a conforming runner,
   `coreai-fabric-parity-runner` (per_token_logit_cosine; installed by the
   `[convert]` extra) — verified on real hardware: the Core AI runtime inside
-  the coreai-core PyPI wheel executes `.aimodel` assets on macOS 26.6, so no
+  the coreai-core PyPI wheel executes `.aimodel` assets on macOS 26, so no
   Swift runner and no macOS 27 are needed. Enable it with
   `COREAI_FABRIC_PARITY_RUNNER=coreai-fabric-parity-runner`; without a
   configured runner, Gate B is recorded `not_run` — never faked.

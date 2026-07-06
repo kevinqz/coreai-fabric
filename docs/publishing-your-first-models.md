@@ -128,7 +128,7 @@ no longer the default reality:
   drives a *stateful* asset on-device. It measures **fidelity to the reference**
   — not task accuracy — and the card says exactly that.
 - The **int8 lane passes it.** `qwen3-0.6b-int8` measured **100% margin-gated /
-  95.8% exact-argmax / 100% top-5** on an M4 Max and is **published, live, and in
+  95.8% exact-argmax / 100% top-5** on an Apple Silicon and is **published, live, and in
   the catalog**: <https://huggingface.co/kevinqz/Qwen3-0.6B-CoreAI>. It needed
   **no** escape flag.
 - **Lead with int8 (high-fidelity), not int4.** Apple's macOS int4 preset uses

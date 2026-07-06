@@ -6,7 +6,7 @@
 # exclusions (SDPA/RoPE/RMSNorm kept high-precision) are Apple's.
 #
 # Why int8-absmax and not the int4 preset: a root-cause study (2026-07-03,
-# verified on M4 Max) measured Apple's int4-clipped preset at ~79% greedy argmax
+# verified on Apple Silicon) measured Apple's int4-clipped preset at ~79% greedy argmax
 # / 96% top-5 vs the fp16 reference on Qwen3-0.6B, while this int8 config reaches
 # ~96% argmax / 100% top-5 / 100% margin-gated — essentially lossless, matching
 # the community's int8 results. int4 does NOT survive on Qwen (the community

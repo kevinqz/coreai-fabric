@@ -1,0 +1,95 @@
+id: folding-latest
+upstream:
+  hf_repo: lerobot/folding_latest
+  revision: a53a72876215dd19b3bf63fb5f4d7aa56387cf2a
+  license: apache-2.0
+  license_terms: permissive
+  pipeline_tag: robotics
+  size_bytes: 9350000000
+conversion:
+  tool: models/pi05/export.py
+  precision: float16
+  quantization: none
+  action:
+    embodiment: generalist_folding
+    robot_required: true
+    action_space:
+      dim: 32
+      max_action_dim: 32
+      max_state_dim: 32
+      chunk_size: 30
+      convention: per_embodiment_joint_space
+    sampling:
+      kind: flow_matching
+      num_steps: 10
+      solver: euler
+    normalization:
+      stats_source: policy_preprocessor.json + policy_postprocessor.json (upstream); the split
+        graphs operate in the policy's normalized action space — the host un-normalizes with
+        the upstream processor stats. parity measured in normalized space (analog of pre-detok
+        logits)
+    graphs:
+    - name: encode
+    - name: denoise_step
+expected:
+  bundle_files:
+  - metadata.json
+  - main.mlirb
+  - main.hash
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: action_parity
+    threshold: 0.995
+    tolerance: 0.001
+    max_action_mae: 0.05
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: Pi05-Folding-CoreAI
+  collection: CoreAI · Apple on-device
+catalog:
+  name: Pi0.5 Folding (fabric)
+  family: LeRobot
+  bundle_kind: action
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: false
+    custom_kernel: false
+    patch_required: true
+    aot_required: false
+  capabilities:
+  - vision-language-action
+  - robotics
+  modalities:
+    input:
+    - image
+    - text
+    output:
+    - action
+  parameters: 3.3B
+  architecture: transformer
+  runner: CoreAIRunner
+  tokenizer_required: true
+  processor_required: true
+status: published
+notes: 'pi0.5 (pi05) VLA policy — lerobot/folding_latest, apache-2.0 (clean, redistributable).
+  A flow-matching vision-language-action policy trained on a folding task: 3 cameras (224x224)
+  + language instruction -> a 30-step action chunk (32 dims padded), via a fixed 10-step Euler
+  flow-matching sampler. UNLIKE pi0, pi0.5 takes NO proprioceptive state (image+text->action;
+  state handled via the prefix/adarms conditioning). Split-export into ONE .aimodel: encode
+  (SigLIP/PaliGemma VLM prefix -> KV cache, run once) + denoise_step (Gemma action expert,
+  host drives 10x). Same proven flow-matching lane as pi0-base (models/pi05/ adapts models/pi0/
+  — denoise_step drops state, chunk 30). fp16 + coreai-optimized on-device asset. Gate B =
+  action_parity vs the fp16 torch reference through the identical 10-step Euler loop, fixed
+  noise, normalized space. Generalist BASE checkpoint — needs a matching robot embodiment
+  to actuate + fine-tuning; the output is inert without the robot.'
+published:
+  hf_repo: kevinqz/Pi05-Folding-CoreAI
+  revision: 21d9745020fdd1d31bb0b82e932436ed26d5c38e
+  date: '2026-07-05'

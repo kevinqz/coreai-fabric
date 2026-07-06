@@ -2,7 +2,7 @@
 
 Implements the runner contract in Python on top of the Core AI runtime that
 ships inside the `coreai-core` PyPI wheel. Validated on real hardware
-(Apple M4 Max, macOS 26.6): the Python runtime loads, specializes and
+(Apple Silicon, macOS 26): the Python runtime loads, specializes and
 executes `.aimodel` assets — no Swift runner and no macOS 27 required for
 Gate B (macOS 27 remains the minimum for on-device deployment via the
 apple/coreai-models Swift runners).
@@ -18,14 +18,14 @@ Supported metrics:
   reports `not_run` — never a fake number.
 - `per_token_logit_cosine` (static-graph LLM exports; greedy_token_exact).
 
-Bundle contract (verified on real hardware, macOS 26.6, M4 Max): a stateful
+Bundle contract (verified on real hardware, macOS 26, Apple Silicon): a stateful
 asset whose `main` takes `input_ids` [1, seq] + `position_ids` [1, seq] (int32),
 returns `logits` [1, seq, vocab], and carries `keyCache`/`valueCache` states of
 shape [n_layers, 1, n_kv_heads, seq, head_dim]. Decode contract (from
 coreai-models qwen3.py:86, `offset = seq_len - query_len`): `input_ids` is the
 NEW token(s); `position_ids` is the FULL range [0..pos] (its length is the total
 sequence length; the runtime writes the cache at `offset`). NOTE: the Python
-reference runtime is correct but SLOW (~0.16 tok/s on M4 Max) — greedy_parity is
+reference runtime is correct but SLOW (~0.16 tok/s on Apple Silicon) — greedy_parity is
 an opt-in local verification, not a fast/CI check. Real tok/s needs the on-device
 Swift runtime (macOS 27).
 """
@@ -120,10 +120,14 @@ def _environment() -> dict:
         except metadata.PackageNotFoundError:
             return None
 
+    # PRIVACY: never emit the publisher's specific hardware / OS build into a report that ships to a
+    # public repo. The exact chip model (sysctl brand string, e.g. "Apple Silicon") and OS point
+    # release identify the machine and are prohibited from repos. Report only the generic arch family
+    # (darwin-arm64 => Apple Silicon) + the toolchain versions that actually matter for reproducibility.
+    is_apple_silicon = platform.system() == "Darwin" and platform.machine() == "arm64"
     return {
-        "os": f"macOS {platform.mac_ver()[0]}" if platform.mac_ver()[0] else platform.platform(),
-        "chip": _chip(),
-        "machine": platform.machine(),
+        "platform": f"{platform.system().lower()}-{platform.machine()}",  # e.g. "darwin-arm64"
+        "accelerator": "apple_silicon" if is_apple_silicon else platform.machine(),
         "runtime_version": v("coreai-core"),
         "coreai_torch": v("coreai-torch"),
         "torch": v("torch"),

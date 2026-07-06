@@ -4,7 +4,15 @@
   "description": "A conversion recipe: everything needed to turn one upstream Hugging Face model into a provenance-verified .aimodel artifact. Recipes are the unit of contribution in coreai-fabric.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "upstream", "conversion", "expected", "parity", "publish", "status"],
+  "required": [
+    "id",
+    "upstream",
+    "conversion",
+    "expected",
+    "parity",
+    "publish",
+    "status"
+  ],
   "properties": {
     "id": {
       "type": "string",
@@ -14,7 +22,11 @@
     "upstream": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["hf_repo", "license", "license_terms"],
+      "required": [
+        "hf_repo",
+        "license",
+        "license_terms"
+      ],
       "properties": {
         "hf_repo": {
           "type": "string",
@@ -33,8 +45,14 @@
         },
         "license_terms": {
           "type": "string",
-          "enum": ["permissive", "weak_copyleft", "restricted", "review_required", "unknown"],
-          "description": "License triage — mirrors the coreai-catalog upstream.schema vocabulary so the two repos share one contract. permissive = on the fabric allowlist (commercial_use maps to 'likely'); weak_copyleft/restricted/review_required all map to commercial_use 'check_license' (conservative); unknown = not yet triaged. Triage labels are not legal advice."
+          "enum": [
+            "permissive",
+            "weak_copyleft",
+            "restricted",
+            "review_required",
+            "unknown"
+          ],
+          "description": "License triage \u2014 mirrors the coreai-catalog upstream.schema vocabulary so the two repos share one contract. permissive = on the fabric allowlist (commercial_use maps to 'likely'); weak_copyleft/restricted/review_required all map to commercial_use 'check_license' (conservative); unknown = not yet triaged. Triage labels are not legal advice."
         },
         "pipeline_tag": {
           "type": "string",
@@ -50,25 +68,29 @@
     "conversion": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["tool", "quantization", "precision"],
+      "required": [
+        "tool",
+        "quantization",
+        "precision"
+      ],
       "properties": {
         "tool": {
           "type": "string",
           "minLength": 1,
-          "description": "Converter executable resolved on PATH at convert time (verified tools: coreai-fabric-llm-export from this repo's [convert] extra, coreai.llm.export from an apple/coreai-models checkout), OR a per-model script path inside an apple/coreai-models checkout (models/<family>/export.py) — script tools are documented but not driven by fabric; convert prints the verified manual invocation."
+          "description": "Converter executable resolved on PATH at convert time (verified tools: coreai-fabric-llm-export from this repo's [convert] extra, coreai.llm.export from an apple/coreai-models checkout), OR a per-model script path inside an apple/coreai-models checkout (models/<family>/export.py) \u2014 script tools are documented but not driven by fabric; convert prints the verified manual invocation."
         },
         "min_tool_version": {
           "type": "string",
-          "description": "Minimum version of the underlying converter library (coreai-torch) known to work for this recipe — every verified tool is a thin driver over coreai-torch. Leave absent if unknown; 0.4.1 was validated on real hardware 2026-07-03."
+          "description": "Minimum version of the underlying converter library (coreai-torch) known to work for this recipe \u2014 every verified tool is a thin driver over coreai-torch. Leave absent if unknown; 0.4.1 was validated on real hardware 2026-07-03."
         },
         "apple_registry_name": {
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9.-]*$",
-          "description": "For tool `coreai.llm.export` (Apple's production exporter): the Apple model-registry short-name (e.g. `qwen3-0.6b`, from `coreai.model.registry --list-models`). When set, convert drives `coreai.llm.export <short-name>` and lets Apple's TESTED compression preset resolve — this produces the production KV-cache chat asset that passes parity. `precision`/`quantization` are then documentation only (the preset wins). Absent = raw HF-ID export (requires `--experimental`, uses this recipe's precision/quantization, and typically does NOT clear the parity bar)."
+          "description": "For tool `coreai.llm.export` (Apple's production exporter): the Apple model-registry short-name (e.g. `qwen3-0.6b`, from `coreai.model.registry --list-models`). When set, convert drives `coreai.llm.export <short-name>` and lets Apple's TESTED compression preset resolve \u2014 this produces the production KV-cache chat asset that passes parity. `precision`/`quantization` are then documentation only (the preset wins). Absent = raw HF-ID export (requires `--experimental`, uses this recipe's precision/quantization, and typically does NOT clear the parity bar)."
         },
         "compression_config": {
           "type": "string",
-          "description": "HIGH-FIDELITY path: a repo-relative path to a coreai-opt `quantization_config` YAML (e.g. `quant/int8_absmax_perblock32.yaml`). When set, convert drives `coreai.llm.export <hf_repo> --experimental --compute-precision <precision> --compression-config <path>` — used for the int8 tier that is ~lossless on models where Apple's int4 registry preset is not (root-cause study 2026-07-03). Mutually exclusive with `apple_registry_name`."
+          "description": "HIGH-FIDELITY path: a repo-relative path to a coreai-opt `quantization_config` YAML (e.g. `quant/int8_absmax_perblock32.yaml`). When set, convert drives `coreai.llm.export <hf_repo> --experimental --compute-precision <precision> --compression-config <path>` \u2014 used for the int8 tier that is ~lossless on models where Apple's int4 registry preset is not (root-cause study 2026-07-03). Mutually exclusive with `apple_registry_name`."
         },
         "args": {
           "type": "object",
@@ -87,39 +109,92 @@
         "action": {
           "type": "object",
           "additionalProperties": false,
-          "description": "VLA/robot-policy conversion (bundle_kind: action). Declares the split-export shape + the policy's I/O so the host can drive the sampler loop and action_parity can verify it. A policy is inert without its embodiment — these fields are load-bearing, never guessed.",
+          "description": "VLA/robot-policy conversion (bundle_kind: action). Declares the split-export shape + the policy's I/O so the host can drive the sampler loop and action_parity can verify it. A policy is inert without its embodiment \u2014 these fields are load-bearing, never guessed.",
           "properties": {
-            "embodiment": { "type": "string", "description": "Target robot family (e.g. so100_so101_6dof). Honest label of what the action chunk actuates — NOT a claim of task success." },
-            "robot_required": { "type": "boolean", "description": "Always true for a policy: the output is inert without a matching robot." },
+            "embodiment": {
+              "type": "string",
+              "description": "Target robot family (e.g. so100_so101_6dof). Honest label of what the action chunk actuates \u2014 NOT a claim of task success."
+            },
+            "robot_required": {
+              "type": "boolean",
+              "description": "Always true for a policy: the output is inert without a matching robot."
+            },
             "action_space": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "dim": { "type": "integer", "minimum": 1, "description": "Real robot action dims." },
-                "max_action_dim": { "type": "integer", "minimum": 1, "description": "Model's padded action width." },
-                "max_state_dim": { "type": "integer", "minimum": 1, "description": "Model's padded state width." },
-                "chunk_size": { "type": "integer", "minimum": 1, "description": "Actions emitted per inference." },
-                "convention": { "type": "string", "description": "Coordinate convention (e.g. joint_position_delta); per-embodiment, from the upstream card, never guessed." }
+                "dim": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Real robot action dims."
+                },
+                "max_action_dim": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Model's padded action width."
+                },
+                "max_state_dim": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Model's padded state width."
+                },
+                "chunk_size": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Actions emitted per inference."
+                },
+                "convention": {
+                  "type": "string",
+                  "description": "Coordinate convention (e.g. joint_position_delta); per-embodiment, from the upstream card, never guessed."
+                }
               }
             },
             "sampling": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "kind": { "type": "string", "enum": ["flow_matching", "autoregressive_fast", "diffusion", "act", "vqbet"], "description": "The action-head sampler family." },
-                "num_steps": { "type": "integer", "minimum": 1, "description": "Fixed sampler steps (e.g. 10). Part of the asset's identity + parity signature — a reduced-step variant is a DIFFERENT model with its own measured action_parity." },
-                "solver": { "type": "string", "description": "Integrator (e.g. euler)." }
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "flow_matching",
+                    "autoregressive_fast",
+                    "diffusion",
+                    "act",
+                    "vqbet"
+                  ],
+                  "description": "The action-head sampler family."
+                },
+                "num_steps": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Fixed sampler steps (e.g. 10). Part of the asset's identity + parity signature \u2014 a reduced-step variant is a DIFFERENT model with its own measured action_parity."
+                },
+                "solver": {
+                  "type": "string",
+                  "description": "Integrator (e.g. euler)."
+                }
               }
             },
             "normalization": {
               "type": "object",
               "additionalProperties": true,
-              "description": "Un-normalization scheme per stream + where the stats ship (a bundle sidecar). A silent stats mismatch produces meaningless actions — action_parity hash-checks it."
+              "description": "Un-normalization scheme per stream + where the stats ship (a bundle sidecar). A silent stats mismatch produces meaningless actions \u2014 action_parity hash-checks it."
             },
             "graphs": {
               "type": "array",
-              "description": "Split-export graphs (e.g. encode, denoise_step) — each separately exported so the host drives the N-step loop and num_steps is a runtime input, not a baked constant.",
-              "items": { "type": "object", "additionalProperties": false, "required": ["name"], "properties": { "name": { "type": "string" } } }
+              "description": "Split-export graphs (e.g. encode, denoise_step) \u2014 each separately exported so the host drives the N-step loop and num_steps is a runtime input, not a baked constant.",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                }
+              }
             }
           }
         }
@@ -128,7 +203,9 @@
     "expected": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["bundle_files"],
+      "required": [
+        "bundle_files"
+      ],
       "properties": {
         "format_version": {
           "type": "string",
@@ -136,7 +213,10 @@
         },
         "bundle_files": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 },
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
           "minItems": 1,
           "uniqueItems": true,
           "description": "Paths (relative to the .aimodel bundle root) that must exist after conversion. Checked by verify Gate A."
@@ -146,18 +226,27 @@
     "parity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["gate_a", "gate_b"],
+      "required": [
+        "gate_a",
+        "gate_b"
+      ],
       "properties": {
         "gate_a": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["checks"],
+          "required": [
+            "checks"
+          ],
           "properties": {
             "checks": {
               "type": "array",
               "items": {
                 "type": "string",
-                "enum": ["bundle_files_present", "metadata_json_parses", "metadata_matches_recipe"]
+                "enum": [
+                  "bundle_files_present",
+                  "metadata_json_parses",
+                  "metadata_matches_recipe"
+                ]
               },
               "minItems": 1,
               "uniqueItems": true,
@@ -168,12 +257,22 @@
         "gate_b": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["metric", "threshold", "tolerance"],
+          "required": [
+            "metric",
+            "threshold",
+            "tolerance"
+          ],
           "properties": {
             "metric": {
               "type": "string",
-              "enum": ["graph_output_cosine", "per_token_logit_cosine", "benchmark_accuracy", "greedy_parity", "action_parity"],
-              "description": "Parity metric vs the upstream model. `greedy_parity` = the RUNNABLE Gate B for a production stateful `coreai.llm.export` asset: drive its real KV-cache decode and, teacher-forced along the fp32 reference's greedy path, measure per-token argmax agreement (the community's 'X/Y token-exact vs fp32'). Runs on macOS 26 via the coreai-core Python runtime (slow → opt-in). `benchmark_accuracy` = task accuracy (e.g. tinyMMLU) via Apple's `coreai.llm.eval`, which is a stub in coreai-models 0.1.0 (not_run until it lands). `per_token_logit_cosine`/`graph_output_cosine` = raw fidelity of a STATIC-graph export. `action_parity` = the RUNNABLE, robot-free Gate B for a VLA/robot policy: fix the flow-matching sampler's initial noise (deterministic, like greedy_parity teacher-forces), feed recorded (images,state,instruction) from a LeRobot dataset, and compare the predicted action chunk vs the torch reference (min chunk cosine + per-dim MAE). Proves the export is NUMERICALLY FAITHFUL to the source policy — NOT real-world task success. See docs/parity-protocol.md."
+              "enum": [
+                "graph_output_cosine",
+                "per_token_logit_cosine",
+                "benchmark_accuracy",
+                "greedy_parity",
+                "action_parity"
+              ],
+              "description": "Parity metric vs the upstream model. `greedy_parity` = the RUNNABLE Gate B for a production stateful `coreai.llm.export` asset: drive its real KV-cache decode and, teacher-forced along the fp32 reference's greedy path, measure per-token argmax agreement (the community's 'X/Y token-exact vs fp32'). Runs on macOS 26 via the coreai-core Python runtime (slow \u2192 opt-in). `benchmark_accuracy` = task accuracy (e.g. tinyMMLU) via Apple's `coreai.llm.eval`, which is a stub in coreai-models 0.1.0 (not_run until it lands). `per_token_logit_cosine`/`graph_output_cosine` = raw fidelity of a STATIC-graph export. `action_parity` = the RUNNABLE, robot-free Gate B for a VLA/robot policy: fix the flow-matching sampler's initial noise (deterministic, like greedy_parity teacher-forces), feed recorded (images,state,instruction) from a LeRobot dataset, and compare the predicted action chunk vs the torch reference (min chunk cosine + per-dim MAE). Proves the export is NUMERICALLY FAITHFUL to the source policy \u2014 NOT real-world task success. See docs/parity-protocol.md."
             },
             "threshold": {
               "type": "number",
@@ -189,7 +288,12 @@
             "max_action_mae": {
               "type": "number",
               "minimum": 0,
-              "description": "action_parity only: additionally require the worst per-dimension normalized action MAE (max over dims and samples) to stay <= this. A second, complementary guard to the chunk-cosine threshold."
+              "description": "action_parity only (legacy, scale-naive): require the worst per-dimension ABSOLUTE normalized action MAE to stay <= this. Superseded by max_relative_action_mae for checkpoints whose normalized-action range differs from ~unit scale; kept for backward compatibility."
+            },
+            "max_relative_action_mae": {
+              "type": "number",
+              "minimum": 0,
+              "description": "action_parity only (preferred): require the worst per-dimension MAE divided by the GLOBAL action RMS (normalized MAE) to stay <= this. Scale-invariant and robust to both large-action and near-zero-action checkpoints (per-dim normalization explodes on unused dims). When present, verify gates on this instead of the absolute max_action_mae. The chunk-cosine threshold remains the primary gate."
             },
             "greedy_token_exact": {
               "type": "boolean",
@@ -202,7 +306,10 @@
     "publish": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["hf_target_namespace", "repo_name"],
+      "required": [
+        "hf_target_namespace",
+        "repo_name"
+      ],
       "properties": {
         "hf_target_namespace": {
           "type": "string",
@@ -217,23 +324,36 @@
         "collection": {
           "type": "string",
           "minLength": 1,
-          "description": "Optional HF Collection title under the namespace to add the published model to (idempotent, exists_ok). Groups a publisher's CoreAI work — HF namespaces are flat, so Collections are the native way to separate/organize. e.g. `CoreAI · Apple on-device`."
+          "description": "Optional HF Collection title under the namespace to add the published model to (idempotent, exists_ok). Groups a publisher's CoreAI work \u2014 HF namespaces are flat, so Collections are the native way to separate/organize. e.g. `CoreAI \u00b7 Apple on-device`."
         },
         "variant": {
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9._-]*$",
-          "description": "Optional quantization-tier name (e.g. `int4`, `int8`). When set, this recipe is one VARIANT of a multi-tier repo: its bundle uploads to `<variant>/` inside the shared `repo_name`, and the model card compares all sibling variants (same namespace+repo_name) — the community layout (one repo, int4/+int8/, one card)."
+          "description": "Optional quantization-tier name (e.g. `int4`, `int8`). When set, this recipe is one VARIANT of a multi-tier repo: its bundle uploads to `<variant>/` inside the shared `repo_name`, and the model card compares all sibling variants (same namespace+repo_name) \u2014 the community layout (one repo, int4/+int8/, one card)."
         }
       }
     },
     "catalog": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "family", "capabilities", "modalities", "bundle_kind", "runtime_facts"],
-      "description": "Fields needed to generate the coreai-catalog entries at register time. Optional at draft stage; required before `coreai-fabric register`. The catalog rejects `unknown` for the runtime facts and requires bundle_kind + min_os on every model, so the recipe must declare them here — fabric is the converter and is the authoritative source for these conversion-time facts.",
+      "required": [
+        "name",
+        "family",
+        "capabilities",
+        "modalities",
+        "bundle_kind",
+        "runtime_facts"
+      ],
+      "description": "Fields needed to generate the coreai-catalog entries at register time. Optional at draft stage; required before `coreai-fabric register`. The catalog rejects `unknown` for the runtime facts and requires bundle_kind + min_os on every model, so the recipe must declare them here \u2014 fabric is the converter and is the authoritative source for these conversion-time facts.",
       "properties": {
-        "name": { "type": "string", "minLength": 1 },
-        "family": { "type": "string", "minLength": 1 },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "family": {
+          "type": "string",
+          "minLength": 1
+        },
         "context_length": {
           "type": "integer",
           "minimum": 1,
@@ -241,51 +361,117 @@
         },
         "languages": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "Languages the model supports (BCP-47/HF codes, e.g. [en, zh] or [multilingual]). Emitted as the HF card `language:` frontmatter to drive HF's language facet. Only declare what the upstream card states."
         },
         "bundle_kind": {
           "type": "string",
-          "enum": ["llm", "vlm", "ocr", "audio-lm", "embedding", "reranker", "object-detection", "segmentation", "depth", "image-generation", "super-resolution", "tts", "asr", "audio-generation", "video", "3d", "action"],
+          "enum": [
+            "llm",
+            "vlm",
+            "ocr",
+            "audio-lm",
+            "embedding",
+            "reranker",
+            "object-detection",
+            "segmentation",
+            "depth",
+            "image-generation",
+            "super-resolution",
+            "tts",
+            "asr",
+            "audio-generation",
+            "video",
+            "3d",
+            "action"
+          ],
           "description": "Mirrors the catalog model.schema bundle_kind enum. The catalog test suite requires bundle_kind on every model. Choose the kind that matches the model's task (e.g. an LLM chat model = llm, a document-OCR model = ocr)."
         },
         "min_os": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["macos", "ios"],
+          "required": [
+            "macos",
+            "ios"
+          ],
           "description": "Minimum OS the .aimodel runtime requires. For apple-core-ai this is macOS/iOS 27.0, grounded in apple/coreai-models Package.swift platforms: [.macOS(\"27.0\"), .iOS(\"27.0\")]. Defaults to 27.0/27.0 at register time if absent.",
           "properties": {
-            "macos": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$" },
-            "ios": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$" }
+            "macos": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+$"
+            },
+            "ios": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+$"
+            }
           }
         },
         "runtime_facts": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["stock_runtime", "custom_kernel", "patch_required", "aot_required"],
-          "description": "Runtime characteristics of the converted bundle. The catalog's audit REJECTS `unknown` for these four, so they must be real booleans. A standard clean coreai-fabric export runs on the stock CoreAIRunner with no custom Metal kernel, no zoo-style source patch, and no separate AOT step (the export IS the compile) — declare true/false honestly for THIS recipe's conversion.",
+          "required": [
+            "stock_runtime",
+            "custom_kernel",
+            "patch_required",
+            "aot_required"
+          ],
+          "description": "Runtime characteristics of the converted bundle. The catalog's audit REJECTS `unknown` for these four, so they must be real booleans. A standard clean coreai-fabric export runs on the stock CoreAIRunner with no custom Metal kernel, no zoo-style source patch, and no separate AOT step (the export IS the compile) \u2014 declare true/false honestly for THIS recipe's conversion.",
           "properties": {
-            "stock_runtime": { "type": "boolean", "description": "Runs on the stock CoreAIRunner without runtime modification." },
-            "custom_kernel": { "type": "boolean", "description": "Requires a custom Metal/compute kernel." },
-            "patch_required": { "type": "boolean", "description": "Requires a source patch to the runtime (zoo-style). A clean fabric export is false." },
-            "aot_required": { "type": "boolean", "description": "Requires a separate ahead-of-time compile beyond the export." }
+            "stock_runtime": {
+              "type": "boolean",
+              "description": "Runs on the stock CoreAIRunner without runtime modification."
+            },
+            "custom_kernel": {
+              "type": "boolean",
+              "description": "Requires a custom Metal/compute kernel."
+            },
+            "patch_required": {
+              "type": "boolean",
+              "description": "Requires a source patch to the runtime (zoo-style). A clean fabric export is false."
+            },
+            "aot_required": {
+              "type": "boolean",
+              "description": "Requires a separate ahead-of-time compile beyond the export."
+            }
           }
         },
         "capabilities": {
           "type": "array",
-          "description": "What the model DOES — its tasks/behaviors. Controlled vocabulary mirrored from the catalog model schema; extend it there first, never ad-hoc. Architecture/inference properties (moe, mla, hybrid-llm, diffusion-lm, speculative-decoding) are NOT capabilities — put those in `traits`.",
+          "description": "What the model DOES \u2014 its tasks/behaviors. Controlled vocabulary mirrored from the catalog model schema; extend it there first, never ad-hoc. Architecture/inference properties (moe, mla, hybrid-llm, diffusion-lm, speculative-decoding) are NOT capabilities \u2014 put those in `traits`.",
           "items": {
             "type": "string",
             "enum": [
-              "agentic", "audio-understanding", "chat", "code-generation",
-              "document-ocr", "embedding", "gui-grounding", "image-generation",
-              "image-text-similarity", "image-to-3d", "instance-segmentation",
-              "instruction-following", "monocular-depth", "music-generation",
-              "object-detection", "promptable-segmentation", "reasoning",
-              "reranking", "robotics", "speech-to-text", "super-resolution",
-              "text-generation", "text-to-audio", "text-to-speech",
-              "text-to-video", "video-classification", "vision-language",
-              "vision-language-action", "visual-document-retrieval"
+              "agentic",
+              "audio-understanding",
+              "chat",
+              "code-generation",
+              "document-ocr",
+              "embedding",
+              "gui-grounding",
+              "image-generation",
+              "image-text-similarity",
+              "image-to-3d",
+              "instance-segmentation",
+              "instruction-following",
+              "monocular-depth",
+              "music-generation",
+              "object-detection",
+              "promptable-segmentation",
+              "reasoning",
+              "reranking",
+              "robotics",
+              "speech-to-text",
+              "super-resolution",
+              "text-generation",
+              "text-to-audio",
+              "text-to-speech",
+              "text-to-video",
+              "video-classification",
+              "vision-language",
+              "vision-language-action",
+              "visual-document-retrieval"
             ]
           },
           "minItems": 1,
@@ -293,27 +479,42 @@
         },
         "traits": {
           "type": "array",
-          "description": "What the model IS inside — architecture or inference technique, orthogonal to what it does. Optional; most models have none. Controlled vocabulary mirrored from the catalog model schema.",
+          "description": "What the model IS inside \u2014 architecture or inference technique, orthogonal to what it does. Optional; most models have none. Controlled vocabulary mirrored from the catalog model schema.",
           "items": {
             "type": "string",
-            "enum": ["moe", "mla", "hybrid-llm", "diffusion-lm", "speculative-decoding"]
+            "enum": [
+              "moe",
+              "mla",
+              "hybrid-llm",
+              "diffusion-lm",
+              "speculative-decoding"
+            ]
           },
           "uniqueItems": true
         },
         "modalities": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["input", "output"],
+          "required": [
+            "input",
+            "output"
+          ],
           "properties": {
             "input": {
               "type": "array",
-              "items": { "type": "string", "minLength": 1 },
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
               "minItems": 1,
               "uniqueItems": true
             },
             "output": {
               "type": "array",
-              "items": { "type": "string", "minLength": 1 },
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
               "minItems": 1,
               "uniqueItems": true
             }
@@ -325,7 +526,14 @@
         },
         "architecture": {
           "type": "string",
-          "enum": ["transformer", "diffusion", "cnn/transformer", "encoder", "recurrent", "unknown"],
+          "enum": [
+            "transformer",
+            "diffusion",
+            "cnn/transformer",
+            "encoder",
+            "recurrent",
+            "unknown"
+          ],
           "description": "Mirrors the catalog model.schema architecture enum."
         },
         "runner": {
@@ -342,20 +550,44 @@
           ],
           "description": "Mirrors the catalog model.schema runner enum. Use unknown until verified on-device."
         },
-        "tokenizer_required": { "enum": [true, false, "unknown"] },
-        "processor_required": { "enum": [true, false, "unknown"] },
-        "streaming": { "type": "boolean" }
+        "tokenizer_required": {
+          "enum": [
+            true,
+            false,
+            "unknown"
+          ]
+        },
+        "processor_required": {
+          "enum": [
+            true,
+            false,
+            "unknown"
+          ]
+        },
+        "streaming": {
+          "type": "boolean"
+        }
       }
     },
     "status": {
       "type": "string",
-      "enum": ["draft", "converted", "verified", "published", "registered"],
+      "enum": [
+        "draft",
+        "converted",
+        "verified",
+        "published",
+        "registered"
+      ],
       "description": "Pipeline stage. Advanced only by the corresponding fabric command."
     },
     "published": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["hf_repo", "revision", "date"],
+      "required": [
+        "hf_repo",
+        "revision",
+        "date"
+      ],
       "description": "Written back by `coreai-fabric publish` after a successful upload. Required when status is published or registered.",
       "properties": {
         "hf_repo": {
@@ -378,6 +610,11 @@
       "pattern": "^https://github\\.com/.+/pull/[0-9]+$",
       "description": "URL of the open catalog PR written back by `register` after `gh pr create`. Status stays `published` until a human MERGES this PR; `register --mark-merged` then flips status to `registered`. Absent until a PR is opened."
     },
-    "notes": { "type": ["string", "null"] }
+    "notes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
   }
 }

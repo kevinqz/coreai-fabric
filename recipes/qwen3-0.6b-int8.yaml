@@ -67,7 +67,7 @@ catalog:
 status: published
 notes: 'HIGH-FIDELITY int8 variant of qwen3-0.6b — the same Qwen3-0.6B converted with the
   int8 absmax/per-block-32 config (quant/int8_absmax_perblock32.yaml) instead of Apple''s
-  int4 registry preset. VALIDATED ON REAL HARDWARE 2026-07-03 (M4 Max, macOS 26.6): greedy_parity
+  int4 registry preset. VALIDATED ON REAL HARDWARE 2026-07-03 (Apple Silicon, macOS 26): greedy_parity
   vs the fp16 reference = 95.8% argmax / 100% top-5 / 100% margin-gated — essentially lossless,
   where the int4 sibling measures 79% argmax. int4 is the size-optimized tier; this int8 is
   the high-fidelity tier. Both publish into the one Qwen3-0.6B-CoreAI repo (int4/ + int8/

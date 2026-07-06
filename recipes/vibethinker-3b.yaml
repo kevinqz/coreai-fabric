@@ -1,17 +1,17 @@
-id: qwen3-4b
+id: vibethinker-3b
 upstream:
-  hf_repo: Qwen/Qwen3-4B
-  revision: 1cfa9a7208912126459214e8b04321603b3df60c
-  license: apache-2.0
+  hf_repo: WeiboAI/VibeThinker-3B
+  revision: 77bd2cced09193c8b9a59a32bd8577bbd1f3e01c
+  license: mit
   license_terms: permissive
   pipeline_tag: text-generation
-  size_bytes: 8056404654
+  size_bytes: 6190000000
 conversion:
   tool: coreai.llm.export
-  apple_registry_name: qwen3-4b
+  min_tool_version: 0.4.1
   args:
     platform: macOS
-  quantization: 4bit
+  quantization: none
   precision: float16
 expected:
   format_version: '2.0'
@@ -31,16 +31,16 @@ parity:
     tolerance: 0.05
 publish:
   hf_target_namespace: kevinqz
-  repo_name: Qwen3-4B-CoreAI
+  repo_name: VibeThinker-3B-CoreAI
   collection: CoreAI · Apple on-device
 catalog:
-  name: Qwen3-4B (fabric)
+  name: VibeThinker 3B (fabric)
   family: Qwen
-  context_length: 40960
+  bundle_kind: llm
+  context_length: 32768
   languages:
   - en
   - zh
-  bundle_kind: llm
   min_os:
     macos: '27.0'
     ios: '27.0'
@@ -51,19 +51,23 @@ catalog:
     aot_required: false
   capabilities:
   - text-generation
+  - reasoning
   modalities:
     input:
     - text
     output:
     - text
+  parameters: 3B
   architecture: transformer
   runner: CoreAIRunner
   tokenizer_required: true
   processor_required: false
-status: draft
-notes: 'Production KV-cache chat asset via Apple''s coreai.llm.export preset qwen3-4b
-  (4bit / 40960 ctx). Converted on real hardware 2026-07-03 (Apple Silicon, macOS 26); Gate A
-  passes. Gate B = greedy_parity (per-token greedy argmax agreement vs the fp32 reference),
-  runnable on-device via the coreai-core Python runtime (opt-in, slow). quantization/precision
-  are documentation-only (the registry preset wins). Status committed as draft: converted/
-  verified describe disposable local build/ state.'
+status: published
+notes: VibeThinker-3B (WeiboAI) — a compact Qwen2 reasoning/math/code LLM, MIT, one of the
+  most popular recent trending small LLMs (~76k downloads). Raw fp16 experimental export via
+  Apple's coreai.llm.export (no registry preset — Qwen2 arch; fp16 is the most faithful, best
+  greedy_parity shot). Gate B = greedy_parity vs the HF reference on real hardware.
+published:
+  hf_repo: kevinqz/VibeThinker-3B-CoreAI
+  revision: 9ee2dd03a19aaae79b249a62c21d8d6c5c66888e
+  date: '2026-07-05'

@@ -11,7 +11,7 @@ Key facts:
   only by the corresponding CLI command.
 - convert requires macOS on Apple Silicon + the [convert] extra (coreai-torch
   0.4.1 is a LIBRARY on PyPI; fabric ships the coreai-fabric-llm-export
-  executable over it — verified on macOS 26.6, macOS 27 not required); CI
+  executable over it — verified on macOS 26, macOS 27 not required); CI
   never converts.
 - Gate A = bundle structure checks (runs anywhere; verified .aimodel inventory:
   main.mlirb, main.hash, metadata.json with assetVersion). Gate B = numeric

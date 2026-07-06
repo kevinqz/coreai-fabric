@@ -1,0 +1,108 @@
+id: pi0fast-base
+upstream:
+  hf_repo: lerobot/pi0fast-base
+  revision: acbfee34e383700f64ede42e3ac7e89027dd43c2
+  license: gemma
+  license_terms: review_required
+  pipeline_tag: robotics
+  size_bytes: 11693449488
+conversion:
+  tool: models/pi0fast/export.py
+  precision: float16
+  quantization: none
+  action:
+    embodiment: generalist_multi_robot
+    robot_required: true
+    action_space:
+      dim: 32
+      max_action_dim: 32
+      max_state_dim: 32
+      chunk_size: 50
+      convention: per_embodiment_joint_space
+    sampling:
+      kind: autoregressive_fast
+      num_steps: 256
+    normalization:
+      stats_source: policy_preprocessor.json + policy_postprocessor.json (upstream); actions
+        are emitted as discrete FAST tokens, host-side detokenized (DCT+BPE) into the policy's
+        normalized action space, then un-normalized with the upstream processor stats. Parity
+        is measured on the greedy action TOKENS (the model's full output) — see notes.
+    graphs:
+    - name: encode
+    - name: decode_step
+expected:
+  bundle_files:
+  - metadata.json
+  - main.mlirb
+  - main.hash
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: action_parity
+    threshold: 0.9
+    tolerance: 0.05
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: Pi0Fast-Base-CoreAI
+  collection: CoreAI · Apple on-device
+catalog:
+  name: pi0-FAST base Gemma (fabric)
+  family: LeRobot
+  bundle_kind: action
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: false
+    custom_kernel: false
+    patch_required: true
+    aot_required: false
+  capabilities:
+  - vision-language-action
+  - robotics
+  modalities:
+    input:
+    - image
+    - text
+    - state
+    output:
+    - action
+  parameters: 3.3B
+  architecture: transformer
+  runner: CoreAIRunner
+  tokenizer_required: true
+  processor_required: true
+status: published
+notes: 'pi0-FAST generalist VLA base policy (lerobot/pi0fast-base @ acbfee34) — the FIRST
+  AUTOREGRESSIVE VLA in the catalog (pi0/pi05/SmolVLA are flow-matching). ONE PaliGemma-2B
+  causal LM (no action expert, no flow-matching): actions become discrete FAST tokens (host-side
+  DCT+BPE via the ungated lerobot/fast-action-tokenizer), the gemma decoder generates them
+  autoregressively (greedy), and the host FAST-detokenizes to a 50-step action chunk. Embeds
+  PaliGemma/Gemma weights, so this is a Gemma Model Derivative — redistributed under the Gemma
+  Terms of Use with the mandated NOTICE + modification notice + Prohibited Use Policy reference,
+  and the HF repo is GATED (recipients accept the terms). Split-export into ONE .aimodel:
+  `encode` (SigLIP x3 + gemma prefix -> PREFILLS a fixed-max KV cache + first token, run once
+  per obs) + `decode_step` (a StaticCache O(1)/step decode — one token forward, writes its
+  K/V at cache_position via a functional index_copy, ~10s/token on-device). 3 cameras (224x224)
+  + proprioceptive state (in the text prompt) + language instruction. fp16 + coreai-optimized.
+  GATE B — AUTOREGRESSIVE GREEDY ACTION-TOKEN PARITY (the FAST tokens are the model''s entire
+  output; the detokenizer is a fixed deterministic host transform, so matching tokens => matching
+  actions — the same principle as the LLM greedy_parity lane): pooled **0.925** vs the fp16
+  torch reference (teacher-forced, 20 steps). Per-obs: a DIVERSE observation scores **1.0**
+  (free-running bit-locked all 20 steps — the lowering reproduces the reference exactly),
+  while a LOW-ENTROPY REPETITIVE observation scores 0.85 — the sub-1.0 is near-tie argmax
+  flips where the model itself is uncertain (fp16 rounding), NOT a lowering defect (a defect
+  would fail the diverse obs too). Same honest class as VibeThinker (0.953); fabric reports
+  the raw number. Observations are synthetic (distinct 1/f natural images + fixed language
+  tokens) — a conversion-fidelity metric, not a task-success metric. Generalist BASE checkpoint:
+  needs a matching robot embodiment + fine-tuning to actuate; the output is inert without
+  the robot. Real conversion via models/pi0fast/{export,parity}.py (StaticCache deployable
+  lane).'
+published:
+  hf_repo: kevinqz/Pi0Fast-Base-CoreAI
+  revision: 10464d5d0da061d2c66c2b6024dcf96c6fa77169
+  date: '2026-07-06'

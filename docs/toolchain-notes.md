@@ -3,7 +3,7 @@
 Everything in this document was measured or read from real installed
 artifacts/sources on **2026-07-03**, on:
 
-- Apple M4 Max, 64 GB RAM, **macOS 26.6** (Darwin 25.6.0)
+- Apple Silicon, **macOS 26**
 - Xcode 26.5 — the ONLY installed SDK is `macosx26.5`
 - Python 3.13.7 (venv), pip-installed stack below
 
@@ -82,7 +82,7 @@ coreai.llm.export <short-name|owner/name>
 
 ## Finding 3 — conversion works on macOS 26 (macOS 27 NOT required)
 
-Measured end-to-end on this Mac (macOS 26.6):
+Measured end-to-end on this Mac (macOS 26):
 
 1. Smoke model (`nn.Linear+ReLU`): export → convert → `save_asset` → OK.
 2. **Qwen/Qwen3-0.6B** at pinned revision `c1899de2…`: full conversion via
@@ -96,7 +96,7 @@ applies to the **Swift runners** (CoreAILM etc.), not to conversion.
 
 Unexpected and load-bearing: `coreai-core`'s wheel bundles the Core AI
 runtime. `coreai.runtime.AIModel.load(path)` (async) loads AND specializes a
-saved `.aimodel` on macOS 26.6, and `InferenceFunction.__call__` executes it
+saved `.aimodel` on macOS 26, and `InferenceFunction.__call__` executes it
 (`await fn(inputs={"x": NDArray(np_array)})`). Smoke-model output matched
 PyTorch with cosine 1.0. Consequence: **Gate B needs neither a Swift runner
 nor macOS 27** — fabric now ships `coreai-fabric-parity-runner` on this API.

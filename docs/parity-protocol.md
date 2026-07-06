@@ -3,8 +3,8 @@
 Status: **protocol defined; a conforming runner ships with fabric.**
 `coreai-fabric-parity-runner` (installed by the `[convert]` extra) implements
 `per_token_logit_cosine` in Python on the Core AI runtime that ships inside
-the `coreai-core` PyPI wheel — verified on real hardware (Apple M4 Max,
-macOS 26.6, 2026-07-03): the runtime loads, specializes and executes
+the `coreai-core` PyPI wheel — verified on real hardware (Apple Silicon,
+macOS 26, 2026-07-03): the runtime loads, specializes and executes
 `.aimodel` assets, so Gate B needs neither a Swift runner nor macOS 27.
 `graph_output_cosine` still needs a runner (per-modality preprocessing);
 fabric's runner exits non-zero for it rather than faking a result. Fabric's
@@ -41,7 +41,7 @@ reports ("X/Y token-exact vs fp32"), and the one fabric can actually **run**
 2. For each prompt, compute the fp32 reference's greedy continuation (K tokens)
    — the teacher path.
 3. Drive the asset's REAL KV-cache decode (`coreai-fabric-parity-runner`,
-   validated on macOS 26.6 / M4 Max) and, teacher-forced along the reference
+   validated on macOS 26 / Apple Silicon) and, teacher-forced along the reference
    tokens, record whether the asset's argmax equals the reference's next token
    at each step.
 4. Report `value` = the fraction of per-token argmax agreements (`matched` /
@@ -56,7 +56,7 @@ length is the total sequence length). If an asset does not match this contract,
 the runner reports `not_run` — never a fake number.
 
 **Cost:** the coreai-core Python reference runtime is correct but SLOW
-(~0.16 tok/s on M4 Max), so `greedy_parity` is an **opt-in local** check (via
+(~0.16 tok/s on Apple Silicon), so `greedy_parity` is an **opt-in local** check (via
 `COREAI_FABRIC_PARITY_RUNNER`), not a fast/CI gate. Real tok/s throughput needs
 the on-device Swift runtime (macOS 27).
 

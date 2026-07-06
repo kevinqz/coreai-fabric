@@ -89,7 +89,7 @@ notes: 'pi0 VLA policy (lerobot/pi0, apache-2.0 — the clean, redistributable o
   last technical unknown, now resolved). fp16 + coreai-optimized to ~1.55 bytes/param -> a
   5.8GB on-device asset. Gate B = action_parity: fp16 torch encode+denoise vs the fp16-optimized
   asset driven through the IDENTICAL 10-step Euler loop with fixed noise, in normalized action
-  space. MEASURED on real weights (M4 Max): min_action_cosine 0.99619 / max per-dim MAE 0.0069
+  space. MEASURED on real weights (Apple Silicon): min_action_cosine 0.99619 / max per-dim MAE 0.0069
   over 4 fixed-seed observations — a faithful export of a 4B fp16 VLA (a big fp16 model over
   a 10-step sampler compounds more kernel divergence than the deterministic single-graph policies
   that hit ~1.0; the 0.995 bar is calibrated to this model class, the number reported transparently).

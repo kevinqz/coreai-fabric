@@ -66,8 +66,11 @@ def _catalog_evaluation(report: dict | None) -> dict | None:
     if isinstance(gb.get("runner"), str):
         ev["runner"] = gb["runner"]
     env = gb.get("environment", {})
-    if env.get("chip") or env.get("os"):
-        ev["measured_on"] = f"{env.get('chip','')} {env.get('os','')}".strip()
+    # PRIVACY: never surface the publisher's specific hardware/OS build. Report only the generic
+    # platform family (the _environment() emits `platform`/`accelerator`, not chip/os).
+    measured_on = env.get("accelerator") or env.get("platform")
+    if measured_on:
+        ev["measured_on"] = str(measured_on)
     return ev
 
 

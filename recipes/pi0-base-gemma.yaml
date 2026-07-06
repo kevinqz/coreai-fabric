@@ -1,0 +1,100 @@
+id: pi0-base-gemma
+upstream:
+  hf_repo: lerobot/pi0_base
+  revision: 25c379b52ba2ff8788cab921758a3cc3fe3f77f2
+  license: gemma
+  license_terms: review_required
+  pipeline_tag: robotics
+  size_bytes: 14000000000
+conversion:
+  tool: models/pi0/export.py
+  precision: float16
+  quantization: none
+  action:
+    embodiment: generalist_multi_robot
+    robot_required: true
+    action_space:
+      dim: 32
+      max_action_dim: 32
+      max_state_dim: 32
+      chunk_size: 50
+      convention: per_embodiment_joint_space
+    sampling:
+      kind: flow_matching
+      num_steps: 10
+      solver: euler
+    normalization:
+      stats_source: policy_preprocessor.json + policy_postprocessor.json (upstream); the split
+        graphs operate in the policy's normalized action space — the host un-normalizes with
+        the upstream processor stats. parity is measured in normalized space (analog of pre-detok
+        logits)
+    graphs:
+    - name: encode
+    - name: denoise_step
+expected:
+  bundle_files:
+  - metadata.json
+  - main.mlirb
+  - main.hash
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: action_parity
+    threshold: 0.995
+    tolerance: 0.001
+    max_action_mae: 0.05
+    max_relative_action_mae: 0.1
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: Pi0-Base-CoreAI
+  collection: CoreAI · Apple on-device
+catalog:
+  name: Pi0 base Gemma (fabric)
+  family: LeRobot
+  bundle_kind: action
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: false
+    custom_kernel: false
+    patch_required: true
+    aot_required: false
+  capabilities:
+  - vision-language-action
+  - robotics
+  modalities:
+    input:
+    - image
+    - text
+    - state
+    output:
+    - action
+  parameters: 3.3B
+  architecture: transformer
+  runner: CoreAIRunner
+  tokenizer_required: true
+  processor_required: true
+status: published
+notes: 'pi0 generalist VLA base policy — the Gemma-licensed release (lerobot/pi0_base @ 25c379b5;
+  distinct from lerobot/pi0 = pi0_old, the apache release already published as Pi0-CoreAI).
+  pi0 embeds PaliGemma/Gemma weights, so this is a Gemma Model Derivative — redistributed
+  under the Gemma Terms of Use with the mandated single-line NOTICE + modification notice
+  + Prohibited Use Policy reference, and the HF repo is GATED (recipients accept the terms
+  before download). Same proven pi0 flow-matching lane as Pi0-CoreAI (identical architecture:
+  type=pi0, chunk 50, action dim 32 padded, 10-step Euler flow-matching sampler): 3 cameras
+  (224x224) + proprioceptive state (padded to 32) + language instruction -> a 50-step action
+  chunk. Split-export into ONE .aimodel: encode (SigLIP/PaliGemma VLM prefix -> KV cache,
+  run once) + denoise_step (Gemma action expert, host drives 10x). fp16 + coreai-optimized
+  on-device asset. Gate B = action_parity vs the fp16 torch encode+denoise reference through
+  the identical 10-step Euler loop, fixed noise, normalized space. Generalist BASE checkpoint
+  — needs a matching robot embodiment + fine-tuning to actuate; the output is inert without
+  the robot. Real conversion via models/pi0/{export,parity}.py.'
+published:
+  hf_repo: kevinqz/Pi0-Base-CoreAI
+  revision: 7abe77104de6633bdfeafe479a2f7b32c50d0cad
+  date: '2026-07-05'

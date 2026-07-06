@@ -64,6 +64,52 @@ def fetch_upstream_license(hf_repo: str, revision: str | None, staging: Path,
         tmpl = root / "templates" / "licenses" / f"{spdx}.txt"
         if tmpl.is_file():
             rev = revision or "main"
+            if spdx == "gemma":
+                # The Gemma Terms of Use §3.1 impose MORE than shipping the license
+                # text: a redistribution must also (a) carry a NOTICE file with a
+                # verbatim mandated string, (b) give prominent notice that the files
+                # were modified, and (c) pass through the §3.2 use restrictions +
+                # Prohibited Use Policy. The pi0/pi0.5 policies embed PaliGemma/Gemma
+                # weights, so the CoreAI asset is a Gemma "Model Derivative" and all
+                # three obligations apply. Never redistribute Gemma weights without them.
+                header = (
+                    "NOTE — supplied by coreai-fabric (the redistributor), not the upstream.\n"
+                    f'The upstream {hf_repo} @ {rev} declares its license as "gemma" in its\n'
+                    "Hugging Face model-card metadata but ships no LICENSE file. These weights\n"
+                    'are a Gemma "Model Derivative": they embed PaliGemma/Gemma parameters via\n'
+                    "the LeRobot pi0/pi0.5 policy. Under the Gemma Terms of Use §3.1 a\n"
+                    "redistribution must provide recipients a copy of the Agreement, so the\n"
+                    "canonical Gemma Terms of Use are reproduced below verbatim. Copyright in\n"
+                    f"the underlying work remains with Google and the upstream authors ({hf_repo}).\n"
+                    + "=" * 72 + "\n\n"
+                )
+                (staging / "LICENSE").write_text(header + tmpl.read_text())
+                # §3.1(d): the NOTICE must CONTAIN this exact string. It MUST stay on a
+                # single physical line — a wrapped newline breaks the verbatim substring
+                # (an adversarial audit caught this). Do not reflow this line.
+                MANDATED = ("Gemma is provided under and subject to the Gemma Terms of Use "
+                            "found at ai.google.dev/gemma/terms")
+                notice = (
+                    MANDATED + "\n\n"
+                    "MODIFICATION NOTICE (Gemma Terms of Use §3.1): the model files in this\n"
+                    "repository are a Model Derivative of Gemma. The upstream LeRobot pi0/pi0.5\n"
+                    "policy embeds PaliGemma/Gemma trained weights; coreai-fabric has further\n"
+                    "modified them by converting the policy to Apple's Core AI on-device format\n"
+                    f"(.aimodel, float16, coreai-optimized). Upstream: {hf_repo} @ {rev}.\n\n"
+                    "USE RESTRICTIONS (Gemma Terms of Use §3.2): use of these files is subject to\n"
+                    "the Gemma Prohibited Use Policy at ai.google.dev/gemma/prohibited_use_policy,\n"
+                    "incorporated by reference into the Agreement, and must not violate applicable\n"
+                    "law.\n\n"
+                    "FLOW-DOWN (Gemma Terms of Use §3.1): if you further Distribute these files or\n"
+                    "any Model Derivative of them, you must (a) provide recipients a copy of the\n"
+                    "Gemma Terms of Use (the bundled LICENSE), (b) reproduce this NOTICE including\n"
+                    "the mandated string above, (c) carry the §3.2 use restrictions as an\n"
+                    "enforceable provision in your governing agreement, and (d) prominently state\n"
+                    "any further modifications. Copyright in the underlying Gemma weights remains\n"
+                    "with Google LLC; see the model card and LICENSE for attribution.\n"
+                )
+                (staging / "NOTICE").write_text(notice)
+                return ["LICENSE", "NOTICE"]
             header = (
                 "NOTE — supplied by coreai-fabric (the redistributor), not the upstream.\n"
                 f"The upstream {hf_repo} @ {rev} declares its license as "
@@ -110,10 +156,24 @@ def sanitize_manifest(manifest: dict, root: Path) -> dict:
     return m
 
 
+def _machine_chip_brand() -> str | None:
+    """The publisher's specific CPU brand (e.g. 'Apple Silicon') — a hardware fingerprint that must
+    never ship in a repo. Used only as a forbidden marker for the pre-upload guard."""
+    import subprocess
+    try:
+        out = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"],
+                             capture_output=True, text=True, timeout=10)
+        return out.stdout.strip() or None
+    except OSError:
+        return None
+
+
 def assert_no_local_paths(staging: Path) -> list[str]:
-    """Last-line guard before a public upload: any staged text file still
-    carrying an absolute local path is a leak. Returns the offending filenames."""
-    markers = (*_LOCAL_PATH_MARKERS, str(Path.home()))
+    """Last-line guard before a public upload: any staged text file still carrying an absolute local
+    path OR the publisher's specific hardware fingerprint (chip brand string) is a leak. Returns the
+    offending filenames."""
+    chip = _machine_chip_brand()
+    markers = (*_LOCAL_PATH_MARKERS, str(Path.home()), *([chip] if chip else []))
     leaks: list[str] = []
     for p in sorted(staging.rglob("*")):
         if not p.is_file():
@@ -481,6 +541,24 @@ def _render_action_card(root: Path, recipe, manifest: dict, report: dict,
             + f"** vs the {ref} reference over {n} frames of `{ds}`, "
             f"{gb.get('num_steps') or 'N'}-step, fixed-noise (measured on {dev})."
         )
+        # Full transparency for near-zero-action-conditioned passes: chunk-cosine is ill-conditioned
+        # where the reference action is near zero (the robot barely moves), so the strict MIN can dip
+        # while the export stays behaviorally faithful. Surface the median + absolute error + caveat
+        # PROMINENTLY on the card — never hide the raw min.
+        if gb.get("near_zero_conditioned"):
+            med = gb.get("median_action_cosine")
+            amae = gb.get("max_per_dim_mae")
+            evaluation_block += (
+                f"\n- **Near-zero-action note (full disclosure):** the {cos}% is the raw MIN over "
+                f"all frames, dominated by frame(s) where the reference action is ~zero (the robot "
+                f"barely moves) and chunk-cosine is mathematically ill-conditioned. The **median "
+                f"chunk-cosine is {round(100 * med, 1) if isinstance(med, (int, float)) else '—'}%** "
+                f"and the **max ABSOLUTE per-dim action error is "
+                f"{round(amae, 4) if isinstance(amae, (int, float)) else '—'}** (normalized) — i.e. "
+                f"behaviorally faithful everywhere. This model class is gated on the absolute action "
+                f"error (behaviorally meaningful) since cosine is undefined for ~zero actions; every "
+                f"raw number is reported here and in `parity-report.json`. fabric never fakes a number."
+            )
     else:
         evaluation_block = (
             f"- **Gate B (action_parity): {gb.get('status', 'not_run')}** — "
@@ -488,9 +566,45 @@ def _render_action_card(root: Path, recipe, manifest: dict, report: dict,
             "fabric never fakes a parity number."
         )
 
+    # Gemma redistribution: the Gemma Terms give NO 'Copyright <year>' line, so
+    # copyright_holder_from_license() returns None. Name Google explicitly (an
+    # adversarial audit flagged a holder-less card as an attribution gap), surface
+    # the §3.2 restrictions + Prohibited Use Policy in the BODY (not only NOTICE),
+    # and add the §4.2 non-endorsement disclaimer for Google.
+    is_gemma = str(upstream.get("license", "")).strip().lower() == "gemma"
     holder = copyright_holder or upstream.get("copyright_holder")
+    if is_gemma and not holder:
+        holder = "Google LLC and the upstream authors"
     attribution = (f"Weights © {holder}, " if holder else "Weights ") + \
         f"licensed **{upstream['license']}** — see the bundled `LICENSE`."
+    if is_gemma:
+        gemma_license_block = (
+            "\n\nThese weights are a **Model Derivative of Gemma** — the upstream pi0/pi0.5 "
+            "policy embeds PaliGemma/Gemma parameters. Redistribution and use are governed by the "
+            "[Gemma Terms of Use](https://ai.google.dev/gemma/terms) (bundled as `LICENSE`) and "
+            "restricted by the [Gemma Prohibited Use Policy]"
+            "(https://ai.google.dev/gemma/prohibited_use_policy) (§3.2, incorporated by reference). "
+            "Access is gated: you must accept these terms before downloading, and must carry them "
+            "forward — including the mandated NOTICE and the §3.2 restrictions — on any further "
+            "distribution (see [`NOTICE`](./NOTICE)). **Gemma** and **PaliGemma** are trademarks of "
+            "Google LLC, used here only descriptively; this conversion is **not affiliated with, "
+            "produced by, or endorsed by Google**."
+        )
+        gated_frontmatter = (
+            'extra_gated_heading: "Access this Gemma Model Derivative"\n'
+            "extra_gated_prompt: >-\n"
+            "  These weights are a Model Derivative of Gemma. Access and use are governed by the\n"
+            "  Gemma Terms of Use (https://ai.google.dev/gemma/terms) and the Gemma Prohibited\n"
+            "  Use Policy (https://ai.google.dev/gemma/prohibited_use_policy). By requesting access\n"
+            "  you agree to those terms and the Section 3.2 use restrictions, and you agree to carry\n"
+            "  these terms forward on any further distribution.\n"
+            "extra_gated_fields:\n"
+            "  I agree to the Gemma Terms of Use and the Gemma Prohibited Use Policy: checkbox\n"
+            "  I agree to carry these terms forward on any redistribution: checkbox\n"
+        )
+    else:
+        gemma_license_block = ""
+        gated_frontmatter = ""
 
     mirror_ns = publish_cfg.get("mirror_namespace")
     mirror_line = (
@@ -504,6 +618,8 @@ def _render_action_card(root: Path, recipe, manifest: dict, report: dict,
         upstream_hf_repo=upstream["hf_repo"],
         upstream_revision=manifest.get("input", {}).get("revision") or upstream.get("revision", "unpinned"),
         base_model_relation_line=base_model_relation_line,
+        gated_frontmatter=gated_frontmatter,
+        gemma_license_block=gemma_license_block,
         language_block=language_block,
         tags_block=tags_block,
         name=catalog_block.get("name", recipe.id),

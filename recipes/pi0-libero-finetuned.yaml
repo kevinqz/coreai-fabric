@@ -1,0 +1,98 @@
+id: pi0-libero-finetuned
+upstream:
+  hf_repo: lerobot/pi0_libero_finetuned_v044
+  revision: 45dcc8fc0e02601c8ccf0554fbd1d26a55070c1f
+  license: gemma
+  license_terms: review_required
+  pipeline_tag: robotics
+  size_bytes: 7000000000
+conversion:
+  tool: models/pi0/export.py
+  precision: float16
+  quantization: none
+  action:
+    embodiment: libero
+    robot_required: true
+    action_space:
+      dim: 32
+      max_action_dim: 32
+      max_state_dim: 32
+      chunk_size: 50
+      convention: per_embodiment_joint_space
+    sampling:
+      kind: flow_matching
+      num_steps: 10
+      solver: euler
+    normalization:
+      stats_source: policy_preprocessor.json + policy_postprocessor.json (upstream); the split
+        graphs operate in the policy's normalized action space — the host un-normalizes with
+        the upstream processor stats. parity is measured in normalized space (analog of pre-detok
+        logits)
+    graphs:
+    - name: encode
+    - name: denoise_step
+expected:
+  bundle_files:
+  - metadata.json
+  - main.mlirb
+  - main.hash
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: action_parity
+    threshold: 0.995
+    tolerance: 0.001
+    max_action_mae: 0.05
+    max_relative_action_mae: 0.05
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: Pi0-Libero-Finetuned-CoreAI
+  collection: CoreAI · Apple on-device
+catalog:
+  name: Pi0 LIBERO fine-tuned (fabric)
+  family: LeRobot
+  bundle_kind: action
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: false
+    custom_kernel: false
+    patch_required: true
+    aot_required: false
+  capabilities:
+  - vision-language-action
+  - robotics
+  modalities:
+    input:
+    - image
+    - text
+    - state
+    output:
+    - action
+  parameters: 3.3B
+  architecture: transformer
+  runner: CoreAIRunner
+  tokenizer_required: true
+  processor_required: true
+status: published
+notes: 'pi0 VLA policy fine-tuned for the LIBERO manipulation benchmark (lerobot/pi0_libero_base,
+  Gemma-licensed — pi0 embeds PaliGemma/Gemma weights, redistributed under the Gemma Terms
+  of Use with the mandated NOTICE + modification notice + Prohibited Use Policy reference).
+  Same proven pi0 flow-matching lane as Pi0-CoreAI (identical architecture: type=pi0, chunk
+  50, action dim 32 padded, 10-step Euler flow-matching sampler): 3 cameras (224x224) + proprioceptive
+  state (padded to 32) + language instruction -> a 50-step action chunk. Split-export into
+  ONE .aimodel: encode (SigLIP/PaliGemma VLM prefix -> KV cache, run once) + denoise_step
+  (Gemma action expert, host drives 10x). fp16 + coreai-optimized on-device asset. Gate B
+  = action_parity vs the fp16 torch encode+denoise reference through the identical 10-step
+  Euler loop, fixed noise, normalized space. LIBERO-tuned BASE — needs the matching LIBERO
+  robot embodiment + setup to actuate; the output is inert without the robot. Real conversion
+  via models/pi0/{export,parity}.py.'
+published:
+  hf_repo: kevinqz/Pi0-Libero-Finetuned-CoreAI
+  revision: ab1a7b33e9d8d0bf5610e2a42807ad4d87c135a3
+  date: '2026-07-05'

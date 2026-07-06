@@ -1,0 +1,98 @@
+id: pi0-so101
+upstream:
+  hf_repo: Jingyi-Z/pi0_so101
+  revision: 448ea04558b743b617dc77b5576a961df512e29c
+  license: apache-2.0
+  license_terms: permissive
+  pipeline_tag: robotics
+  size_bytes: 8900000000
+conversion:
+  tool: models/pi0/export.py
+  precision: float16
+  quantization: none
+  action:
+    embodiment: so_arm101
+    robot_required: true
+    action_space:
+      dim: 6
+      max_action_dim: 32
+      max_state_dim: 32
+      chunk_size: 50
+      convention: so_arm101_6dof_joint_space
+    sampling:
+      kind: flow_matching
+      num_steps: 10
+      solver: euler
+    normalization:
+      stats_source: policy_preprocessor.json + policy_postprocessor.json (upstream); the split
+        graphs operate in the policy's normalized action space — the host un-normalizes with
+        the upstream processor stats. parity measured in normalized space (analog of pre-detok
+        logits)
+    graphs:
+    - name: encode
+    - name: denoise_step
+expected:
+  bundle_files:
+  - metadata.json
+  - main.mlirb
+  - main.hash
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: action_parity
+    threshold: 0.995
+    tolerance: 0.001
+    max_action_mae: 0.05
+    max_relative_action_mae: 0.1
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: Pi0-SO101-CoreAI
+  collection: CoreAI · Apple on-device
+catalog:
+  name: Pi0 SO-ARM101 (fabric)
+  family: LeRobot
+  bundle_kind: action
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: false
+    custom_kernel: false
+    patch_required: true
+    aot_required: false
+  capabilities:
+  - vision-language-action
+  - robotics
+  modalities:
+    input:
+    - image
+    - text
+    - state
+    output:
+    - action
+  parameters: 3.3B
+  architecture: transformer
+  runner: CoreAIRunner
+  tokenizer_required: true
+  processor_required: true
+status: published
+notes: 'pi0 VLA policy for the SO-ARM101 — the ~US$100 open-source robot arm popular in the
+  LeRobot community, which plugs into a Mac over USB. THE deployable on-device story: the
+  Mac runs the policy (this .aimodel) and actuates a real, affordable arm. Upstream Jingyi-Z/pi0_so101
+  declares apache-2.0 (same as lerobot/pi0 = the Pi0-CoreAI base); note the pi0 architecture
+  embeds a PaliGemma VLM. Same proven pi0 flow-matching lane as Pi0-CoreAI (type=pi0, chunk
+  50, 6-DOF actions padded to 32, 10-step Euler flow-matching): 3 cameras (224x224) + proprioceptive
+  state (padded to 32) + a language instruction -> a 50-step action chunk. Split-export into
+  ONE .aimodel: encode (SigLIP/PaliGemma VLM prefix -> KV cache) + denoise_step (Gemma action
+  expert, host drives 10x). fp16 + coreai-optimized. Gate B = action_parity vs the fp16 torch
+  reference through the identical 10-step Euler loop, fixed noise, normalized space, with
+  the global-RMS normalized-MAE guard. Needs a calibrated SO-ARM101 to actuate. Real conversion
+  via models/pi0/{export,parity}.py.'
+published:
+  hf_repo: kevinqz/Pi0-SO101-CoreAI
+  revision: 23fe800e95aa1f6ef8204ea3db614b5eb7e61866
+  date: '2026-07-05'

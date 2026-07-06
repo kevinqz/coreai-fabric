@@ -28,23 +28,34 @@ class ACTWrap:  # defined as a plain factory to avoid importing torch at module 
 
 
 def _build(repo: str):
-    """venv-A: load the ACT policy on CPU + wrap (image,state)->action_chunk (the traced graph)."""
+    """venv-A: load the ACT policy on CPU + wrap (image,state)->action_chunk (the traced graph).
+    Config-DRIVEN (like parity.py): infers the camera key + image/state shapes from the checkpoint,
+    so it generalizes across ACT checkpoints (aloha=top/480x640/state14, so-arm101=wrist/480x640/
+    state6, ...). Returns (wrapper, img_shape, state_dim) so cmd_export sizes the dummy inputs.
+    Single-camera ACT only (the common case); multi-cam checkpoints need a wider wrapper."""
     import torch
     from lerobot.policies.act.modeling_act import ACTPolicy
     policy = ACTPolicy.from_pretrained(repo).to("cpu").eval()
+    cfg = policy.config
+    vis = [(k, f) for k, f in cfg.input_features.items() if str(getattr(f, "type", "")).endswith("VISUAL")]
+    if len(vis) != 1:
+        raise SystemExit(f"ACT export currently supports single-camera checkpoints; found {len(vis)} "
+                         f"VISUAL inputs {[k for k, _ in vis]}. Extend _build for multi-cam.")
+    img_key, img_feat = vis[0]
+    img_shape = (1, *tuple(img_feat.shape))                     # e.g. (1,3,480,640)
+    state_dim = int(cfg.input_features["observation.state"].shape[0])
 
     class _W(torch.nn.Module):
         def __init__(self, p): super().__init__(); self.p = p
         def forward(self, image, state):
-            return self.p.predict_action_chunk({"observation.images.top": image,
-                                                "observation.state": state})
-    return _W(policy).eval()
+            return self.p.predict_action_chunk({img_key: image, "observation.state": state})
+    return _W(policy).eval(), img_shape, state_dim
 
 
 def cmd_export(repo: str, out: Path):
     import torch
-    w = _build(repo)
-    img, st = torch.zeros(*IMG_SHAPE), torch.zeros(1, STATE_DIM)
+    w, img_shape, state_dim = _build(repo)
+    img, st = torch.zeros(*img_shape), torch.zeros(1, state_dim)
     ep = torch.export.export(w, args=(img, st), strict=False)
     out.mkdir(parents=True, exist_ok=True)
     torch.export.save(ep, str(out / "policy.pt2"))

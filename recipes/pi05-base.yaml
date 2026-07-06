@@ -1,0 +1,99 @@
+id: pi05-base
+upstream:
+  hf_repo: lerobot/pi05_base
+  revision: 7de663972b7817d2c4cf2d84c821153dfea772e9
+  license: gemma
+  license_terms: review_required
+  pipeline_tag: robotics
+  size_bytes: 14500000000
+conversion:
+  tool: models/pi05/export.py
+  precision: float16
+  quantization: none
+  action:
+    embodiment: generalist_multi_robot
+    robot_required: true
+    action_space:
+      dim: 32
+      max_action_dim: 32
+      max_state_dim: 32
+      chunk_size: 50
+      convention: per_embodiment_joint_space
+    sampling:
+      kind: flow_matching
+      num_steps: 10
+      solver: euler
+    normalization:
+      stats_source: policy_preprocessor.json + policy_postprocessor.json (upstream); the split
+        graphs operate in the policy's normalized action space — the host un-normalizes with
+        the upstream processor stats. parity measured in normalized space (analog of pre-detok
+        logits)
+    graphs:
+    - name: encode
+    - name: denoise_step
+expected:
+  bundle_files:
+  - metadata.json
+  - main.mlirb
+  - main.hash
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: action_parity
+    threshold: 0.995
+    tolerance: 0.001
+    max_action_mae: 0.05
+    max_relative_action_mae: 0.1
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: Pi05-Base-CoreAI
+  collection: CoreAI · Apple on-device
+catalog:
+  name: Pi0.5 base Gemma (fabric)
+  family: LeRobot
+  bundle_kind: action
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: false
+    custom_kernel: false
+    patch_required: true
+    aot_required: false
+  capabilities:
+  - vision-language-action
+  - robotics
+  modalities:
+    input:
+    - image
+    - text
+    - state
+    output:
+    - action
+  parameters: 3.3B
+  architecture: transformer
+  runner: CoreAIRunner
+  tokenizer_required: true
+  processor_required: true
+status: published
+notes: 'pi0.5 (pi05) generalist VLA base — the Gemma-licensed release (lerobot/pi05_base).
+  pi0.5 co-trains on robot demos + large-scale multimodal data for open-world generalization;
+  needs a matching robot embodiment + fine-tuning to actuate. UNLIKE the apache Pi05-Folding
+  (chunk 30, no state), this base is chunk 50 WITH proprioceptive state — but pi0.5 folds
+  the state INTO the language-token prefix (200 tokens) rather than a separate state input,
+  so encode takes 3 cameras (224x224) + a 200-token prompt (instruction + discretized state)
+  and denoise_step is stateless. Split-export into ONE .aimodel: encode (SigLIP/PaliGemma
+  VLM prefix -> KV cache) + denoise_step (Gemma action expert, host drives a fixed 10-step
+  Euler flow-matching loop). Gemma Model Derivative — redistributed under the Gemma Terms
+  (gated repo + NOTICE). Gate B = action_parity vs the fp16 torch reference through the identical
+  10-step Euler loop, fixed noise, normalized space, with the global-RMS normalized-MAE guard.
+  Real conversion via models/pi05/{export,parity}.py (PI05_CHUNK=50 PI05_TOK=200 -> prefix_len
+  968).'
+published:
+  hf_repo: kevinqz/Pi05-Base-CoreAI
+  revision: 920d4dd2f1ca213237a2fc93fd31aa39997d4ded
+  date: '2026-07-05'

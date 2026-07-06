@@ -67,13 +67,14 @@ def test_model_entry_carries_measured_parity_into_catalog():
                    "matched": 46, "compared": 48, "greedy_token_exact": False,
                    "reference_dtype": "float16", "flip_margin_nats": 0.1,
                    "runner": "coreai-fabric-parity-runner/0.1.0",
-                   "environment": {"chip": "Apple M4 Max", "os": "macOS 26.6"}},
+                   "environment": {"platform": "darwin-arm64", "accelerator": "apple_silicon"}},
     }
     entry = build_model_entry(recipe, FAKE_FILES, report=report)
     assert _schema_errors("model.schema.json", entry) == []
     assert entry["evaluation"]["metric"] == "greedy_parity"
     assert entry["evaluation"]["argmax_match_rate"] == 0.958
-    assert entry["evaluation"]["measured_on"].startswith("Apple M4 Max")
+    # PRIVACY: measured_on carries only the generic accelerator family, never the chip model.
+    assert entry["evaluation"]["measured_on"] == "apple_silicon"
     assert entry["size"]["fidelity_tier"] == "high_fidelity"   # Gate B passed
     assert entry["variant_group"] == "kevinqz/Qwen3-0.6B-CoreAI"
     # A failed report → the size tier, honestly.

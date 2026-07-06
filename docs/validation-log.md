@@ -3,9 +3,9 @@
 Chronological record of what was actually executed. Companion to
 `docs/toolchain-notes.md` (which records the discovered interfaces).
 
-## 2026-07-03 — qwen3-0.6b converted and parity-verified on macOS 26.6
+## 2026-07-03 — qwen3-0.6b converted and parity-verified on macOS 26
 
-**Environment:** Apple M4 Max, 64 GB RAM, macOS 26.6 (Darwin 25.6.0),
+**Environment:** Apple Silicon, macOS 26,
 Python 3.13.7. Stack: coreai-torch 0.4.1, coreai-core 1.0.0b2, torch 2.11.0,
 transformers 4.57.3 (all PyPI). Upstream weights: Qwen/Qwen3-0.6B at pinned
 revision `c1899de289a04d12100db370d81485cdf75e47ca` (1.4 GB download).
@@ -138,8 +138,8 @@ report: build/qwen3-0.6b/parity-report.json (overall: failed)   # exit 1
   "reference_dtype": "float32",
   "runner": "coreai-fabric-parity-runner/0.1.0",
   "environment": {
-    "os": "macOS 26.6",
-    "chip": "Apple M4 Max",
+    "os": "macOS 26",
+    "chip": "Apple Silicon",
     "machine": "arm64",
     "runtime_version": "1.0.0b2",
     "coreai_torch": "0.4.1",
@@ -187,7 +187,7 @@ The production path the ecosystem actually deploys. Unlike the static-graph
 driver run above, this produces Apple's **stateful KV-cache chat asset** —
 the layout the on-device runner expects.
 
-**Environment:** same Mac (Apple M4 Max, macOS 26.6, Darwin 25.6.0). A fresh
+**Environment:** same Mac (Apple Silicon, macOS 26, arm64). A fresh
 venv with the apple/coreai-models checkout installed from source
 (`git clone` + `pip install ./coreai-models/python`; it is NOT on PyPI).
 Checkout at commit `e203a0d`; installed stack: coreai-models 0.1.0,

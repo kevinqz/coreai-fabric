@@ -1,6 +1,6 @@
 """`coreai-fabric convert` — execute the conversion via the Apple toolchain adapter.
 
-Reality check (validated on real hardware — Apple M4 Max, macOS 26.6,
+Reality check (validated on real hardware — Apple Silicon, macOS 26,
 2026-07-03; see docs/toolchain-notes.md): Apple's `coreai-torch` PyPI package
 is a Python LIBRARY (`TorchConverter`), NOT a CLI — the executable this module
 was originally written against does not exist. The real converter executables
@@ -19,7 +19,7 @@ are:
   them and prints the verified manual invocation instead.
 
 macOS version guidance (verified): conversion AND Python-runtime execution
-work on macOS 26.6 with the PyPI stack — macOS 27 is NOT required to convert.
+work on macOS 26 with the PyPI stack — macOS 27 is NOT required to convert.
 Saved assets serialize with minimum_os v27 (the only OSVersion coreai-core
 1.0.0b2 can emit), so DEPLOYING the artifact through the apple/coreai-models
 Swift runners requires macOS/iOS 27+.
@@ -53,7 +53,7 @@ Verified reality of the Apple toolchain (macOS on Apple Silicon required):
      gives you no executable.
   2. Fabric ships its own driver over that library:
          pip install "coreai-fabric[convert]"
-     installs `coreai-fabric-llm-export` (validated on macOS 26.6 —
+     installs `coreai-fabric-llm-export` (validated on macOS 26 —
      macOS 27 is NOT needed to convert).
   3. Apple's PRODUCTION CLI (`coreai.llm.export` — KV-cache chat assets with
      Apple's tested compression presets) lives in the apple/coreai-models repo,
@@ -62,7 +62,7 @@ Verified reality of the Apple toolchain (macOS on Apple Silicon required):
          pip install ./coreai-models/python
      Then use `tool: coreai.llm.export` + `apple_registry_name: <short-name>`
      in the recipe (list short-names with `coreai.model.registry --list-models
-     --type llm`). Validated on macOS 26.6 — macOS 27 is only needed to RUN the
+     --type llm`). Validated on macOS 26 — macOS 27 is only needed to RUN the
      asset, not to build it.
   4. Or set COREAI_FABRIC_TOOL=/path/to/converter.
 
@@ -286,7 +286,7 @@ def cmd_convert(args) -> int:
         "finished_at": finished,
         "output_bundle": str(output.relative_to(root)),
         # Verified: assets serialize with minimum_os v27 (coreai-core 1.0.0b2
-        # exposes no other OSVersion). Conversion host: macOS 26.6 works.
+        # exposes no other OSVersion). Conversion host: macOS 26 works.
         "asset_minimum_os": "27",
     }
     mpath = manifest_path(root, recipe)

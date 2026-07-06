@@ -1,0 +1,101 @@
+id: smolvla-so101-pnp
+upstream:
+  hf_repo: anikitakis/vla_so101_pick_n_place_full_expert
+  revision: adda798b270742f820834daea0fc37718745f025
+  license: apache-2.0
+  license_terms: permissive
+  pipeline_tag: robotics
+  size_bytes: 906712520
+conversion:
+  tool: models/smolvla/export.py
+  precision: float32
+  quantization: none
+  action:
+    embodiment: so_arm101
+    robot_required: true
+    action_space:
+      dim: 6
+      max_action_dim: 32
+      max_state_dim: 32
+      chunk_size: 50
+      convention: so_arm101_6dof_joint_space
+    sampling:
+      kind: flow_matching
+      num_steps: 10
+      solver: euler
+    normalization:
+      stats_source: policy_preprocessor.json + policy_postprocessor.json (upstream); the split
+        graphs operate in the policy's normalized action space — the host un-normalizes with
+        the upstream processor stats. parity measured in normalized space.
+    graphs:
+    - name: encode
+    - name: denoise_step
+expected:
+  bundle_files:
+  - metadata.json
+  - main.mlirb
+  - main.hash
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: action_parity
+    threshold: 0.995
+    tolerance: 0.001
+    max_action_mae: 0.05
+    max_relative_action_mae: 0.1
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: SmolVLA-SO101-PickPlace-CoreAI
+  collection: CoreAI · Apple on-device
+catalog:
+  name: SmolVLA SO-ARM101 Pick&Place (fabric)
+  family: LeRobot
+  bundle_kind: action
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: false
+    custom_kernel: false
+    patch_required: true
+    aot_required: false
+  capabilities:
+  - vision-language-action
+  - robotics
+  modalities:
+    input:
+    - image
+    - text
+    - state
+    output:
+    - action
+  parameters: 500M
+  architecture: transformer
+  runner: CoreAIRunner
+  tokenizer_required: true
+  processor_required: true
+status: published
+notes: 'SmolVLA VLA policy for the SO-ARM101 (the ~US$100 open-source LeRobot arm that plugs
+  into a Mac over USB) — a second SO-ARM101 SmolVLA policy (pick-and-place), the compact deployable
+  on-device alternative to the pi0/pi05 SO-ARM101 models. SmolVLA = a SmolVLM2-500M VLM +
+  a Gemma-style action expert, same flow-matching Euler loop as pi0 (chunk 50, 6-DOF actions
+  padded to 32, 10-step Euler): 3 cameras (512x512) + proprioceptive state + a language instruction
+  -> a 50-step action chunk. Split-export into ONE .aimodel: encode (SmolVLM2 prefix -> 241-token
+  KV cache) + denoise_step (expert, host drives 10x). fp32, coreai- optimized. Upstream edge-inference/smolvla-so101-pick-orange
+  (apache-2.0, base lerobot/smolvla_base). IMPORTANT FIDELITY NOTE: SmolVLM2''s vision graph
+  has an op that specializes catastrophically when torch.export traces it with degenerate
+  (all-zero / identical) camera images — the lowered encode then produces a plausible KV cache
+  for synthetic inputs but a CATASTROPHICALLY wrong one for real images (action cosine 0.02).
+  fabric fixes this by tracing AND measuring parity with 3 DISTINCT realistic ([-1,1]) images
+  (natural_image). Gate B (action_parity, 16 realistic obs, identical 10-step Euler loop,
+  fixed noise, normalized space, global-RMS MAE guard): min chunk-cosine 0.9961, mean 0.9984
+  (16 realistic obs, 0/16 sub-bar). Needs a calibrated SO-ARM101 to actuate. Real conversion
+  via models/smolvla/{export,parity}.py.'
+published:
+  hf_repo: kevinqz/SmolVLA-SO101-PickPlace-CoreAI
+  revision: a413e1aa7762a3018679c70379725048a57963a3
+  date: '2026-07-05'

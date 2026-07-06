@@ -76,7 +76,7 @@ def test_gate_a_fails_on_format_version_mismatch(tmp_path):
 
 
 def test_gate_a_checks_real_asset_version_key(tmp_path):
-    # Real bundles (verified: coreai-core 1.0.0b2 asset on macOS 26.6) spell
+    # Real bundles (verified: coreai-core 1.0.0b2 asset on macOS 26) spell
     # the format-version key `assetVersion`, e.g. "2.0".
     _make_bundle(tmp_path, {"assetVersion": "2.0", "producer": "coreai-core 1.0.0b2"})
     result = run_gate_a(tmp_path, _recipe(tmp_path, format_version="2.0"))

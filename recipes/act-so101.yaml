@@ -1,0 +1,87 @@
+id: act-so101
+upstream:
+  hf_repo: congnguyenzn/act_soarm101_v5
+  revision: 76d858da0f271ae3b786424f5ae6462ad8070ea3
+  license: apache-2.0
+  license_terms: permissive
+  pipeline_tag: robotics
+  size_bytes: 210000000
+conversion:
+  tool: models/act/export.py
+  precision: float16
+  quantization: none
+  action:
+    embodiment: so_arm101
+    robot_required: true
+    action_space:
+      dim: 6
+      max_action_dim: 6
+      max_state_dim: 6
+      chunk_size: 50
+      convention: so_arm101_6dof_joint_position
+    sampling:
+      kind: act
+    normalization:
+      stats_source: config.json dataset_stats (MEAN_STD for state/action, IDENTITY visual);
+        BAKED INTO the traced graph (predict_action_chunk normalizes inputs + unnormalizes
+        outputs), so the asset is self-contained — no norm_stats.json sidecar
+    graphs:
+    - name: main
+expected:
+  bundle_files:
+  - metadata.json
+  - main.mlirb
+  - main.hash
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: action_parity
+    threshold: 0.999
+    tolerance: 0.001
+    max_action_mae: 0.05
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: ACT-SO101-CoreAI
+  collection: CoreAI · Apple on-device
+catalog:
+  name: ACT SO-ARM101 (fabric)
+  family: LeRobot
+  bundle_kind: action
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: false
+    custom_kernel: false
+    patch_required: true
+    aot_required: false
+  capabilities:
+  - robotics
+  modalities:
+    input:
+    - image
+    - state
+    output:
+    - action
+  parameters: 51.6M
+  architecture: transformer
+  runner: CoreAIRunner
+  tokenizer_required: false
+  processor_required: true
+status: published
+notes: 'ACT (Action Chunking Transformer) policy for the SO-ARM101 — the ~US$100 open-source
+  arm popular in the LeRobot community, which plugs into a Mac over USB. The lightweight deployable
+  on-device story: a tiny (~52M param, ResNet18 + transformer) DETERMINISTIC visuomotor policy
+  — 1 wrist camera (480x640) + 6-DOF proprioceptive state -> a 50-step action chunk, single
+  forward pass (no VLM, no flow-matching sampler). apache-2.0 (congnguyenzn/act_soarm101_v5).
+  Config-driven ACT export (infers the camera key + state/action dims from the checkpoint).
+  Gate B = action_parity vs the torch reference (DETERMINISTIC — no noise to fix, single graph).
+  Needs a calibrated SO-ARM101 to actuate. Real conversion via models/act/{export,parity}.py.'
+published:
+  hf_repo: kevinqz/ACT-SO101-CoreAI
+  revision: d87698adcf63da4c8cfc271b82f3df8c64e73f70
+  date: '2026-07-05'

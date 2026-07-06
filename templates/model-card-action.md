@@ -3,7 +3,7 @@ license: {license}
 base_model: {upstream_hf_repo}
 {base_model_relation_line}pipeline_tag: robotics
 library_name: coreai
-{language_block}tags:
+{gated_frontmatter}{language_block}tags:
 {tags_block}---
 
 {mirror_line}
@@ -81,7 +81,7 @@ Machine-readable, in this repo:
 
 {attribution} This artifact is a **converted derivative** of the base policy: its
 weights were converted to Apple Core AI format. The conversion itself is
-community work.
+community work.{gemma_license_block}
 
 ## Links
 
