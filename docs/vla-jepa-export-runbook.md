@@ -62,7 +62,8 @@ coreai-torch 0.4.1. Real-dimension LIBERO action-head probe:
 `not_run`, as expected until the fixed-noise action_parity harness is wired.
 
 Full action-head export uses the real DiT-B dimensions and, when the upstream
-`model.safetensors` is present locally, loads only `model.action_model.*`:
+`model.safetensors` is present locally, streams only `model.action_model.*`
+from the checkpoint:
 
 ```bash
 .venv-lerobot/bin/python models/vla_jepa/export.py export-action-head \
@@ -70,6 +71,20 @@ Full action-head export uses the real DiT-B dimensions and, when the upstream
   --weights build/_vla_jepa/VLA-JEPA-LIBERO/model.safetensors \
   --out build/vla-jepa-libero
 .venv/bin/python models/vla_jepa/export.py --lower --out build/vla-jepa-libero
+```
+
+Action-head Gate B follows the same two-venv discipline as the other VLA
+harnesses. It compares the Torch action head against Core AI
+`action_denoise_step` over identical synthetic Qwen-context tokens, fixed noise,
+state, and the 4-step VLA-JEPA Euler loop:
+
+```bash
+.venv-lerobot/bin/python models/vla_jepa/parity.py reference \
+  --config-json build/_vla_jepa/VLA-JEPA-LIBERO/config.json \
+  --weights build/_vla_jepa/VLA-JEPA-LIBERO/model.safetensors \
+  --out build/vla-jepa-libero
+.venv/bin/python models/vla_jepa/parity.py --compare --out build/vla-jepa-libero
+coreai-fabric verify vla-jepa-libero
 ```
 
 ## Phase 2 — Qwen context path

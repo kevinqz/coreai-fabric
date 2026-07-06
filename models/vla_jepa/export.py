@@ -93,11 +93,16 @@ class DenoiseStepWrapper:
 def _load_action_weights(head, weights: Path | None) -> None:
     if weights is None:
         return
-    from safetensors.torch import load_file
+    from safetensors import safe_open
 
-    raw = load_file(str(weights), device="cpu")
     prefix = "model.action_model."
-    subset = {k[len(prefix) :]: v for k, v in raw.items() if k.startswith(prefix)}
+    subset = {}
+    with safe_open(str(weights), framework="pt", device="cpu") as handle:
+        for key in handle.keys():
+            if key.startswith(prefix):
+                subset[key[len(prefix) :]] = handle.get_tensor(key)
+    if not subset:
+        raise SystemExit(f"no action-head weights found with prefix {prefix!r}")
     missing, unexpected = head.load_state_dict(subset, strict=False)
     if unexpected:
         raise SystemExit(f"unexpected action-head keys: {unexpected[:8]}")
