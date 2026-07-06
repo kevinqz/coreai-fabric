@@ -43,6 +43,35 @@ Gate this with a fixed-noise action parity harness before adding the full Qwen
 context path. The JEPA predictor is not part of inference and must not be needed
 for the runtime asset.
 
+Fast op-coverage probe:
+
+```bash
+.venv-lerobot/bin/python models/vla_jepa/export.py export-action-head \
+  --config-json build/_vla_jepa/VLA-JEPA-LIBERO/config.json \
+  --out build/vla-jepa-libero --probe-small
+.venv/bin/python models/vla_jepa/export.py --lower --out build/vla-jepa-libero
+```
+
+DONE (2026-07-06, macOS 27): both the tiny `--probe-small` graph and the real
+DiT-B action-head dimensions exported and lowered successfully through
+coreai-torch 0.4.1. Real-dimension LIBERO action-head probe:
+`conditioning_tokens=[1,32,2048]`, `x_t=[1,7,7]`, `timestep=[1]`,
+`state=[1,1,8]` -> `velocity=[1,7,7]`; produced
+`action_denoise_step.pt2` (~608 MB) and `vla-jepa-libero.aimodel` (~589 MB).
+`coreai-fabric verify vla-jepa-libero` reports Gate A passed and Gate B
+`not_run`, as expected until the fixed-noise action_parity harness is wired.
+
+Full action-head export uses the real DiT-B dimensions and, when the upstream
+`model.safetensors` is present locally, loads only `model.action_model.*`:
+
+```bash
+.venv-lerobot/bin/python models/vla_jepa/export.py export-action-head \
+  --config-json build/_vla_jepa/VLA-JEPA-LIBERO/config.json \
+  --weights build/_vla_jepa/VLA-JEPA-LIBERO/model.safetensors \
+  --out build/vla-jepa-libero
+.venv/bin/python models/vla_jepa/export.py --lower --out build/vla-jepa-libero
+```
+
 ## Phase 2 — Qwen context path
 
 Once the action head lowers, export or reuse the same Qwen3-VL context path used
