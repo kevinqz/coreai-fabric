@@ -35,7 +35,10 @@ PY
 Do not start by tracing all of Qwen3-VL. First load the policy and isolate the
 flow-matching action head. The target export contract is:
 
-- `qwen_context`: host/tokenizer/Qwen path produces embodied action tokens.
+- `qwen_context`: host computes the tokenizer/chat-template path, Qwen3-VL
+  vision features, placeholder scatter, and 3D `position_ids`; the exported
+  text lane maps `(inputs_embeds, attention_mask, position_ids,
+  embodied_positions) -> embodied_action_tokens`.
 - `action_denoise_step`: Core AI graph maps `(embodied_action_tokens, x_t,
   timestep, state?) -> velocity`.
 
@@ -108,9 +111,53 @@ coreai-fabric verify vla-jepa-libero
 
 ## Phase 2 — Qwen context path
 
-Once the action head lowers, export or reuse the same Qwen3-VL context path used
-by the VLM lane. The parity harness must feed the same images, instruction, state
-and fixed initial noise through both torch and the asset, then compare the final
+The direct end-to-end `Qwen3-VL -> embodied_action_tokens` trace currently hits
+Torch export guards inside the upstream vision attention implementation
+(`torch.split(..., lengths.tolist())` over dynamic visual chunk lengths). The
+verified lane therefore exports the conditioned language-model path only, with
+the multimodal preprocessing kept on the host.
+
+Probe the host-side tensor contract first:
+
+```bash
+.venv-lerobot/bin/python models/vla_jepa/qwen_context.py probe \
+  --config-json build/_vla_jepa/VLA-JEPA-LIBERO/config.json \
+  --out build/vla-jepa-libero
+```
+
+Current verified LIBERO probe (2026-07-06) materializes:
+
+- `input_ids=[1,220]`
+- `attention_mask=[1,220]`
+- `mm_token_type_ids=[1,220]`
+- `pixel_values=[512,1536]`
+- `image_grid_thw=[2,3]`
+- `embodied_positions=[1,32]`
+
+Then export the text-only `qwen_context` lane:
+
+```bash
+.venv-lerobot/bin/python models/vla_jepa/qwen_context.py export \
+  --config-json build/_vla_jepa/VLA-JEPA-LIBERO/config.json \
+  --out build/vla-jepa-libero
+```
+
+This writes:
+
+- `build/vla-jepa-libero/qwen_context.pt2`
+- `build/vla-jepa-libero/vla-jepa-qwen-contract.json`
+
+The contract records the host-owned components explicitly:
+
+- `tokenizer`
+- `chat_template`
+- `vision_tower`
+- `image_placeholder_scatter`
+- `position_ids`
+
+The parity harness should feed the same host-conditioned `inputs_embeds`,
+`attention_mask`, `position_ids`, `embodied_positions`, fixed state, and fixed
+initial noise through both Torch and the asset, then compare the final
 normalized action chunk after the 4-step Euler loop.
 
 ## Phase 3 — publish discipline
