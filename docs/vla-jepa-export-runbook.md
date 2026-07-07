@@ -160,23 +160,44 @@ The parity harness should feed the same host-conditioned `inputs_embeds`,
 initial noise through both Torch and the asset, then compare the final
 normalized action chunk after the 4-step Euler loop.
 
-The qwen-context lane itself now has a measured parity harness too:
+The qwen-context lane has its own measured parity harness, at the SAME rigor as
+the action head (`--n-obs 8` by default). The instruction and image grid are held
+fixed so the static graph's shapes are identical across observations; only the
+image pixels vary (distinct seeded synthetic images), so `inputs_embeds` VALUES —
+not shapes — differ. Observation 0 uses the canonical blank (zero) images used at
+export time, so it reproduces the earlier single-observation number exactly.
 
 ```bash
 .venv-lerobot/bin/python models/vla_jepa/qwen_context_parity.py reference \
   --config-json build/_vla_jepa/VLA-JEPA-LIBERO/config.json \
-  --out build/vla-jepa-libero
+  --out build/vla-jepa-libero --n-obs 8
 .venv/bin/python models/vla_jepa/qwen_context_parity.py --compare \
+  --out build/vla-jepa-libero --bundle build/vla-jepa-libero/vla-jepa-libero.aimodel
+```
+
+Measured embodied-token cosine (n_obs=8, min / mean):
+
+- `vla-jepa-libero`: `0.99971` / `0.99973`
+- `vla-jepa-pretrain`: `0.99971` / `0.99973`
+- `vla-jepa-simpler-env`: `0.99968` / `0.99972`
+
+The Qwen3-VL-2B-Instruct base is shared (frozen) across the VLA-JEPA collection,
+so the qwen_context lane parity is ~identical across recipes; the action head
+differs per checkpoint.
+
+### Packaging both lanes into ONE .aimodel (pi0 multi-entrypoint pattern)
+
+Lower once with `--with-qwen-context` so the single deployable asset carries BOTH
+entrypoints (`qwen_context` + `action_denoise_step`), exactly as pi0 ships
+`encode` + `denoise_step` in one bundle:
+
+```bash
+.venv/bin/python models/vla_jepa/export.py --lower --with-qwen-context \
   --out build/vla-jepa-libero
 ```
 
-Measured LIBERO qwen-context cosine:
-`0.9997270282801519`
-
-The same lane measured:
-
-- `0.9997270282801519` for `vla-jepa-pretrain`
-- `0.9997161318927406` for `vla-jepa-simpler-env`
+Both parity harnesses then point `--bundle` at the combined `<id>.aimodel` and
+must still pass (action_parity ~1.0, qwen_context ~0.9997).
 
 ## Phase 3 — publish discipline
 

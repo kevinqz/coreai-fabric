@@ -36,11 +36,11 @@ def _bootstrap_ci(vals, n=1000, seed=0):
     return float(np.percentile(mins, 2.5)), float(np.percentile(mins, 97.5))
 
 
-def _build_reference(config_json: Path, instruction: str):
-    model, sample, cfg, raw = qwen_context_export._build_sample(config_json, instruction)
-    lang = qwen_context_export._build_language_inputs(model, sample)
-    wrapper = qwen_context_export.QwenContextWrapper(model).eval()
-    return cfg, raw, sample, lang, wrapper
+def _build_reference_model(config_json: Path):
+    prep = qwen_context_export._prepare_model(config_json)
+    qwen_model = prep[0]
+    wrapper = qwen_context_export.QwenContextWrapper(qwen_model).eval()
+    return (*prep, wrapper)
 
 
 def _run_torch(wrapper, lang):
@@ -56,25 +56,62 @@ def _run_torch(wrapper, lang):
     return out.float().numpy()
 
 
-def cmd_reference(out: Path, config_json: Path, instruction: str, seed: int) -> None:
-    cfg, raw, sample, lang, wrapper = _build_reference(config_json, instruction)
-    ref = _run_torch(wrapper, lang)
+def cmd_reference(out: Path, config_json: Path, instruction: str, n_obs: int, seed: int) -> None:
+    (
+        qwen_model,
+        processor,
+        cfg,
+        raw,
+        action_prompt,
+        embodied_prompt,
+        embodied_action_token_id,
+        wrapper,
+    ) = _build_reference_model(config_json)
+
+    refs, ie_list, am_list, pos_list, emb_list = [], [], [], [], []
+    base_shape = None
+    for i in range(n_obs):
+        # Distinct seeded synthetic images per observation; fixed instruction +
+        # image grid keep the exported graph's static shapes identical, so only
+        # inputs_embeds VALUES vary. Observation 0 uses the canonical blank
+        # (zero) images used at export time.
+        images = qwen_context_export._make_images(cfg, raw, seed=None if i == 0 else seed + i)
+        sample = qwen_context_export._sample_from_images(
+            processor, cfg, images, instruction, action_prompt, embodied_prompt, embodied_action_token_id
+        )
+        lang = qwen_context_export._build_language_inputs(qwen_model, sample)
+        shp = tuple(lang["inputs_embeds"].shape)
+        if base_shape is None:
+            base_shape = shp
+        elif shp != base_shape:
+            raise SystemExit(
+                f"obs {i} inputs_embeds shape {shp} != obs 0 {base_shape}; the static qwen_context "
+                "asset requires a fixed shape. Keep the instruction and image grid constant across "
+                "observations (vary only the image pixels)."
+            )
+        refs.append(_run_torch(wrapper, lang))
+        ie_list.append(lang["inputs_embeds"].float().numpy())
+        am_list.append(lang["attention_mask"].numpy())
+        pos_list.append(lang["position_ids"].numpy())
+        emb_list.append(lang["embodied_positions"].numpy())
+
     out.mkdir(parents=True, exist_ok=True)
     np.savez(
         out / REF_NPZ,
-        refs=np.asarray([ref], dtype=np.float32),
-        inputs_embeds=np.asarray([lang["inputs_embeds"].float().numpy()], dtype=np.float32),
-        attention_mask=np.asarray([lang["attention_mask"].numpy()], dtype=np.int64),
-        position_ids=np.asarray([lang["position_ids"].numpy()], dtype=np.int64),
-        embodied_positions=np.asarray([lang["embodied_positions"].numpy()], dtype=np.int64),
-        hidden_size=int(ref.shape[-1]),
+        refs=np.stack(refs).astype(np.float32),
+        inputs_embeds=np.stack(ie_list).astype(np.float32),
+        attention_mask=np.stack(am_list).astype(np.int64),
+        position_ids=np.stack(pos_list).astype(np.int64),
+        embodied_positions=np.stack(emb_list).astype(np.int64),
+        hidden_size=int(refs[0].shape[-1]),
+        n_obs=int(n_obs),
         seed=int(seed),
         image_keys=np.asarray(qwen_context_export._image_keys(raw), dtype=object),
         num_views=int(len(qwen_context_export._image_keys(raw))),
         num_embodied_tokens=int(cfg.num_embodied_action_tokens_per_instruction),
         instruction=instruction,
     )
-    print(f"ok: wrote {out / REF_NPZ}")
+    print(f"ok: wrote {out / REF_NPZ} (n_obs={n_obs})")
 
 
 def cmd_compare(out: Path, bundle: Path) -> None:
@@ -107,30 +144,41 @@ def cmd_compare(out: Path, bundle: Path) -> None:
             dt = np.dtype(str(qwen.desc.input_descriptor(name).dtype))
             return NDArray(np.asarray(arr).astype(dt))
 
-        outv = await qwen(
-            inputs={
-                "inputs_embeds": nd("inputs_embeds", inputs_embeds[0]),
-                "attention_mask": nd("attention_mask", attention_mask[0]),
-                "position_ids": nd("position_ids", position_ids[0]),
-                "embodied_positions": nd("embodied_positions", embodied_positions[0]),
-            }
-        )
-        a = outv["embodied_action_tokens"].numpy().astype(np.float64)
-        r = refs[0].astype(np.float64)
-        cos = float(np.dot(r.reshape(-1), a.reshape(-1)) / (np.linalg.norm(r) * np.linalg.norm(a) + 1e-12))
-        lo, hi = _bootstrap_ci([cos])
+        cosines = []
+        for i in range(len(refs)):
+            outv = await qwen(
+                inputs={
+                    "inputs_embeds": nd("inputs_embeds", inputs_embeds[i]),
+                    "attention_mask": nd("attention_mask", attention_mask[i]),
+                    "position_ids": nd("position_ids", position_ids[i]),
+                    "embodied_positions": nd("embodied_positions", embodied_positions[i]),
+                }
+            )
+            a = outv["embodied_action_tokens"].numpy().astype(np.float64)
+            r = refs[i].astype(np.float64)
+            cosines.append(
+                float(np.dot(r.reshape(-1), a.reshape(-1)) / (np.linalg.norm(r) * np.linalg.norm(a) + 1e-12))
+            )
+        cos = np.asarray(cosines)
+        lo, hi = _bootstrap_ci(cos.tolist())
         return {
             "metric": "embodied_token_parity",
-            "value": cos,
+            "value": float(cos.min()),
             "status": "measured",
-            "min_cosine": cos,
+            "min_cosine": float(cos.min()),
+            "median_cosine": float(np.median(cos)),
+            "mean_cosine": float(cos.mean()),
             "cosine_ci95": [lo, hi],
-            "n_obs": 1,
-            "hidden_size": int(r.shape[-1]),
-            "num_tokens": int(r.shape[-2]),
+            "per_obs_cosine": [float(x) for x in cosines],
+            "n_obs": int(len(refs)),
+            "hidden_size": int(refs.shape[-1]),
+            "num_tokens": int(refs.shape[-2]),
             "runner": f"coreai-fabric-parity-runner/{__version__}",
             "environment": _environment(),
-            "reference": "Torch qwen_context lane vs Core AI qwen_context over host-conditioned Qwen inputs.",
+            "reference": (
+                "Torch qwen_context lane vs Core AI qwen_context over host-conditioned Qwen inputs; "
+                "distinct seeded synthetic images per observation, fixed instruction and image grid."
+            ),
         }
 
     result = asyncio.run(_run())
@@ -148,6 +196,7 @@ def main() -> None:
     ap.add_argument("--bundle", type=Path)
     ap.add_argument("--config-json", type=Path)
     ap.add_argument("--instruction", default="Pick and place the object.")
+    ap.add_argument("--n-obs", type=int, default=8)
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
     if args.compare:
@@ -155,7 +204,7 @@ def main() -> None:
     else:
         if args.config_json is None:
             raise SystemExit("--config-json is required in reference mode")
-        cmd_reference(args.out, args.config_json, args.instruction, args.seed)
+        cmd_reference(args.out, args.config_json, args.instruction, args.n_obs, args.seed)
 
 
 if __name__ == "__main__":

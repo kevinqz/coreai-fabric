@@ -167,11 +167,28 @@ def cmd_lower(args) -> None:
         output_names=["velocity"],
         entrypoint_name="action_denoise_step",
     )
+    entrypoints = ["action_denoise_step"]
+    # Package both lanes into ONE .aimodel (the pi0 multi-entrypoint pattern):
+    # add the previously-exported qwen_context graph as a second entrypoint so a
+    # single asset carries the whole inference-time policy (host owns tokenizer /
+    # vision tower / the 4-step Euler loop).
+    if args.with_qwen_context:
+        qwen_pt2 = out / "qwen_context.pt2"
+        if not qwen_pt2.exists():
+            raise SystemExit(f"--with-qwen-context needs {qwen_pt2} (run qwen_context.py export first)")
+        qep = torch.export.load(str(qwen_pt2)).run_decompositions(get_decomp_table())
+        conv.add_exported_program(
+            qep,
+            input_names=["inputs_embeds", "attention_mask", "position_ids", "embodied_positions"],
+            output_names=["embodied_action_tokens"],
+            entrypoint_name="qwen_context",
+        )
+        entrypoints.append("qwen_context")
     prog = conv.to_coreai()
     prog.optimize()
     aimodel = out / f"{out.name}.aimodel"
     prog.save_asset(aimodel)
-    print(f"ok: lowered VLA-JEPA action head -> {aimodel}")
+    print(f"ok: lowered VLA-JEPA {'+'.join(entrypoints)} -> {aimodel}")
 
 
 def main() -> None:
@@ -184,6 +201,11 @@ def main() -> None:
     ap.add_argument("--cross-attention-dim", type=int, default=QWEN3_VL_2B_HIDDEN)
     ap.add_argument("--with-state", action=argparse.BooleanOptionalAction, default=None)
     ap.add_argument("--probe-small", action="store_true", help="use tiny DiT-test dimensions for op coverage")
+    ap.add_argument(
+        "--with-qwen-context",
+        action="store_true",
+        help="when lowering, also package the qwen_context.pt2 graph as a second entrypoint in one .aimodel",
+    )
     args = ap.parse_args()
     if args.lower:
         cmd_lower(args)

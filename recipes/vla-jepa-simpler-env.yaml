@@ -31,6 +31,7 @@ conversion:
       stats_source: policy_preprocessor.json + policy_postprocessor.json (upstream); action
         normalization is MIN_MAX, visual normalization is IDENTITY per VLAJEPAConfig.
     graphs:
+    - name: qwen_context
     - name: action_denoise_step
 expected:
   bundle_files:
@@ -79,7 +80,7 @@ catalog:
   runner: CoreAIRunner
   tokenizer_required: true
   processor_required: true
-status: verified
+status: published
 notes: 'VLA-JEPA SimplerEnv policy from the LeRobot VLA-JEPA collection. Upstream card: VLA-JEPA
   combines Qwen3-VL-2B-Instruct, V-JEPA2, and a flow-matching DiT action head; inference uses
   Qwen + the action head, while the JEPA world model is training-only. Contract from config:
@@ -87,7 +88,21 @@ notes: 'VLA-JEPA SimplerEnv policy from the LeRobot VLA-JEPA collection. Upstrea
   for this checkpoint, action_dim=7, chunk_size=7, n_action_steps=7, num_inference_timesteps=4,
   jepa_encoder_name=facebook/vjepa2-vitl-fpc64-256. The LeRobot docs say single-view datasets
   duplicate the view for the world model during training; inference conversion must still
-  follow the policy input_features. Current verified asset covers the `action_denoise_step`
-  lane only: real action-head weights were exported, lowered, and measured with Gate B
-  action_parity. Host-owned Qwen preprocessing and `qwen_context` export remain a separate
-  lane; see docs/vla-jepa-export-runbook.md.'
+  follow the policy input_features. The verified asset packages BOTH inference-time lanes
+  into ONE .aimodel (pi0-style multi-entrypoint): `qwen_context` (the frozen Qwen3-VL-2B-Instruct
+  base, run once per observation over host-owned tokenizer + vision-tower inputs -> 32 embodied
+  conditioning tokens) and `action_denoise_step` (the DiT flow-matching head the host drives
+  4x in the Euler loop). fp16 -> a ~3.4GB on-device asset. Gate B action_parity (action head,
+  fixed noise, normalized space, n_obs=8) = 0.99999999999 (min cosine); the qwen_context lane
+  is separately measured over n_obs=8 distinct seeded-image observations (embodied-token cosine
+  min 0.99968, mean 0.99972). Both are conversion-fidelity numbers, not task success: the
+  generalist BASE checkpoint needs a matching robot embodiment + fine-tuning to actuate, and
+  the output is inert without the robot. The Qwen3-VL base is shared across the VLA-JEPA collection,
+  so the qwen_context parity is ~identical across recipes while the action head differs per
+  checkpoint. Real conversion via models/vla_jepa/{export,qwen_context,parity,qwen_context_parity}.py;
+  host owns tokenizer/chat-template/vision-tower/image-scatter/position-ids and the 4-step
+  Euler loop.'
+published:
+  hf_repo: kevinqz/VLA-JEPA-SimplerEnv-CoreAI
+  revision: 241cd0d8eb59bf824727656acc5cf6b077278175
+  date: '2026-07-07'

@@ -194,14 +194,45 @@ def _build_language_inputs(model, sample):
     }
 
 
-def _build_sample(config_json: Path, instruction: str):
+def _make_images(cfg, raw, seed: int | None = None):
+    """Build the per-view image tensors for one observation.
+
+    seed=None -> the canonical all-zero (blank camera) images used at export
+    time. An int seed -> distinct deterministic synthetic images in [0, 1] so a
+    parity harness can vary the visual content across observations WITHOUT
+    changing the token structure (fixed instruction + fixed image grid keep the
+    exported graph's static shapes intact; only inputs_embeds VALUES change).
+    """
+    views = len(_image_keys(raw))
+    img_size = cfg.resize_images_to[0] if cfg.resize_images_to is not None else 224
+    if seed is None:
+        return [torch.zeros(3, img_size, img_size, dtype=torch.float32) for _ in range(views)]
+    g = torch.Generator().manual_seed(int(seed))
+    return [torch.rand(3, img_size, img_size, generator=g, dtype=torch.float32) for _ in range(views)]
+
+
+def _prepare_model(config_json: Path):
+    """Load the Qwen model/processor and derive the fixed prompt scaffold once.
+
+    Returns the pieces needed to build many samples without re-loading the
+    (multi-GB) model per observation.
+    """
     cfg, raw = _load_config(config_json)
     qwen_model, processor = _load_qwen_local(cfg)
     action_tokens, embodied_action_token_id = _expand_tokenizer(cfg, qwen_model, processor)
     action_prompt, embodied_prompt = _build_prompt(cfg, action_tokens)
-    views = len(_image_keys(raw))
-    img_size = cfg.resize_images_to[0] if cfg.resize_images_to is not None else 224
-    images = [torch.zeros(3, img_size, img_size, dtype=torch.float32) for _ in range(views)]
+    return qwen_model, processor, cfg, raw, action_prompt, embodied_prompt, embodied_action_token_id
+
+
+def _sample_from_images(
+    processor,
+    cfg,
+    images,
+    instruction: str,
+    action_prompt: str,
+    embodied_prompt: str,
+    embodied_action_token_id: int,
+):
     qwen_inputs = _build_inputs_local(cfg, processor, images, instruction, action_prompt, embodied_prompt)
     input_ids = torch.as_tensor(qwen_inputs["input_ids"], dtype=torch.long)
     attention_mask = torch.as_tensor(qwen_inputs["attention_mask"], dtype=torch.long)
@@ -209,7 +240,7 @@ def _build_sample(config_json: Path, instruction: str):
     embodied = (input_ids == embodied_action_token_id).nonzero(as_tuple=False)[:, 1].view(
         input_ids.shape[0], -1
     )
-    sample = {
+    return {
         "input_ids": input_ids,
         "attention_mask": attention_mask,
         "mm_token_type_ids": mm_token_type_ids,
@@ -217,6 +248,16 @@ def _build_sample(config_json: Path, instruction: str):
         "image_grid_thw": qwen_inputs["image_grid_thw"],
         "embodied_positions": embodied.to(torch.long),
     }
+
+
+def _build_sample(config_json: Path, instruction: str):
+    qwen_model, processor, cfg, raw, action_prompt, embodied_prompt, embodied_action_token_id = _prepare_model(
+        config_json
+    )
+    images = _make_images(cfg, raw, seed=None)
+    sample = _sample_from_images(
+        processor, cfg, images, instruction, action_prompt, embodied_prompt, embodied_action_token_id
+    )
     return qwen_model, sample, cfg, raw
 
 
