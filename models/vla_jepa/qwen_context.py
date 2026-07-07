@@ -283,14 +283,38 @@ def cmd_export(args) -> None:
     print(f"ok: wrote {out/CONTRACT_NAME}")
 
 
+def cmd_lower(args) -> None:
+    import torch
+    from coreai_torch import TorchConverter, get_decomp_table
+
+    out = args.out
+    ep = torch.export.load(str(out / OUT_NAME))
+    ep = ep.run_decompositions(get_decomp_table())
+    conv = TorchConverter()
+    conv.add_exported_program(
+        ep,
+        input_names=["inputs_embeds", "attention_mask", "position_ids", "embodied_positions"],
+        output_names=["embodied_action_tokens"],
+        entrypoint_name="qwen_context",
+    )
+    prog = conv.to_coreai()
+    prog.optimize()
+    aimodel = out / "qwen_context.aimodel"
+    prog.save_asset(aimodel)
+    print(f"ok: lowered qwen_context -> {aimodel}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="VLA-JEPA qwen_context export/probe")
-    ap.add_argument("phase", choices=["probe", "export"])
+    ap.add_argument("phase", nargs="?", default="export", choices=["probe", "export"])
+    ap.add_argument("--lower", action="store_true")
     ap.add_argument("--config-json", type=Path, required=True)
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--instruction", default="Pick and place the object.")
     args = ap.parse_args()
-    if args.phase == "probe":
+    if args.lower:
+        cmd_lower(args)
+    elif args.phase == "probe":
         cmd_probe(args)
     else:
         cmd_export(args)
