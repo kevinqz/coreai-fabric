@@ -63,6 +63,20 @@ The **video expert is NOT in the asset** — its per-layer K/V arrive as a
   variant (apache), not the base; the 90%-built lane (`scratchpad/fastwam_int8.py`)
   needs only the weights swap. Other variant: `fastwam_robotwin_uncond_3cam_384`.
 
+## LingBot-VLA 2.0 — `robbyant/lingbot-vla-v2-6b` (Apache-2.0 per README, 6.38B) — PRIORITY
+
+Brand-new (2026-07-07) robbyant VLA foundation model — NOT the LeRobot v0.6.0
+`lingbot_va` (that's a separate Wan video-model, already done) nor the `lingbot-vision`
+ViTs. **Coupled / whole-model, same pattern as EO-1**: weight map is all `model.*`
+(1708 tensors) with only tiny `model.action_in_proj`/`action_out_proj`/
+`action_time_mlp_*` — the action denoise runs INSIDE the Qwen3-VL-4B backbone via
+action tokens, no separable head. Backbone Qwen3-VL-4B-Instruct + depth (moge) +
+dino_video experts. License field on HF is empty but the repo README carries an
+explicit Apache-2.0 badge + `LICENSE` (like MolmoAct2-LIBERO) → publishable.
+**Build:** whole-VLM int8 (~3.4GB from 13GB fp16), export the action-token denoise
+pass — the EO-1 lane applies directly. **Priority: right after FastWAM, before the
+rest of v0.6.0** (user directive 2026-07-07).
+
 ## EO-1 — `IPEC-COMMUNITY/EO-1-3B` (MIT, 3.77B)
 
 **Whole-model / coupled** — no separable head. `EO1VisionFlowMatchingModel`: the
