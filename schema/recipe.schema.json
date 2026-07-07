@@ -387,7 +387,8 @@
             "3d",
             "action",
             "token-classification",
-            "image-feature-extraction"
+            "image-feature-extraction",
+            "reward-model"
           ],
           "description": "Mirrors the catalog model.schema bundle_kind enum. The catalog test suite requires bundle_kind on every model. Choose the kind that matches the model's task (e.g. an LLM chat model = llm, a document-OCR model = ocr, a per-token labeler = token-classification)."
         },
@@ -464,6 +465,7 @@
               "promptable-segmentation",
               "reasoning",
               "reranking",
+              "reward-modeling",
               "robotics",
               "speech-to-text",
               "super-resolution",

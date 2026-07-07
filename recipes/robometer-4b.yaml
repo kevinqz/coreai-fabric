@@ -1,0 +1,79 @@
+id: robometer-4b
+upstream:
+  hf_repo: lerobot/Robometer-4B
+  revision: db167a7c369a3ee59cda801fe33ca9da560b1662
+  license: apache-2.0
+  license_terms: permissive
+  pipeline_tag: robotics
+  size_bytes: 8894103800
+conversion:
+  tool: models/robometer/export.py
+  min_tool_version: 0.4.1
+  args:
+    weights: build/_robometer/model.safetensors
+  quantization: none
+  precision: float32
+expected:
+  format_version: '2.0'
+  bundle_files:
+  - metadata.json
+  - main.mlirb
+  - main.hash
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: graph_output_cosine
+    threshold: 0.999
+    tolerance: 0.0005
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: Robometer-4B-CoreAI
+  collection: CoreAI · Apple on-device
+catalog:
+  name: Robometer-4B Reward (fabric)
+  family: Robometer
+  bundle_kind: reward-model
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: false
+    custom_kernel: false
+    patch_required: false
+    aot_required: false
+  capabilities:
+  - reward-modeling
+  - robotics
+  modalities:
+    input:
+    - image
+    - text
+    output:
+    - reward
+  parameters: 4.45B
+  architecture: transformer
+  runner: CoreAIRunner
+  tokenizer_required: true
+  processor_required: true
+status: published
+notes: 'Robometer-4B robot-policy reward model (lerobot/Robometer-4B @ db167a7c, apache-2.0)
+  — a LeRobot v0.6.0 reward/progress model = a Qwen3-VL-4B-Instruct backbone + small MLP reward
+  heads. Same split discipline as EVO1/VLA-JEPA/pi0: this asset ships the deployable task-specific
+  CORE — the `reward_heads` graph (per-frame `<|prog_token|>` hidden states -> progress_logits
+  [B,T,10 bins] + success_logits [B,T]). The host owns the Qwen3-VL-4B backbone (a standard
+  VLM), the prog-token extraction, and the decode (progress = softmax-weighted bin-mean clamped
+  to [0,1]; success = sigmoid). hidden_dim 2560, progress_discrete_bins 10, MAX_FRAMES 8 (heads
+  are pointwise over the hidden dim, so the static graph covers any frame count). fp32. GATE
+  B = graph_output_cosine (the non-AR encoder lane): fp32 torch reward heads vs the .aimodel
+  over identical seeded per-frame hidden states, min cosine across BOTH output heads — a conversion-fidelity
+  metric, not task success. Real conversion via models/robometer/{export,parity}.py (RobometerPredictionHead
+  rebuilt standalone from the checkpoint progress_head.*/success_head.* tensors, dims inferred;
+  no lerobot import needed).'
+published:
+  hf_repo: kevinqz/Robometer-4B-CoreAI
+  revision: 71c3cb96f0eb06027b6a6a08307e81e4a717a8ed
+  date: '2026-07-07'
