@@ -1,0 +1,97 @@
+id: fastwam-libero
+upstream:
+  hf_repo: lerobot/fastwam_libero_uncond_2cam224
+  revision: 53983e1249b4eb4d89ab42b40b8678a882d331ad
+  license: apache-2.0
+  license_terms: permissive
+  pipeline_tag: robotics
+  size_bytes: 12041631582
+conversion:
+  tool: models/fastwam/export.py
+  min_tool_version: 0.4.1
+  args:
+    weights: build/_fastwam_libero/model.safetensors
+  quantization: int8
+  precision: float32
+  action:
+    embodiment: libero_2cam_arm
+    robot_required: true
+    action_space:
+      dim: 7
+      max_action_dim: 7
+      chunk_size: 32
+      convention: per_embodiment_joint_space
+    sampling:
+      kind: flow_matching
+      num_steps: 20
+      solver: euler
+    normalization:
+      stats_source: policy_postprocessor (upstream); the split graph operates in the policy's
+        normalized action space — the host un-normalizes with the upstream processor. parity
+        is measured in normalized space.
+    graphs:
+    - name: action_denoise_step
+expected:
+  format_version: '2.0'
+  bundle_files:
+  - metadata.json
+  - main.mlirb
+  - main.hash
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: graph_output_cosine
+    threshold: 0.999
+    tolerance: 0.0005
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: FastWAM-LIBERO-CoreAI
+  collection: CoreAI · Apple on-device
+catalog:
+  name: FastWAM LIBERO (fabric)
+  family: FastWAM
+  bundle_kind: action
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: false
+    custom_kernel: false
+    patch_required: false
+    aot_required: false
+  capabilities:
+  - vision-language-action
+  - robotics
+  modalities:
+    input:
+    - image
+    - text
+    - state
+    output:
+    - action
+  parameters: 6B
+  architecture: diffusion
+  runner: CoreAIRunner
+  tokenizer_required: true
+  processor_required: true
+status: verified
+notes: 'FastWAM (Fast World-Action Model, arXiv:2603.16666) — a LeRobot v0.6.0 world-action
+  policy on the Wan2.2 stack (lerobot/fastwam_libero_uncond_2cam224 @ 53983e12, apache-2.0).
+  Unlike LingBot-VA, FastWAM does DIRECT action prediction at inference (no test-time video
+  rollout), so the deployable ACTION core is the separable `ActionDiT` (a Mixture-of-Transformers
+  expert): action_encoder + text cross-attn + 30 DiT blocks + head. This asset ships the `action_denoise_step`
+  velocity graph; the host owns the Wan VAE, UMT5 text encoder, the CFG + Euler action scheduler
+  (num_steps=20), and the video expert''s prefilled per-layer K/V cache (fed to the graph
+  as `vk`/`vv` inputs — the MoT action-cached cross-attention). NOTE: use the FINETUNED variant
+  (has trained action heads); the base `fastwam_base` has none. INT8 weight-only (torchao)
+  — the fp16 whole action-DiT would be large; int8 makes it ~4GB which loads on the ANE. TWO
+  rewrites for coreai_torch 0.4.1: attn_mode="torch" (custom_sdpa, not the training-only flex_attention)
+  + a REAL-valued RoPE rewrite (upstream freqs are complex; coreai_torch has no complex dtype)
+  — the freqs BUFFER is also converted to real. GATE B = graph_output_cosine (velocity torch-ref
+  vs the int8 .aimodel over seeded inputs incl. synthetic video K/V; min cosine 0.99999999999).
+  Real conversion via models/fastwam/export.py + the int8 driver; standalone import of the
+  Wan MoT modules (lerobot stubbed, tiny video-expert stub for MoT.__init__).'
