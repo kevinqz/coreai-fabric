@@ -109,6 +109,16 @@ by **per-layer KV conditioning** (tightly coupled, not a peel-off head). custom_
 
 ---
 
+## ⚠️ Disk: purge the ANE compile cache
+
+The CoreAI runtime caches every compiled `.aimodel` under
+`~/Library/Caches/coreai-cache` — it ballooned to **53 GB** mid-session and looked
+like a hard disk wall (only 12 GB `df`-available on a 926 GB disk). `rm -rf
+~/Library/Caches/coreai-cache` reclaimed it → 65 GB free, and the int8 exports fit
+again. **When disk gets tight during a run, purge `coreai-cache` first** — it's the
+usual culprit, not the checkpoints. Also `~/.cache/uv` (torchao/pip) and macOS local
+snapshots (`sudo tmutil deletelocalsnapshots /`) if still needed.
+
 ## Order & disk
 
 Do FastWAM first (smallest deployable graph — action path only, likely fp16). Then
