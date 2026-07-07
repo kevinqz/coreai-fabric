@@ -80,7 +80,7 @@ catalog:
   runner: CoreAIRunner
   tokenizer_required: true
   processor_required: true
-status: published
+status: registered
 notes: 'VLA-JEPA SimplerEnv policy from the LeRobot VLA-JEPA collection. Upstream card: VLA-JEPA
   combines Qwen3-VL-2B-Instruct, V-JEPA2, and a flow-matching DiT action head; inference uses
   Qwen + the action head, while the JEPA world model is training-only. Contract from config:
