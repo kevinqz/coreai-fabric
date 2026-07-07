@@ -84,8 +84,7 @@ catalog:
 status: verified
 notes: 'NVIDIA GR00T-N1.7-3B robot-policy (nvidia/GR00T-N1.7-3B @ 2fc962b9) — a LeRobot v0.6.0
   generalist VLA. NVIDIA Open Model License: derivatives may be redistributed but are NON-COMMERCIAL
-  (research/evaluation only; §3.3) — this converted asset is a research-only derivative and
-  bundles the upstream LICENSE. GR00T = Cosmos-Reason2-2B VL backbone + a flow-matching DiT
+  (research/evaluation only; §3.3) — this is INDEX-ONLY: fabric refuses to republish restricted-upstream weights, so the deliverable is this REPRODUCIBLE recipe (run it against nvidia/GR00T-N1.7-3B), NOT a hosted artifact. GR00T = Cosmos-Reason2-2B VL backbone + a flow-matching DiT
   action head, the same split discipline as EVO1/VLA-JEPA. This asset ships the deployable
   CORE — the `groot_denoise_step` velocity graph (AlternateVLDiT, 32 layers, inner 1536, cross-attn
   to the 2048-dim VL context, per-embodiment action/state MLPs over 32 embodiments, action_dim
