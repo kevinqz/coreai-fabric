@@ -1,0 +1,75 @@
+id: lingbot-vision-vit-giant
+upstream:
+  hf_repo: robbyant/lingbot-vision-vit-giant
+  revision: 3a5ba64c1eb31ef33f9e766643f1c023afc51017
+  license: apache-2.0
+  license_terms: permissive
+  pipeline_tag: image-feature-extraction
+  size_bytes: 4538110127
+conversion:
+  tool: models/lingbot/export.py
+  min_tool_version: 0.4.1
+  args:
+    variant: giant
+    size: 512
+  quantization: none
+  precision: float32
+expected:
+  format_version: '2.0'
+  bundle_files:
+  - metadata.json
+  - main.mlirb
+  - main.hash
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: graph_output_cosine
+    threshold: 0.999
+    tolerance: 0.0005
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: LingBot-Vision-ViT-Giant-CoreAI
+  collection: CoreAI · Apple on-device
+catalog:
+  name: LingBot-Vision ViT-g (fabric)
+  family: LingBot
+  bundle_kind: image-feature-extraction
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: false
+    custom_kernel: false
+    patch_required: false
+    aot_required: false
+  capabilities:
+  - image-feature-extraction
+  modalities:
+    input:
+    - image
+    output:
+    - embedding
+  parameters: 1.1B
+  architecture: transformer
+  runner: CoreAIRunner
+  tokenizer_required: false
+  processor_required: true
+status: published
+notes: 'LingBot-Vision ViT-g/16 (robbyant/lingbot-vision-vit-giant @ 3a5ba64c, apache-2.0)
+  — the largest self-supervised vision backbone of the family for dense spatial perception
+  (depth / segmentation features). Frozen ViT-g/16 (embed_dim 1536); same lane as lingbot-vision-vit-small
+  (SDPA attention, op-coverage proven). Exported via models/lingbot/export.py as ONE static-size
+  .aimodel: image [1,3,512,512] -> normalized per-patch tokens [1, 1024, 1536]. fp32; the
+  host owns image preprocessing (resize to 512, ImageNet mean/std, patch 16). GATE B = graph_output_cosine
+  (identical seeded images through the fp32 torch backbone vs the .aimodel, min cosine over
+  n_obs=8) — conversion fidelity, not task accuracy. Upstream model class + weights via github.com/robbyant/lingbot-vision
+  (only model.pt on HF). Real conversion via models/lingbot/{export,parity}.py.'
+published:
+  hf_repo: kevinqz/LingBot-Vision-ViT-Giant-CoreAI
+  revision: b161791cf04146400737d2864cd0f732ef459919
+  date: '2026-07-07'
+catalog_pr: https://github.com/kevinqz/coreai-catalog/pull/25
