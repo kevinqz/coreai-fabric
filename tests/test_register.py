@@ -56,7 +56,7 @@ def test_model_entry_validates_against_catalog_schema():
 
 def test_model_entry_carries_measured_parity_into_catalog():
     # C1/E3/C2: the measured greedy_parity signature reaches the catalog as data
-    # (not a note), with a fidelity_tier and a variant_group — and still validates.
+    # (not a note), with a fidelity_tier — and still validates.
     recipe = _published_recipe()
     recipe.data["publish"]["variant"] = "int8"
     report = {
@@ -76,7 +76,7 @@ def test_model_entry_carries_measured_parity_into_catalog():
     # PRIVACY: measured_on carries only the generic accelerator family, never the chip model.
     assert entry["evaluation"]["measured_on"] == "apple_silicon"
     assert entry["size"]["fidelity_tier"] == "high_fidelity"   # Gate B passed
-    assert entry["variant_group"] == "kevinqz/Qwen3-0.6B-CoreAI"
+    # variant_group was removed from catalog schema — no longer emitted
     # A failed report → the size tier, honestly.
     report["gate_b"]["status"] = "failed"
     assert build_model_entry(recipe, FAKE_FILES, report=report)["size"]["fidelity_tier"] == "size"

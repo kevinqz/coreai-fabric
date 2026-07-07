@@ -173,17 +173,15 @@ def build_model_entry(recipe: Recipe, files: list[dict], *, notes_suffix: str = 
     if isinstance(catalog_block.get("streaming"), bool):
         entry["streaming"] = catalog_block["streaming"]
     # C1/E3: carry the MEASURED parity signature + fidelity tier into the catalog
-    # (so the number lives as data, not a note), and the variant_group tying
-    # int4/int8 tiers of one repo together (C2).
+    # (so the number lives as data, not a note).
+    # NOTE: variant_group was removed — the catalog schema no longer accepts it.
+    # Use source_group instead if grouping is needed in the future.
     tier = _fidelity_tier(conv["quantization"], report)
     if tier:
         entry["size"]["fidelity_tier"] = tier
     evaluation = _catalog_evaluation(report)
     if evaluation:
         entry["evaluation"] = evaluation
-    pub = recipe.data.get("publish", {})
-    if pub.get("variant"):
-        entry["variant_group"] = f"{pub.get('hf_target_namespace')}/{pub.get('repo_name')}"
     # C4: emit a typed io_contract so a fabric model is as agent-ready as the
     # official ones (not just a bundle). None for bundle kinds fabric can't yet
     # describe truthfully — the catalog's every-fabric-model-has-io_contract

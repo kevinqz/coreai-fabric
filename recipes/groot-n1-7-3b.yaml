@@ -81,7 +81,7 @@ catalog:
   runner: CoreAIRunner
   tokenizer_required: true
   processor_required: true
-status: verified
+status: draft
 notes: 'NVIDIA GR00T-N1.7-3B robot-policy (nvidia/GR00T-N1.7-3B @ 2fc962b9) — a LeRobot v0.6.0
   generalist VLA. NVIDIA Open Model License: derivatives may be redistributed but are NON-COMMERCIAL
   (research/evaluation only; §3.3) — this is INDEX-ONLY: fabric refuses to republish restricted-upstream weights, so the deliverable is this REPRODUCIBLE recipe (run it against nvidia/GR00T-N1.7-3B), NOT a hosted artifact. GR00T = Cosmos-Reason2-2B VL backbone + a flow-matching DiT
