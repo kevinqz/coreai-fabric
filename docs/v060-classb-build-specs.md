@@ -41,6 +41,23 @@ The **video expert is NOT in the asset** — its per-layer K/V arrive as a
   fallback. `action_scheduler`: 20 steps, flow-matching, shift 5.
 - **Parity:** seeded synthetic `video_kv_cache` + text context, both sides; the
   metric gates the action-DiT export (host owns the video prefill).
+- **⚠️ BLOCKER (version skew) — resolve before building.** The lane is ~90% built
+  (`scratchpad/fastwam_int8.py`: lerobot stub + real-RoPE + MoT construction with a
+  tiny video stub + int8 + the action-denoise-step wrapper; torch forward runs,
+  output `[1, 32, 7]`). BUT the `lerobot/fastwam_base` checkpoint's action expert
+  (`model.mot.mixtures.action.*`, 820 tensors) contains ONLY `blocks`,
+  `text_embedding`, `time_embedding`, `time_projection` — it has **no
+  `action_encoder` (7→hidden), no `head` (hidden→7), and no `proprio_encoder`**
+  (grep: zero action_encoder keys, zero dim-7 tensors, all keys under
+  `model.mot.mixtures`). The current `main` `ActionDiT.__init__` DOES create
+  `action_encoder`/`head`, and `_build_core_model` references a `proprio encoder`,
+  so loading this checkpoint into today's code leaves the action I/O projections
+  RANDOM → the shipped model would be garbage (the parity would still read ~1.0
+  because both sides share the same random weights — a trap). **Next step:** pin the
+  exact lerobot commit that produced `lerobot/fastwam_base` (git-blame the ActionDiT
+  action_encoder/head additions) and build against THAT code, or locate the action
+  I/O projections' real names. Do NOT ship until the action projections load from
+  real weights.
 
 ## EO-1 — `IPEC-COMMUNITY/EO-1-3B` (MIT, 3.77B)
 
