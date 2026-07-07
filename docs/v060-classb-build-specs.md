@@ -53,11 +53,15 @@ The **video expert is NOT in the asset** — its per-layer K/V arrive as a
   `action_encoder`/`head`, and `_build_core_model` references a `proprio encoder`,
   so loading this checkpoint into today's code leaves the action I/O projections
   RANDOM → the shipped model would be garbage (the parity would still read ~1.0
-  because both sides share the same random weights — a trap). **Next step:** pin the
-  exact lerobot commit that produced `lerobot/fastwam_base` (git-blame the ActionDiT
-  action_encoder/head additions) and build against THAT code, or locate the action
-  I/O projections' real names. Do NOT ship until the action projections load from
-  real weights.
+  because both sides share the same random weights — a trap).
+- **RESOLVED (evidence-based):** not a code skew (main == v0.6.0 both create
+  `action_encoder`/`head`). `lerobot/fastwam_base` is the BASE world-model with **no
+  trained action heads** (zero dim-7 tensors). The deployable action policy is a
+  FINETUNED variant: **`lerobot/fastwam_libero_uncond_2cam224`** (1652 keys) HAS
+  `model.mot.mixtures.action.action_encoder.*` + `head.*` — verified via a
+  safetensors range-request header read (no full download). Convert the LIBERO
+  variant (apache), not the base; the 90%-built lane (`scratchpad/fastwam_int8.py`)
+  needs only the weights swap. Other variant: `fastwam_robotwin_uncond_3cam_384`.
 
 ## EO-1 — `IPEC-COMMUNITY/EO-1-3B` (MIT, 3.77B)
 
