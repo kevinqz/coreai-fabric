@@ -81,7 +81,7 @@ catalog:
   runner: CoreAIRunner
   tokenizer_required: true
   processor_required: true
-status: published
+status: registered
 notes: 'EVO1 SO-100 VLA policy (Beilinghamburger/evo1_so100_vla @ 58c61206, apache-2.0) —
   the FIRST LeRobot v0.6.0 policy converted to Core AI. EVO1 = InternVL3-1B VL embedder +
   a flow-matching DiT action head (the pi0/VLA-JEPA split discipline). This asset ships the

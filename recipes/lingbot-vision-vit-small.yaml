@@ -58,7 +58,7 @@ catalog:
   runner: CoreAIRunner
   tokenizer_required: false
   processor_required: true
-status: published
+status: registered
 notes: 'LingBot-Vision ViT-S/16 (robbyant/lingbot-vision-vit-small @ 127cbcec, apache-2.0)
   — a self-supervised vision backbone for dense spatial perception (depth / segmentation features).
   THE FIRST vision feature-extraction encoder converted to Core AI by fabric. Frozen ViT-S/16

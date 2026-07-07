@@ -78,7 +78,7 @@ catalog:
   runner: CoreAIRunner
   tokenizer_required: true
   processor_required: true
-status: verified
+status: published
 notes: 'LingBot-VA — an autoregressive video-action world model on the Wan2.2 stack (lerobot/lingbot_va_base
   @ 0cbf21e0, apache-2.0), a LeRobot v0.6.0 policy. This asset ships the deployable ACTION
   core — the cache-free `action_denoise_step` velocity graph reached via WanTransformer3DModel.forward(action_mode=True,
@@ -94,3 +94,8 @@ notes: 'LingBot-VA — an autoregressive video-action world model on the Wan2.2 
   (velocity torch-ref vs the int8 .aimodel over seeded inputs; min cosine 0.99999999999).
   Real conversion via models/lingbot_va/export.py + the int8 export+parity driver; standalone
   import of the Wan modules (lerobot stubbed).'
+published:
+  hf_repo: kevinqz/LingBot-VA-Base-CoreAI
+  revision: 735faecbfd6252f44228bbd4456f757f6f4b1bc6
+  date: '2026-07-07'
+catalog_pr: https://github.com/kevinqz/coreai-catalog/pull/30

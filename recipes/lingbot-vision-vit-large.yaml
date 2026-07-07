@@ -58,7 +58,7 @@ catalog:
   runner: CoreAIRunner
   tokenizer_required: false
   processor_required: true
-status: published
+status: registered
 notes: 'LingBot-Vision ViT-L/16 (robbyant/lingbot-vision-vit-large @ 5e037062, apache-2.0)
   — a self-supervised vision backbone for dense spatial perception (depth / segmentation features).
   Frozen ViT-L/16 (embed_dim 1024); same lane as lingbot-vision-vit-small (SDPA attention,
