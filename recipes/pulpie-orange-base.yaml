@@ -60,7 +60,7 @@ catalog:
   runner: CoreAIRunner
   tokenizer_required: true
   processor_required: false
-status: published
+status: registered
 notes: 'pulpie-orange-base (feyninc/pulpie-orange-base @ d8f4eaab, apache-2.0) — a EuroBERT-610m
   token classifier that labels HTML tokens as content vs boilerplate (web content extraction
   / RAG cleanup; "Pareto-optimal models for cleaning up the web"). THE FIRST non-autoregressive
