@@ -386,7 +386,8 @@
             "video",
             "3d",
             "action",
-            "token-classification"
+            "token-classification",
+            "image-feature-extraction"
           ],
           "description": "Mirrors the catalog model.schema bundle_kind enum. The catalog test suite requires bundle_kind on every model. Choose the kind that matches the model's task (e.g. an LLM chat model = llm, a document-OCR model = ocr, a per-token labeler = token-classification)."
         },
@@ -451,6 +452,7 @@
               "document-ocr",
               "embedding",
               "gui-grounding",
+              "image-feature-extraction",
               "image-generation",
               "image-text-similarity",
               "image-to-3d",

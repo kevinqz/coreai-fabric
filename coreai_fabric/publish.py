@@ -303,6 +303,12 @@ def render_model_card(root: Path, recipe, manifest: dict, report: dict,
         return _render_token_classification_card(root, recipe, manifest, report,
                                                  copyright_holder=copyright_holder,
                                                  collection_url=collection_url)
+    if bundle_kind == "image-feature-extraction":
+        # A frozen vision backbone gets the honest feature-extraction card (image
+        # -> per-patch tokens; host owns preprocessing; Gate B graph_output_cosine).
+        return _render_image_feature_extraction_card(root, recipe, manifest, report,
+                                                     copyright_holder=copyright_holder,
+                                                     collection_url=collection_url)
     if bundle_kind and bundle_kind != "llm":
         raise SystemExit(
             f"publish: no card template for bundle_kind '{bundle_kind}' yet "
@@ -717,6 +723,121 @@ def _render_token_classification_card(root: Path, recipe, manifest: dict, report
             f"vs the {ref} torch reference over {n} seeded `(input_ids, attention_mask)`, measured "
             f"on {dev}. The encoder analog of the LLM logit-parity: it certifies the export computes "
             f"the SAME per-token logits as the source — a conversion-fidelity metric, not task accuracy."
+        )
+    else:
+        evaluation_block = (
+            f"- **Gate B (graph_output_cosine): {gb.get('status', 'not_run')}** — unmeasured "
+            "pending a real conversion + `verify` on hardware.")
+
+    holder = copyright_holder or upstream.get("copyright_holder")
+    attribution = (f"Weights © {holder}, " if holder else "Weights ") + \
+        f"licensed **{upstream['license']}** — see the bundled `LICENSE`."
+
+    mirror_ns = publish_cfg.get("mirror_namespace")
+    mirror_line = (
+        f"> **Canonical:** [`{repo_id}`](https://huggingface.co/{repo_id}) — source of truth. "
+        + (f"**Mirror:** [`{mirror_ns}/{publish_cfg.get('repo_name')}`]"
+           f"(https://huggingface.co/{mirror_ns}/{publish_cfg.get('repo_name')})."
+           if mirror_ns else ""))
+    collection_link = f"- [HF Collection]({collection_url})\n" if collection_url else ""
+
+    return template.format(
+        license=upstream["license"],
+        upstream_hf_repo=upstream["hf_repo"],
+        upstream_revision=manifest.get("input", {}).get("revision") or upstream.get("revision", "unpinned"),
+        base_model_relation_line=base_model_relation_line,
+        gated_frontmatter="",
+        gemma_license_block="",
+        language_block=language_block,
+        tags_block=tags_block,
+        name=catalog_block.get("name", recipe.id),
+        recipe_id=recipe.id,
+        mirror_line=mirror_line,
+        facts_block=facts_block,
+        min_os=min_os_str,
+        gate_a_status=report["gate_a"]["status"],
+        evaluation_block=evaluation_block,
+        attribution=attribution,
+        collection_link=collection_link,
+        recipe_url=f"{FABRIC_REPO_URL}/blob/main/recipes/{recipe.id}.yaml",
+        tool=manifest.get("tool", conv["tool"]),
+        tool_version=manifest.get("tool_version") or "(version not reported)",
+        precision=conv["precision"],
+        quantization=conv["quantization"],
+        date=today(),
+    )
+
+
+def _render_image_feature_extraction_card(root: Path, recipe, manifest: dict, report: dict,
+                                          *, copyright_holder: str | None = None,
+                                          collection_url: str | None = None) -> str:
+    """Card for a frozen vision backbone (bundle_kind: image-feature-extraction).
+    Honest by construction: an image encoder that emits per-patch feature tokens
+    (NO end task), host owns preprocessing, Gate B is graph_output_cosine."""
+    from . import FABRIC_REPO_URL
+    upstream = recipe.data["upstream"]
+    conv = recipe.data["conversion"]
+    catalog_block = recipe.data.get("catalog") or {}
+    publish_cfg = recipe.data.get("publish") or {}
+    repo_id = f"{publish_cfg.get('hf_target_namespace')}/{publish_cfg.get('repo_name')}"
+    template = (root / "templates" / "model-card-image-feature-extraction.md").read_text()
+
+    quant = str(conv.get("quantization", "none")).strip()
+    is_quantized = quant.lower() not in ("", "none")
+    base_model_relation_line = "base_model_relation: quantized\n" if is_quantized else ""
+
+    tags = ["coreai", "core-ai", "coreai-fabric", "aimodel", "coreml", "apple",
+            "apple-silicon", "on-device", "vision", "image-feature-extraction", "vit"]
+    if is_quantized:
+        tags.append(quant.lower())
+    seen: set[str] = set()
+    tags_block = "".join(f"- {t}\n" for t in tags if not (t in seen or seen.add(t)))
+
+    langs = catalog_block.get("languages") or upstream.get("languages")
+    language_block = ("language:\n" + "".join(f"- {l}\n" for l in langs)) if langs else ""
+
+    contract: dict = {}
+    cpath = bundle_path(root, recipe).parent / "lingbot-contract.json"
+    if cpath.is_file():
+        try:
+            contract = json.loads(cpath.read_text())
+        except Exception:  # noqa: BLE001
+            contract = {}
+
+    meta = _bundle_metadata(root, recipe)
+    min_os = catalog_block.get("min_os") or {}
+    min_os_str = f"macOS {min_os.get('macos', '27.0')}+ / iOS {min_os.get('ios', '27.0')}+"
+    main = bundle_path(root, recipe) / "main.mlirb"
+    size_str = _human_size(main.stat().st_size) if main.is_file() else "—"
+    facts_rows = [
+        ("Parameters", catalog_block.get("parameters", "—")),
+        ("Architecture", catalog_block.get("architecture", "—")),
+        ("Capabilities", ", ".join(catalog_block.get("capabilities", [])) or "—"),
+        ("Image size", f"{contract.get('image_size', '—')}px (static)"),
+        ("Patch size", contract.get("patch_size", "—")),
+        ("Embed dim", contract.get("embed_dim", "—")),
+        ("Patch tokens", contract.get("num_patch_tokens", "—")),
+        ("Quantization / precision", f"{conv.get('quantization', '—')} / {conv.get('precision', '—')}"),
+        ("On-disk size", size_str),
+        ("Asset kind", "single-graph ViT encoder (image -> per-patch tokens)"),
+        ("assetVersion", meta.get("assetVersion", "—")),
+    ]
+    facts_block = "".join(f"| {k} | {v} |\n" for k, v in facts_rows)
+
+    gb = report.get("gate_b", {})
+    if gb.get("metric") == "graph_output_cosine" and isinstance(gb.get("value"), (int, float)):
+        env = gb.get("environment", {})
+        dev = env.get("accelerator") or env.get("chip") or "Apple Silicon"
+        ref = {"float16": "fp16", "float32": "fp32"}.get(
+            gb.get("reference_dtype"), gb.get("reference_dtype", "fp32"))
+        med = gb.get("median_cosine")
+        med_str = f" (median {med:.6f})" if isinstance(med, (int, float)) else ""
+        n = gb.get("n_obs") or "N"
+        evaluation_block = (
+            f"- **Gate B — graph_output_cosine: {gb['value']:.6f} min output cosine**{med_str} "
+            f"vs the {ref} torch backbone over {n} seeded images, measured on {dev}. Certifies the "
+            f"export computes the SAME per-patch tokens as the source backbone — a conversion-fidelity "
+            f"metric, not task accuracy."
         )
     else:
         evaluation_block = (
