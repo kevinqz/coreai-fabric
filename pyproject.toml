@@ -36,7 +36,7 @@ Catalog = "https://github.com/kevinqz/coreai-catalog"
 
 [project.optional-dependencies]
 hf = ["huggingface_hub>=0.20"]
-test = ["pytest>=7"]
+test = ["pytest>=7", "huggingface_hub>=0.20"]
 # The Apple conversion stack VERIFIED on real hardware (Apple Silicon,
 # macOS 26, 2026-07-03): coreai-torch 0.4.1 (library, pulls
 # coreai-core==1.0.0b2 whose wheel bundles the Core AI compiler AND runtime —
