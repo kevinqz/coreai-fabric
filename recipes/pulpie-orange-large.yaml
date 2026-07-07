@@ -60,7 +60,7 @@ catalog:
   runner: CoreAIRunner
   tokenizer_required: true
   processor_required: false
-status: registered
+status: published
 notes: 'pulpie-orange-large (feyninc/pulpie-orange-large @ 163a2b3e, apache-2.0) — the EuroBERT-2.1B
   token classifier of the pulpie family (HTML content vs boilerplate for web content extraction
   / RAG cleanup). Largest of the three; same non-autoregressive encoder lane as pulpie-orange-base
@@ -74,4 +74,4 @@ published:
   hf_repo: kevinqz/Pulpie-Orange-Large-CoreAI
   revision: 9470e1c406ac4fe3e88170331f3140b88c74d789
   date: '2026-07-07'
-catalog_pr: https://github.com/kevinqz/coreai-catalog/pull/22
+catalog_pr: https://github.com/kevinqz/coreai-catalog/pull/23
