@@ -1,0 +1,100 @@
+id: groot-n1-7-3b
+upstream:
+  hf_repo: nvidia/GR00T-N1.7-3B
+  revision: 2fc962b973bccdd5d8ce4f67cc63b264d6886495
+  license: nvidia-open-model-license
+  license_terms: restricted
+  pipeline_tag: robotics
+  size_bytes: 6910499416
+conversion:
+  tool: models/groot/export.py
+  min_tool_version: 0.4.1
+  args:
+    weights: build/_groot
+  quantization: none
+  precision: float32
+  action:
+    embodiment: multi_embodiment
+    robot_required: true
+    action_space:
+      dim: 132
+      max_action_dim: 132
+      max_state_dim: 132
+      chunk_size: 50
+      convention: per_embodiment_joint_space
+    sampling:
+      kind: flow_matching
+      num_steps: 4
+      solver: euler
+    normalization:
+      stats_source: experiment_cfg/dataset_statistics.json (upstream); the split graph operates
+        in the policy's normalized action space — the host un-normalizes with the upstream
+        processor stats. parity is measured in normalized space.
+    graphs:
+    - name: groot_denoise_step
+expected:
+  format_version: '2.0'
+  bundle_files:
+  - metadata.json
+  - main.mlirb
+  - main.hash
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: action_parity
+    threshold: 0.995
+    tolerance: 0.001
+    max_action_mae: 0.05
+    max_relative_action_mae: 0.1
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: GR00T-N1.7-3B-CoreAI
+  collection: CoreAI · Apple on-device
+catalog:
+  name: GR00T N1.7 (fabric)
+  family: GR00T
+  bundle_kind: action
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: false
+    custom_kernel: false
+    patch_required: false
+    aot_required: false
+  capabilities:
+  - vision-language-action
+  - robotics
+  modalities:
+    input:
+    - image
+    - text
+    - state
+    output:
+    - action
+  parameters: 3.14B
+  architecture: transformer
+  runner: CoreAIRunner
+  tokenizer_required: true
+  processor_required: true
+status: verified
+notes: 'NVIDIA GR00T-N1.7-3B robot-policy (nvidia/GR00T-N1.7-3B @ 2fc962b9) — a LeRobot v0.6.0
+  generalist VLA. NVIDIA Open Model License: derivatives may be redistributed but are NON-COMMERCIAL
+  (research/evaluation only; §3.3) — this converted asset is a research-only derivative and
+  bundles the upstream LICENSE. GR00T = Cosmos-Reason2-2B VL backbone + a flow-matching DiT
+  action head, the same split discipline as EVO1/VLA-JEPA. This asset ships the deployable
+  CORE — the `groot_denoise_step` velocity graph (AlternateVLDiT, 32 layers, inner 1536, cross-attn
+  to the 2048-dim VL context, per-embodiment action/state MLPs over 32 embodiments, action_dim
+  132, action_horizon 50); op-coverage PROVEN on coreai_torch 0.4.1 / coremltools 9.0 (the
+  1.09B DiT lowers + loads clean, no MPSGraph segfault). The host owns the Cosmos-Reason2-2B
+  backbone (+ its vl_self_attention/vlln context prep + state encoding), the Euler loop (num_inference_timesteps=4),
+  and un-normalization — a separate context lane, like VLA-JEPA''s qwen_context. fp32. GATE
+  B = action_parity: fp32 torch action head vs the .aimodel driven through the IDENTICAL 4-step
+  Euler loop with fixed synthetic VL context + fixed noise, in normalized action space — a
+  conversion-fidelity metric, not task success. Generalist checkpoint: needs a matching robot
+  + post-training to actuate; inert without the robot. Real conversion via models/groot/{export,parity}.py
+  (Gr00tN1d7ActionHead rebuilt standalone from Isaac-GR00T modules; loads model.action_head.*).'
