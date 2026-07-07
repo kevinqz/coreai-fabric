@@ -1,0 +1,96 @@
+id: lingbot-va-base
+upstream:
+  hf_repo: lerobot/lingbot_va_base
+  revision: 0cbf21e0b2e2eb3a20766a4dd62d1155c2db48f5
+  license: apache-2.0
+  license_terms: permissive
+  pipeline_tag: robotics
+  size_bytes: 10177841732
+conversion:
+  tool: models/lingbot_va/export.py
+  min_tool_version: 0.4.1
+  args:
+    weights: build/_lingbot_va/model.safetensors
+  quantization: int8
+  precision: float32
+  action:
+    embodiment: multi_camera_arm
+    robot_required: true
+    action_space:
+      dim: 30
+      max_action_dim: 30
+      chunk_size: 32
+      convention: per_embodiment_joint_space
+    sampling:
+      kind: flow_matching
+      num_steps: 10
+      solver: euler
+    normalization:
+      stats_source: policy_postprocessor (upstream); the split graph operates in the policy's
+        normalized action space — the host un-normalizes with the upstream processor. parity
+        is measured in normalized space.
+    graphs:
+    - name: action_denoise_step
+expected:
+  format_version: '2.0'
+  bundle_files:
+  - metadata.json
+  - main.mlirb
+  - main.hash
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: graph_output_cosine
+    threshold: 0.999
+    tolerance: 0.0005
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: LingBot-VA-Base-CoreAI
+  collection: CoreAI · Apple on-device
+catalog:
+  name: LingBot-VA Base (fabric)
+  family: LingBot-VA
+  bundle_kind: action
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: false
+    custom_kernel: false
+    patch_required: false
+    aot_required: false
+  capabilities:
+  - vision-language-action
+  - robotics
+  modalities:
+    input:
+    - image
+    - text
+    - state
+    output:
+    - action
+  parameters: 5B
+  architecture: diffusion
+  runner: CoreAIRunner
+  tokenizer_required: true
+  processor_required: true
+status: verified
+notes: 'LingBot-VA — an autoregressive video-action world model on the Wan2.2 stack (lerobot/lingbot_va_base
+  @ 0cbf21e0, apache-2.0), a LeRobot v0.6.0 policy. This asset ships the deployable ACTION
+  core — the cache-free `action_denoise_step` velocity graph reached via WanTransformer3DModel.forward(action_mode=True,
+  update_cache=0): action_embedder + text cross-attn + 30 Wan DiT blocks + action_proj_out.
+  The host owns the Wan VAE (frame encode), the UMT5 text encoder, the CFG + Euler action
+  scheduler, and the streaming video-KV cache (this graph is the single-chunk cache-free denoiser;
+  video-KV-as-graph-I/O is a follow-up for full streaming). INT8 weight-only (torchao) — the
+  action graph is the WHOLE 5B DiT, so the fp16 asset (~10GB) exceeds this hardware''s load/verify
+  capacity (ANE program-load 0x10004 + disk); int8 halves it to ~5GB which loads + verifies.
+  TWO rewrites make the Wan stack lower on coreai_torch 0.4.1: attn_mode="torch" (custom_sdpa,
+  not the training-only flex_attention) + a REAL-valued RoPE rewrite (upstream uses torch.polar/view_as_complex;
+  coreai_torch has no complex dtype) — verified mathematically identical. GATE B = graph_output_cosine
+  (velocity torch-ref vs the int8 .aimodel over seeded inputs; min cosine 0.99999999999).
+  Real conversion via models/lingbot_va/export.py + the int8 export+parity driver; standalone
+  import of the Wan modules (lerobot stubbed).'
