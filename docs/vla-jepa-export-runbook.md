@@ -160,6 +160,24 @@ The parity harness should feed the same host-conditioned `inputs_embeds`,
 initial noise through both Torch and the asset, then compare the final
 normalized action chunk after the 4-step Euler loop.
 
+The qwen-context lane itself now has a measured parity harness too:
+
+```bash
+.venv-lerobot/bin/python models/vla_jepa/qwen_context_parity.py reference \
+  --config-json build/_vla_jepa/VLA-JEPA-LIBERO/config.json \
+  --out build/vla-jepa-libero
+.venv/bin/python models/vla_jepa/qwen_context_parity.py --compare \
+  --out build/vla-jepa-libero
+```
+
+Measured LIBERO qwen-context cosine:
+`0.9997270282801519`
+
+The same lane measured:
+
+- `0.9997270282801519` for `vla-jepa-pretrain`
+- `0.9997161318927406` for `vla-jepa-simpler-env`
+
 ## Phase 3 — publish discipline
 
 Publish only after:
