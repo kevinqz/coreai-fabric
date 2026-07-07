@@ -385,9 +385,10 @@
             "audio-generation",
             "video",
             "3d",
-            "action"
+            "action",
+            "token-classification"
           ],
-          "description": "Mirrors the catalog model.schema bundle_kind enum. The catalog test suite requires bundle_kind on every model. Choose the kind that matches the model's task (e.g. an LLM chat model = llm, a document-OCR model = ocr)."
+          "description": "Mirrors the catalog model.schema bundle_kind enum. The catalog test suite requires bundle_kind on every model. Choose the kind that matches the model's task (e.g. an LLM chat model = llm, a document-OCR model = ocr, a per-token labeler = token-classification)."
         },
         "min_os": {
           "type": "object",
@@ -468,6 +469,7 @@
               "text-to-audio",
               "text-to-speech",
               "text-to-video",
+              "token-classification",
               "video-classification",
               "vision-language",
               "vision-language-action",

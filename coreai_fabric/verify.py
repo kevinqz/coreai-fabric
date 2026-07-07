@@ -230,6 +230,36 @@ def run_gate_b(root: Path, recipe: Recipe) -> dict:
             result.setdefault(key, v)
         return result
 
+    if gate["metric"] == "graph_output_cosine":
+        # Non-autoregressive graphs (vision encoders, token classifiers, embedders):
+        # identical seeded inputs through the torch reference AND the .aimodel, compared
+        # by output cosine. Single-env (transformers + coreai_torch coexist), so the
+        # per-model harness (models/<family>/parity.py --compare) produces BOTH sides and
+        # drops its protocol JSON next to the bundle. verify RECORDS it and recomputes
+        # pass/fail from `value` vs the threshold — never trusts a self-reported status.
+        measured = os.environ.get("COREAI_GRAPH_PARITY_MEASURED")
+        mp = Path(measured) if measured else (
+            bundle_path(root, recipe).parent / "graph-output-parity-measured.json")
+        if not mp.is_file():
+            return {**base, "status": "not_run",
+                    "reason": (
+                        "graph_output_cosine is measured by the per-model harness "
+                        f"(models/<family>/parity.py --compare), which writes {mp.name} next "
+                        "to the bundle; none found. Run it to MEASURE fidelity — fabric never "
+                        "fakes a number.")}
+        m = json.loads(mp.read_text())
+        val = m.get("value")
+        if m.get("metric") != "graph_output_cosine" or not isinstance(val, (int, float)):
+            return {**base, "status": "not_run",
+                    "reason": f"{mp.name} is not a valid graph_output_cosine measurement"}
+        bar = gate["threshold"] - gate["tolerance"]
+        passed = val >= bar
+        result = {**base, "status": "passed" if passed else "failed", "value": val,
+                  "measurement_source": mp.name}
+        for key, v in m.items():  # record the harness output verbatim
+            result.setdefault(key, v)
+        return result
+
     runner = os.environ.get("COREAI_FABRIC_PARITY_RUNNER")
     # Auto-wire the bundled runner for the runnable metric so a novice MEASURES
     # fidelity by default — no undocumented env var to remember. It ships in the

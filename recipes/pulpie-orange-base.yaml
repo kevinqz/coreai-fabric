@@ -1,0 +1,80 @@
+id: pulpie-orange-base
+upstream:
+  hf_repo: feyninc/pulpie-orange-base
+  revision: d8f4eaabc8647b96034b906ab3864572e1489c10
+  license: apache-2.0
+  license_terms: permissive
+  pipeline_tag: token-classification
+  size_bytes: 1233231316
+conversion:
+  tool: models/eurobert/export.py
+  min_tool_version: 0.4.1
+  args:
+    model: feyninc/pulpie-orange-base
+    seq: 64
+  quantization: none
+  precision: float32
+expected:
+  format_version: '2.0'
+  bundle_files:
+  - metadata.json
+  - main.mlirb
+  - main.hash
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: graph_output_cosine
+    threshold: 0.999
+    tolerance: 0.0005
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: Pulpie-Orange-Base-CoreAI
+  collection: CoreAI · Apple on-device
+catalog:
+  name: Pulpie Orange Base (fabric)
+  family: EuroBERT
+  bundle_kind: token-classification
+  languages:
+  - en
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: false
+    custom_kernel: false
+    patch_required: false
+    aot_required: false
+  capabilities:
+  - token-classification
+  modalities:
+    input:
+    - text
+    output:
+    - text
+  parameters: 0.6B
+  architecture: transformer
+  runner: CoreAIRunner
+  tokenizer_required: true
+  processor_required: false
+status: published
+notes: 'pulpie-orange-base (feyninc/pulpie-orange-base @ d8f4eaab, apache-2.0) — a EuroBERT-610m
+  token classifier that labels HTML tokens as content vs boilerplate (web content extraction
+  / RAG cleanup; "Pareto-optimal models for cleaning up the web"). THE FIRST non-autoregressive
+  encoder and the first token-classification model converted to Core AI by fabric. EuroBERT
+  is a modern bidirectional encoder (RoPE + GQA 18/6 heads, 26 layers, hidden 1152, vocab
+  128257) with custom_code; op-coverage PROVEN on coreai_torch 0.4.1 / coremltools 9.0 (encode-and-classify,
+  no KV-cache). Exported via models/eurobert/export.py as ONE static-seq (64) .aimodel: (input_ids,
+  attention_mask) -> per-token logits [1, 64, 2]. fp32 (2.4GB); the host owns the EuroBERT
+  tokenizer. GATE B = graph_output_cosine (the encoder analog of the LLM logit-parity lane):
+  identical seeded (input_ids, attention_mask) through the fp32 torch reference vs the .aimodel,
+  min cosine over n_obs=8 — a conversion-fidelity metric, not a task-accuracy metric. Real
+  conversion via models/eurobert/{export,parity}.py.'
+published:
+  hf_repo: kevinqz/Pulpie-Orange-Base-CoreAI
+  revision: af93c3b44a64c3a63ba98339d9b8b8c24c6d363f
+  date: '2026-07-07'
+catalog_pr: https://github.com/kevinqz/coreai-catalog/pull/21

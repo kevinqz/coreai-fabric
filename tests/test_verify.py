@@ -24,7 +24,7 @@ def _recipe(tmp_path: Path, expected_files=None, format_version=None) -> Recipe:
             "parity": {
                 "gate_a": {"checks": ["bundle_files_present", "metadata_json_parses",
                                       "metadata_matches_recipe"]},
-                "gate_b": {"metric": "graph_output_cosine", "threshold": 0.999,
+                "gate_b": {"metric": "per_token_logit_cosine", "threshold": 0.999,
                            "tolerance": 0.0005},
             },
             "publish": {"hf_target_namespace": "o", "repo_name": "m-coreai"},
@@ -117,6 +117,35 @@ def test_gate_b_benchmark_accuracy_blocked_upstream(tmp_path, monkeypatch):
     assert result["value"] is None
     assert "coreai.llm.eval" in result["reason"]
     assert "coming soon" in result["reason"]
+
+
+# ---- graph_output_cosine: the non-AR encoder lane records a harness measurement ----
+
+def _graph_recipe(tmp_path: Path) -> Recipe:
+    r = _recipe(tmp_path)
+    r.data["parity"]["gate_b"] = {"metric": "graph_output_cosine", "threshold": 0.999,
+                                  "tolerance": 0.0005}
+    return r
+
+
+def test_gate_b_graph_output_cosine_not_run_without_measurement(tmp_path):
+    # No per-model harness output next to the bundle => honestly not_run (never faked).
+    result = run_gate_b(tmp_path, _graph_recipe(tmp_path))
+    assert result["status"] == "not_run"
+    assert result["value"] is None
+    assert "fabric never fakes" in result["reason"]
+
+
+def test_gate_b_graph_output_cosine_records_passing_measurement(tmp_path):
+    d = tmp_path / "build" / "x"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "graph-output-parity-measured.json").write_text(json.dumps(
+        {"metric": "graph_output_cosine", "value": 0.99999, "min_cosine": 0.99999, "n_obs": 8}))
+    result = run_gate_b(tmp_path, _graph_recipe(tmp_path))
+    assert result["status"] == "passed"
+    assert result["value"] == 0.99999
+    assert result["measurement_source"] == "graph-output-parity-measured.json"
+    assert result["n_obs"] == 8  # harness fields recorded verbatim
 
 
 # ---- action_parity: the two-venv action lane records an on-hardware measurement ----
