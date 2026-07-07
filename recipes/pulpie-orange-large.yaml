@@ -1,0 +1,77 @@
+id: pulpie-orange-large
+upstream:
+  hf_repo: feyninc/pulpie-orange-large
+  revision: 163a2b3ec0be6ceb16638da5f19473f92c716d93
+  license: apache-2.0
+  license_terms: permissive
+  pipeline_tag: token-classification
+  size_bytes: 4232671689
+conversion:
+  tool: models/eurobert/export.py
+  min_tool_version: 0.4.1
+  args:
+    model: feyninc/pulpie-orange-large
+    seq: 64
+  quantization: none
+  precision: float32
+expected:
+  format_version: '2.0'
+  bundle_files:
+  - metadata.json
+  - main.mlirb
+  - main.hash
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: graph_output_cosine
+    threshold: 0.999
+    tolerance: 0.0005
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: Pulpie-Orange-Large-CoreAI
+  collection: CoreAI · Apple on-device
+catalog:
+  name: Pulpie Orange Large (fabric)
+  family: EuroBERT
+  bundle_kind: token-classification
+  languages:
+  - en
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: false
+    custom_kernel: false
+    patch_required: false
+    aot_required: false
+  capabilities:
+  - token-classification
+  modalities:
+    input:
+    - text
+    output:
+    - text
+  parameters: 2.1B
+  architecture: transformer
+  runner: CoreAIRunner
+  tokenizer_required: true
+  processor_required: false
+status: published
+notes: 'pulpie-orange-large (feyninc/pulpie-orange-large @ 163a2b3e, apache-2.0) — the EuroBERT-2.1B
+  token classifier of the pulpie family (HTML content vs boilerplate for web content extraction
+  / RAG cleanup). Largest of the three; same non-autoregressive encoder lane as pulpie-orange-base
+  (EuroBERT: RoPE + GQA, 32 layers, hidden 2304, vocab 128257, custom_code). Exported via
+  models/eurobert/export.py as ONE static-seq (64) .aimodel: (input_ids, attention_mask) ->
+  per-token logits [1, 64, 2]. fp32 (8.4GB); the host owns the EuroBERT tokenizer. GATE B
+  = graph_output_cosine (identical seeded (input_ids, attention_mask) through the fp32 torch
+  reference vs the .aimodel, min cosine over n_obs=8) — a conversion-fidelity metric, not
+  task accuracy. Real conversion via models/eurobert/{export,parity}.py.'
+published:
+  hf_repo: kevinqz/Pulpie-Orange-Large-CoreAI
+  revision: 9470e1c406ac4fe3e88170331f3140b88c74d789
+  date: '2026-07-07'
+catalog_pr: https://github.com/kevinqz/coreai-catalog/pull/22
