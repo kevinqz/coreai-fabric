@@ -1,5 +1,3 @@
-# coreai-fabric recipe — VLA-JEPA SimplerEnv (LeRobot)
-# Status: draft. This recipe has NOT been converted yet.
 id: vla-jepa-simpler-env
 upstream:
   hf_repo: lerobot/VLA-JEPA-SimplerEnv
@@ -30,11 +28,9 @@ conversion:
       num_steps: 4
       solver: euler
     normalization:
-      stats_source: policy_preprocessor.json + policy_postprocessor.json (upstream);
-        action normalization is MIN_MAX, visual normalization is IDENTITY per
-        VLAJEPAConfig.
+      stats_source: policy_preprocessor.json + policy_postprocessor.json (upstream); action
+        normalization is MIN_MAX, visual normalization is IDENTITY per VLAJEPAConfig.
     graphs:
-    - name: qwen_context
     - name: action_denoise_step
 expected:
   bundle_files:
@@ -83,15 +79,15 @@ catalog:
   runner: CoreAIRunner
   tokenizer_required: true
   processor_required: true
-status: draft
-notes: 'VLA-JEPA SimplerEnv policy from the LeRobot VLA-JEPA collection.
-  Upstream card: VLA-JEPA combines Qwen3-VL-2B-Instruct, V-JEPA2, and a
-  flow-matching DiT action head; inference uses Qwen + the action head, while
-  the JEPA world model is training-only. Contract from config: one 224x224 RGB
-  camera (observation.images.image), no state input declared in input_features
-  for this checkpoint, action_dim=7, chunk_size=7, n_action_steps=7,
-  num_inference_timesteps=4, jepa_encoder_name=facebook/vjepa2-vitl-fpc64-256.
-  The LeRobot docs say single-view datasets duplicate the view for the world
-  model during training; inference conversion must still follow the policy
-  input_features. No Core AI conversion or Gate B measurement has been run yet;
-  see docs/vla-jepa-export-runbook.md.'
+status: verified
+notes: 'VLA-JEPA SimplerEnv policy from the LeRobot VLA-JEPA collection. Upstream card: VLA-JEPA
+  combines Qwen3-VL-2B-Instruct, V-JEPA2, and a flow-matching DiT action head; inference uses
+  Qwen + the action head, while the JEPA world model is training-only. Contract from config:
+  one 224x224 RGB camera (observation.images.image), no state input declared in input_features
+  for this checkpoint, action_dim=7, chunk_size=7, n_action_steps=7, num_inference_timesteps=4,
+  jepa_encoder_name=facebook/vjepa2-vitl-fpc64-256. The LeRobot docs say single-view datasets
+  duplicate the view for the world model during training; inference conversion must still
+  follow the policy input_features. Current verified asset covers the `action_denoise_step`
+  lane only: real action-head weights were exported, lowered, and measured with Gate B
+  action_parity. Host-owned Qwen preprocessing and `qwen_context` export remain a separate
+  lane; see docs/vla-jepa-export-runbook.md.'
