@@ -73,6 +73,25 @@ from the checkpoint:
 .venv/bin/python models/vla_jepa/export.py --lower --out build/vla-jepa-libero
 ```
 
+Because LeRobot places `model.action_model.*` first in the safetensors file, the
+current lane only needs the first `310580742` bytes of
+`VLA-JEPA-LIBERO/model.safetensors` (header + contiguous action-head payload).
+That means the real action-head export can be staged with a byte-range fetch
+plus subset extraction instead of waiting for the full ~6.1 GB checkpoint:
+
+```bash
+curl -L -r 0-310580741 \
+  -o build/_vla_jepa/VLA-JEPA-LIBERO/model.safetensors \
+  https://huggingface.co/lerobot/VLA-JEPA-LIBERO/resolve/735d9f692981e286ade093b5046627eda876e5d0/model.safetensors
+python models/vla_jepa/extract_action_head.py \
+  --src build/_vla_jepa/VLA-JEPA-LIBERO/model.safetensors \
+  --out build/_vla_jepa/VLA-JEPA-LIBERO/action_model.safetensors
+.venv-lerobot/bin/python models/vla_jepa/export.py export-action-head \
+  --config-json build/_vla_jepa/VLA-JEPA-LIBERO/config.json \
+  --weights build/_vla_jepa/VLA-JEPA-LIBERO/action_model.safetensors \
+  --out build/vla-jepa-libero
+```
+
 Action-head Gate B follows the same two-venv discipline as the other VLA
 harnesses. It compares the Torch action head against Core AI
 `action_denoise_step` over identical synthetic Qwen-context tokens, fixed noise,
