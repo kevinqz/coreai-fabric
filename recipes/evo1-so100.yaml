@@ -1,0 +1,107 @@
+id: evo1-so100
+upstream:
+  hf_repo: Beilinghamburger/evo1_so100_vla
+  revision: 58c612063f14c645da58f001b5a327e8356102f6
+  license: apache-2.0
+  license_terms: permissive
+  pipeline_tag: robotics
+  size_bytes: 1684421452
+conversion:
+  tool: models/evo1/export.py
+  min_tool_version: 0.4.1
+  args:
+    weights: build/_evo1/model.safetensors
+  quantization: none
+  precision: float32
+  action:
+    embodiment: so100_single_arm
+    robot_required: true
+    action_space:
+      dim: 7
+      max_action_dim: 7
+      max_state_dim: 7
+      chunk_size: 16
+      convention: per_embodiment_joint_space
+    sampling:
+      kind: flow_matching
+      num_steps: 10
+      solver: euler
+    normalization:
+      stats_source: train_config.json (upstream); the split graph operates in the policy's
+        normalized action space — the host un-normalizes with the upstream processor stats.
+        parity is measured in normalized space.
+    graphs:
+    - name: action_denoise_step
+expected:
+  format_version: '2.0'
+  bundle_files:
+  - metadata.json
+  - main.mlirb
+  - main.hash
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: action_parity
+    threshold: 0.995
+    tolerance: 0.001
+    max_action_mae: 0.05
+    max_relative_action_mae: 0.1
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: EVO1-SO100-CoreAI
+  collection: CoreAI · Apple on-device
+catalog:
+  name: EVO1 SO-100 (fabric)
+  family: LeRobot
+  bundle_kind: action
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: false
+    custom_kernel: false
+    patch_required: false
+    aot_required: false
+  capabilities:
+  - vision-language-action
+  - robotics
+  modalities:
+    input:
+    - image
+    - text
+    - state
+    output:
+    - action
+  parameters: 0.77B
+  architecture: transformer
+  runner: CoreAIRunner
+  tokenizer_required: true
+  processor_required: true
+status: published
+notes: 'EVO1 SO-100 VLA policy (Beilinghamburger/evo1_so100_vla @ 58c61206, apache-2.0) —
+  the FIRST LeRobot v0.6.0 policy converted to Core AI. EVO1 = InternVL3-1B VL embedder +
+  a flow-matching DiT action head (the pi0/VLA-JEPA split discipline). This asset ships the
+  deployable CORE — the `action_denoise_step` velocity graph (embed_dim 896, 8 transformer
+  blocks + category-specific MLP + sinusoidal time PE + state encoder); op-coverage PROVEN
+  on coreai_torch 0.4.1 / coremltools 9.0. The host owns the InternVL3 VL embedding (context),
+  the Euler loop (num_steps=10), and un-normalization — a separate context lane, like VLA-JEPA''s
+  qwen_context. fp32; action_dim 7 (SO-100 = 6 joints + gripper), chunk_size 16 (dims verified
+  against the checkpoint tensors, NOT the generic Evo1Config defaults). MPSGraph workaround:
+  the cross-attention is exported with a data-dependent all-False key_padding_mask — loading
+  a mask-free SDPA .aimodel SEGFAULTs the macOS-27/Xcode-27-beta MetalPerformanceShadersGraph
+  FoldMultiplyIntoSDPAScale pass (ablation-proven; a constant mask gets folded back and re-crashes,
+  so the mask must be data-dependent). GATE B = action_parity: fp32 torch action head vs the
+  .aimodel driven through the IDENTICAL Euler loop with fixed synthetic VL context + fixed
+  noise, in normalized action space — a conversion-fidelity metric, not task success. Generalist
+  BASE checkpoint: needs a matching robot + fine-tuning to actuate; the output is inert without
+  the robot. Real conversion via models/evo1/{export,parity}.py (flow_matching.py imported
+  standalone; loads model.action_head.*).'
+published:
+  hf_repo: kevinqz/EVO1-SO100-CoreAI
+  revision: 0d65632860c32f6bbeedc21808ae445ca833a616
+  date: '2026-07-07'
+catalog_pr: https://github.com/kevinqz/coreai-catalog/pull/27
