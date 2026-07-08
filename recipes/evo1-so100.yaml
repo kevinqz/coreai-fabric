@@ -81,6 +81,15 @@ catalog:
   runner: CoreAIRunner
   tokenizer_required: true
   processor_required: true
+lerobot:
+  version: '0.6.0'
+  commit: null
+  policy_type: evo1
+  robot_type: so100
+  dataset_format: LeRobotDataset
+  config_class: null
+  checkpoint_format: safetensors
+  action_representation: joint_position_delta
 status: registered
 notes: 'EVO1 SO-100 VLA policy (Beilinghamburger/evo1_so100_vla @ 58c61206, apache-2.0) —
   the FIRST LeRobot v0.6.0 policy converted to Core AI. EVO1 = InternVL3-1B VL embedder +

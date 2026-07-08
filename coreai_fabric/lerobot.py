@@ -41,15 +41,16 @@ def generate_lerobot_coreai_json(
     # Evaluation block from parity report (spec §14.1).
     gate_b = (parity_report or {}).get("gate_b", {}) if parity_report else {}
     eval_status = gate_b.get("status", "not_run") if gate_b else "not_run"
-    eval_metrics = gate_b.get("metrics", {}) if gate_b else {}
-
+    # Parity report fields are at the top level of gate_b (not nested under 'metrics').
+    # The fabric parity-report format puts n_obs, min_action_cosine, max_relative_action_mae
+    # etc. directly on gate_b — match that structure.
     evaluation: dict[str, Any] = {
         "metric": "action_parity",
         "status": eval_status,
-        "n_obs": eval_metrics.get("n_obs") or parity.get("n_obs"),
-        "min_chunk_cosine": eval_metrics.get("min_action_cosine") or eval_metrics.get("min_chunk_cosine"),
-        "max_action_mae": eval_metrics.get("max_action_mae"),
-        "max_relative_action_mae": eval_metrics.get("max_relative_action_mae"),
+        "n_obs": gate_b.get("n_obs") or parity.get("n_obs"),
+        "min_chunk_cosine": gate_b.get("min_action_cosine") or gate_b.get("min_chunk_cosine"),
+        "max_action_mae": gate_b.get("max_action_mae"),
+        "max_relative_action_mae": gate_b.get("max_relative_action_mae"),
         "proves_numeric_fidelity": eval_status == "passed",
         "proves_task_success": False,
         "proves_robot_safety": False,
