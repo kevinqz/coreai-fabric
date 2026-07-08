@@ -221,6 +221,31 @@ def build_parser() -> argparse.ArgumentParser:
     p_stat = sub.add_parser("status", help="pipeline stage + next step per recipe")
     p_stat.add_argument("id", nargs="?", help="recipe id (default: all recipes)")
 
+    # Tier 3: AOT compile (.aimodel → .aimodelc) — spec §3.4 future command.
+    # Ahead-of-time compilation for iOS deployment of large models (>4B JIT causes jetsam).
+    p_compile = sub.add_parser("compile",
+        help="AOT-compile a .aimodel bundle to .aimodelc (Tier 3 — requires Core AI SDK compile API)")
+    p_compile.add_argument("id", help="recipe id (the bundle to compile)")
+    p_compile.add_argument("--target", choices=["ios", "macos"], default="ios",
+        help="target platform for specialization (default: ios)")
+    p_compile.add_argument("--dry-run", action="store_true",
+        help="print the compile command without executing")
+
+    # lerobot export — spec §17.4 wrapper command.
+    p_lr = sub.add_parser("lerobot",
+        help="LeRobot-specific commands (lerobot-coreai integration)")
+    p_lr_sub = p_lr.add_subparsers(dest="lerobot_command")
+    p_lr_export = p_lr_sub.add_parser("export",
+        help="export a LeRobot policy: new → convert → verify → publish + lerobot-coreai.json")
+    p_lr_export.add_argument("--upstream.repo", dest="upstream_repo", required=True,
+        help="upstream LeRobot policy HF repo (e.g. lerobot/act_so100)")
+    p_lr_export.add_argument("--policy.type", dest="policy_type", required=True,
+        help="policy type (e.g. act, pi0, diffusion)")
+    p_lr_export.add_argument("--robot.type", dest="robot_type", required=True,
+        help="robot type (e.g. so100, so101)")
+    p_lr_export.add_argument("--output.repo_id", dest="output_repo_id", required=True,
+        help="output HF repo id (e.g. kevinqz/ACT-SO100-CoreAI)")
+
     return parser
 
 
@@ -256,7 +281,61 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_list(args)
     if args.command == "status":
         return cmd_status(args)
+    if args.command == "compile":
+        return cmd_compile(args)
+    if args.command == "lerobot":
+        return cmd_lerobot(args)
     raise AssertionError(f"unhandled command {args.command}")
+
+
+def cmd_compile(args) -> int:
+    """Tier 3: AOT-compile a .aimodel bundle to .aimodelc.
+
+    Ahead-of-time compilation is required for iOS deployment of large models (>4B) where
+    on-device JIT specialization overruns the per-process memory budget (jetsam kill).
+    The zoo documents this as the "4B wall" (knowledge/aot-and-specialization.md).
+
+    NOTE: This command requires the Core AI SDK's ahead-of-time compilation API, which
+    is not yet available in the macOS 27.0 beta SDK. The command prints the intended
+    invocation and exits with a clear message until the API ships.
+    """
+    print(f"compile: AOT-compile {args.id} for {args.target}")
+    print()
+    print("  STATUS: Not yet implemented — the Core AI SDK's ahead-of-time")
+    print("  compilation API is not available in the macOS 27.0 beta SDK.")
+    print()
+    print("  When the API ships, this command will:")
+    print(f"    1. Load the .aimodel bundle for recipe '{args.id}'")
+    print(f"    2. Specialize for {args.target} (static shapes, per-device-class)")
+    print(f"    3. Write the .aimodelc bundle alongside the .aimodel")
+    print(f"    4. Update metadata.json to point at the compiled bundle")
+    print()
+    print("  For now, compile manually using the Apple exporter's AOT flag")
+    print("  (see coreai-models knowledge/aot-and-specialization.md).")
+    if args.dry_run:
+        print("\n  (dry-run: no changes made)")
+    return 1  # not yet implemented
+
+
+def cmd_lerobot(args) -> int:
+    """LeRobot-specific commands (lerobot-coreai integration, spec §17.4)."""
+    if args.lerobot_command == "export":
+        print(f"lerobot export: {args.upstream_repo} → {args.output_repo_id}")
+        print()
+        print("  This is a wrapper around the standard fabric pipeline:")
+        print("    1. coreai-fabric new (scaffold recipe with lerobot: block)")
+        print(f"       -- upstream: {args.upstream_repo}")
+        print(f"       -- policy_type: {args.policy_type}")
+        print(f"       -- robot_type: {args.robot_type}")
+        print("    2. coreai-fabric convert")
+        print("    3. coreai-fabric verify")
+        print(f"    4. coreai-fabric publish (writes lerobot-coreai.json + card)")
+        print("    5. coreai-fabric register")
+        print()
+        print("  Run each step manually for now. The wrapper will orchestrate")
+        print("  them automatically in a future version.")
+        return 0
+    raise AssertionError(f"unhandled lerobot command {args.lerobot_command}")
 
 
 if __name__ == "__main__":

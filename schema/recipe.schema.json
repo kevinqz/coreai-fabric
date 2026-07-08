@@ -197,6 +197,46 @@
               }
             }
           }
+        },
+        "engine": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "variant": {
+              "type": "string",
+              "enum": ["coreai-sequential", "coreai-pipelined", "auto"],
+              "description": "Inference engine variant. coreai-sequential drives dynamic-shape bundles (standard); coreai-pipelined uses static S=1 decode for 3.5x speedup (requires static-shape export); auto = factory detects from model structure (default)."
+            }
+          },
+          "description": "Tier 3: engine variant selection for the exported bundle. When variant=coreai-pipelined, the export script must produce static-shape decode graphs (S=1)."
+        },
+        "custom_kernels": {
+          "type": "array",
+          "description": "Tier 3: custom Metal kernels to bundle with the export (3x int8 speedup pattern from the zoo). Each entry declares a kernel source + entry point.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "source": { "type": "string", "description": "Path to the .metal kernel source." },
+              "entry_point": { "type": "string", "description": "Metal function name." },
+              "replacement_for": { "type": "string", "description": "Which stock op this kernel replaces (e.g. 'matmul_int8')." }
+            }
+          }
+        },
+        "host_cache_chunking": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": false },
+            "chunk_size_tokens": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Token chunk size for KV cache chunking. Works around MPSGraph overflow on large models (zoo pattern)."
+            }
+          },
+          "description": "Tier 3: for models that overflow MPSGraph during on-device specialization, chunk the KV cache host-side so it fits. Zoo workaround for >30GB models."
         }
       }
     },
