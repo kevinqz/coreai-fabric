@@ -1,0 +1,122 @@
+id: lingbot-world-v2-14b-causal-fast
+upstream:
+  hf_repo: robbyant/lingbot-world-v2-14b-causal-fast-diffusers
+  revision: 59cccf49f2d2dd27418ae7a04b82b10868d455c2
+  license: cc-by-nc-sa-4.0
+  license_terms: restricted
+  pipeline_tag: image-to-video
+  size_bytes: 86071763362
+conversion:
+  tool: models/lingbotworld/export.py
+  min_tool_version: 0.4.1
+  args:
+    component: vae_decoder
+    weights: build/_lingbotworld/vae.safetensors
+  quantization: none
+  precision: float32
+expected:
+  format_version: '2.0'
+  bundle_files:
+  - metadata.json
+  - main.mlirb
+  - main.hash
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: graph_output_cosine
+    threshold: 0.999
+    tolerance: 0.0005
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: LingBot-World-V2-14B-CoreAI
+  collection: CoreAI · Apple on-device
+catalog:
+  name: LingBot-World V2 14B causal-fast (fabric)
+  family: LingBot-World
+  bundle_kind: video
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: false
+    custom_kernel: false
+    patch_required: false
+    aot_required: false
+  capabilities:
+  - text-to-video
+  modalities:
+    input:
+    - image
+    - text
+    output:
+    - video
+  parameters: 14B
+  architecture: diffusion
+  runner: CoreAIVideoPipeline
+  tokenizer_required: true
+  processor_required: true
+status: draft
+notes: >-
+  LingBot-World V2 14B causal-fast
+  (robbyant/lingbot-world-v2-14b-causal-fast-diffusers @ 59cccf49) — a brand-new
+  (2026-07) IMAGE-TO-VIDEO world model built on Wan2.2. Pipeline
+  LingBotWorldCausalDMDPipeline: DMD (Distribution-Matching-Distillation) few-step
+  denoising with CAUSAL chunked local attention + KV-cache, sufficient to drive
+  720p @ 60fps interactive video streams (causal-fast variant runs 480p / 832x480).
+  This is the FIRST generative-video lane in the fleet — every other model is
+  VLA / VLM / encoder / LLM.
+
+  INDEX-ONLY: upstream weights are CC-BY-NC-SA-4.0 (non-commercial + ShareAlike).
+  Like SenseNova (cc-by-nc) and GR00T's NVIDIA Open Model License, a
+  non-commercial grant is NOT a permissive redistribution basis for fabric's
+  publish lane, so fabric does NOT republish the weights — the deliverable is
+  this REPRODUCIBLE recipe (run it against the -diffusers repo) plus a measured
+  Gate-B fidelity number. ShareAlike further compounds the block. Public (not
+  gated) but restricted; revisit for a hosted artifact only if the upstream
+  relicenses commercially.
+
+  PIPELINE ANATOMY (4 separable blocks, NOT one graph): UMT5 text encoder
+  (UMT5EncoderModel, text_dim 4096) conditions the video; AutoencoderKLWan VAE
+  encoder compresses the init image to a latent; the CausalLingBotWorldTransformer3DModel
+  DiT runs the few-step denoise loop; the AutoencoderKLWan VAE decoder
+  de-compresses the final video latent to pixels. Scheduler UniPCMultistepStep,
+  boundary_ratio 0.9. Only the VAE decoder is the draft's deployable core.
+
+  DEPLOYABLE CORE = the AutoencoderKLWan VAE DECODER — the proven
+  graph_output_cosine lane, now on a video VAE. PURE CONV, NO attention
+  (attn_scales []): base_dim 96, z_dim 16, dim_mult [1,2,4,4], num_res_blocks 2,
+  temporal_downsample [false,true,true] => spatial 8x / temporal 4x upsampling.
+  Input latent [1,16,T,H/8,W/8] -> frames, exported as ONE static-size .aimodel
+  via models/lingbotworld/export.py (single program — the decoder is small enough
+  to sidestep the 0x10004 ceiling entirely; no graph-split). fp32. The host owns
+  the sampler loop, the un-normalization (latents_mean / latents_std, 16 channels,
+  in the config) and the frame assembly. GATE B = graph_output_cosine (seeded
+  latents through the fp32 torch AutoencoderKLWan decoder vs the .aimodel, min
+  cosine over n_obs>=8 on the decoded pixels) — conversion fidelity, not video
+  quality. Weights come from a targeted range-fetch of vae/diffusion_pytorch_model.safetensors
+  only (~254MB); the 14B DiT (8 shards) + 3-shard UMT5 stay out of the build.
+
+  UMT5 TEXT ENCODER = a trivial reuse lane (the same graph_output_cosine encoder
+  path as lingbot-vision-vit-* / SenseNova SigLIP) — mentioned, not exported in
+  this draft.
+
+  DiT 14B = host-owned RESEARCH-GRADE target: CausalLingBotWorldTransformer3DModel,
+  num_layers 40, num_attention_heads 40, attention_head_dim 128 (hidden 5120),
+  ffn_dim 13824, in_channels 36 / out_channels 16, patch_size [1,2,2],
+  qk_norm rms_norm_across_heads, cross_attn_norm, causal chunked local attention
+  (num_frames_per_block 3, sliding_window_num_frames 18, sink_size 9,
+  rope_max_seq_len 1024). Far above the 0x10004 per-program complexity ceiling
+  (~1.5GB, measured on lingbot-vla-v2) — would need an N-program graph-split ~10x
+  larger than the VLA-v2 split, with KV-cache + causal-window state threaded
+  host-side. Revisit alongside the lingbot-vla-v2 / SenseNova-MoT split work.
+
+  STATUS: validated index-only PLAN (mirrors how sensenova / groot / molmoact2
+  entered as drafts). The models/lingbotworld/export.py driver + the targeted
+  safetensors range-fetch of the VAE slice are NOT YET WRITTEN. Conversion base
+  is the -diffusers repo (AutoencoderKLWan.from_pretrained), never the native
+  Wan2.2-format causal-fast repo. Upstream:
+  huggingface.co/collections/robbyant/lingbot-world-v2.
