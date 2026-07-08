@@ -78,7 +78,7 @@ catalog:
   runner: CoreAIRunner
   tokenizer_required: true
   processor_required: true
-status: verified
+status: published
 notes: 'FastWAM (Fast World-Action Model, arXiv:2603.16666) — a LeRobot v0.6.0 world-action
   policy on the Wan2.2 stack (lerobot/fastwam_libero_uncond_2cam224 @ 53983e12, apache-2.0).
   Unlike LingBot-VA, FastWAM does DIRECT action prediction at inference (no test-time video
@@ -95,3 +95,8 @@ notes: 'FastWAM (Fast World-Action Model, arXiv:2603.16666) — a LeRobot v0.6.0
   vs the int8 .aimodel over seeded inputs incl. synthetic video K/V; min cosine 0.99999999999).
   Real conversion via models/fastwam/export.py + the int8 driver; standalone import of the
   Wan MoT modules (lerobot stubbed, tiny video-expert stub for MoT.__init__).'
+published:
+  hf_repo: kevinqz/FastWAM-LIBERO-CoreAI
+  revision: fb85bf5432295758b8ff2f1e6a7f29b6f29fdc2e
+  date: '2026-07-08'
+catalog_pr: https://github.com/kevinqz/coreai-catalog/pull/31

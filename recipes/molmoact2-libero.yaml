@@ -1,0 +1,107 @@
+id: molmoact2-libero
+upstream:
+  hf_repo: lerobot/MolmoAct2-LIBERO-LeRobot
+  revision: 4820debf9b04a9c9e49bf041f956329cddb5f15a
+  license: unspecified
+  license_terms: restricted
+  pipeline_tag: robotics
+  size_bytes: 11000000000
+conversion:
+  tool: models/molmoact2/export.py
+  min_tool_version: 0.4.1
+  args:
+    weights: build/_molmoact2/action_expert.safetensors
+  quantization: float16
+  precision: float32
+  action:
+    embodiment: libero_2cam_arm
+    robot_required: true
+    action_space:
+      dim: 32
+      max_action_dim: 32
+      chunk_size: 10
+      convention: per_embodiment_joint_space
+    sampling:
+      kind: flow_matching
+      num_steps: 8
+      solver: euler
+    normalization:
+      stats_source: norm_stats.json (upstream, norm_tag="libero") + policy_pre/postprocessor;
+        the split graph operates in the policy's normalized action space — the host un-normalizes.
+        parity is measured in normalized space.
+    graphs:
+    - name: action_denoise_step
+expected:
+  format_version: '2.0'
+  bundle_files:
+  - metadata.json
+  - main.mlirb
+  - main.hash
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: graph_output_cosine
+    threshold: 0.999
+    tolerance: 0.0005
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: MolmoAct2-LIBERO-CoreAI
+  collection: CoreAI · Apple on-device
+catalog:
+  name: MolmoAct2 LIBERO (fabric)
+  family: MolmoAct2
+  bundle_kind: action
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: false
+    custom_kernel: false
+    patch_required: false
+    aot_required: false
+  capabilities:
+  - vision-language-action
+  - robotics
+  modalities:
+    input:
+    - image
+    - text
+    - state
+    output:
+    - action
+  parameters: 5.44B
+  architecture: transformer
+  runner: CoreAIRunner
+  tokenizer_required: true
+  processor_required: true
+status: verified
+notes: 'MolmoAct2-LIBERO (AI2, arXiv:2605.02881) — a LeRobot v0.6.0 embodied VLA: Molmo2-ER
+  VLM backbone + a flow-matching continuous action expert connected by PER-LAYER KV conditioning
+  (one action block cross-attends to each of the 36 VLM layers'' key/value). INDEX-ONLY: the
+  upstream license is unpopulated across every MolmoAct2 repo (lerobot mirror, allenai/MolmoAct2-LIBERO,
+  base allenai/MolmoAct2 — no `license:` field, no LICENSE file, no README badge as of 2026-07-08;
+  only the older v1 allenai/MolmoAct-7B is apache-2.0). An unpopulated license is not an affirmative
+  redistribution grant, so fabric does NOT republish the weights — the deliverable is this
+  REPRODUCIBLE recipe (run it against lerobot/MolmoAct2-LIBERO-LeRobot) plus a measured Gate-B
+  fidelity number. Revisit for publish once AI2 populates the license. Unlike the whole-VLM
+  lanes (EO-1/FastWAM), MolmoAct2''s action expert is SEPARABLE — a proper sub-module (36
+  blocks, hidden 768, 8 heads, ~578M params) — so the deployable graph is JUST the action
+  expert doing one flow-matching denoise step: `action_denoise_step` takes noisy_actions [B,10,32]
+  + timestep + the VLM''s per-layer K/V (ctx_k/ctx_v, one per layer, llm_kv_dim=1024) and
+  returns the velocity. The action expert projects each layer''s VLM K/V (context_k/v_proj,
+  1024->768) internally and cross-attends per block; the host owns the Molmo2-ER VLM prefill
+  (collect_layer_kv_states=True), the Euler loop (num_flow_timesteps=8) and un-normalization
+  — the FastWAM split, but conditioned on a VLM instead of a video expert. FP16 (~1.16GB)
+  — small enough to load on the ANE with no int8. RoPE is real cos/sin already (no complex-dtype
+  rewrite). SDPA runs mask-free (causal_attn=False); a data-dependent all-true bool keep-mask
+  is injected so the MPSGraph FoldMultiplyIntoSDPAScale mask-free segfault (macOS 27) never
+  triggers. GATE B = graph_output_cosine (fp32 torch action-expert velocity vs the fp16 .aimodel
+  over seeded inputs incl. synthetic per-layer VL K/V; parity is self-consistent because ActionExpert.forward(modulation=None)
+  is mathematically identical to the upstream per-step forward_with_context). chunk_size 10,
+  action_dim 32. Real conversion via models/molmoact2/export.py + the vendored standalone
+  action_expert.py (extracted verbatim from the LeRobot HF modeling, Apache-2.0 code header;
+  loads action_expert.* via a targeted 2.31GB safetensors range-fetch — no 11GB full download).'

@@ -77,7 +77,7 @@ catalog:
   runner: CoreAIRunner
   tokenizer_required: true
   processor_required: true
-status: verified
+status: published
 notes: 'EO-1 — a LeRobot v0.6.0 embodied VLA (IPEC-COMMUNITY/EO-1-3B @ fe0a015d, MIT). Qwen2.5-VL-3B
   backbone + a flow-matching action head; the action denoise runs INSIDE the VLM at `<|action|>`-token
   positions (coupled, num_action_layers 2), so there is no small separable head — the deployable
@@ -91,3 +91,8 @@ notes: 'EO-1 — a LeRobot v0.6.0 embodied VLA (IPEC-COMMUNITY/EO-1-3B @ fe0a015
   vs the int8 .aimodel over seeded inputs incl. synthetic VL prefix embeds; min cosine 0.99999999893).
   action_dim 32, chunk 16. Real conversion via models/eo1/export.py (loads EO1VisionFlowMatchingModel
   via trust_remote_code).'
+published:
+  hf_repo: kevinqz/EO-1-3B-CoreAI
+  revision: 7e4d3f986a52aa034c75e0389df8ad4456a79faf
+  date: '2026-07-08'
+catalog_pr: https://github.com/kevinqz/coreai-catalog/pull/32

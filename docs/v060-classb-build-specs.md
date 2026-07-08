@@ -101,20 +101,60 @@ action denoise runs INSIDE the Qwen2.5-VL backbone via `action_token_id` 151666 
   for the `eo1` model_type / custom modeling). Build via the HF class, int8, export
   the action-token denoise pass with a fixed action-token layout.
 
-## MolmoAct2 — `lerobot/MolmoAct2-LIBERO-LeRobot` (5.44B)
+## MolmoAct2 — `lerobot/MolmoAct2-LIBERO-LeRobot` (5.44B) — DONE (index-only)
 
-**Whole-model / coupled** — Molmo2-ER VLM + a flow-matching action expert connected
-by **per-layer KV conditioning** (tightly coupled, not a peel-off head). custom_code
-(`auto_map`), `MolmoAct2ForConditionalGeneration`, `num_flow_timesteps` 8,
-`chunk_size`/`n_action_steps` 10, `expected_max_action_dim` 32.
+**CORRECTION to the original assumption.** I expected a coupled whole-VLM (like
+EO-1). It is NOT — MolmoAct2's action expert is **SEPARABLE**, and the deployable
+graph is JUST the small action expert (the **FastWAM pattern**, conditioned on a VLM
+instead of a video expert). This was the single most important finding: it turned a
+projected ~2.7GB whole-VLM int8 build into a ~1.16GB fp16 action-only build.
 
-- **License:** the `lerobot/` mirror's field is empty; `allenai/MolmoAct2-LIBERO-LeRobot`
-  (same weights) is explicitly **apache-2.0** → publish the LIBERO variant; the other
-  four (DROID/SO100_101/Think/BimanualYAM) are index-only until AI2 populates the
-  license, or adopt the LIBERO apache precedent.
-- **Deployable graph:** the full VLM + action-expert flow-matching pass → int8
-  (~2.7GB). One conversion path serves the 4 non-Think variants (identical arch,
-  5,442,196,272 params); Think adds the depth-reasoning branch.
+- **Arch:** Molmo2-ER VLM backbone + a flow-matching continuous action expert joined
+  by **per-layer KV conditioning** — but the expert is a proper `nn.Module`
+  (`ActionExpert`, 36 blocks, hidden 768, 8 heads, ~578M params), one block per VLM
+  layer, each cross-attending to that layer's VLM K/V. `num_flow_timesteps` 8,
+  `chunk_size`/`n_action_steps` 10, `max_action_dim` 32, VLM `llm_kv_dim` = 8·128 =
+  1024, VLM 36 layers.
+- **Self-contained modeling.** The LeRobot policy package bundles the full HF modeling
+  (`lerobot/policies/molmoact2/molmoact2_hf_model/`, Apache-2.0 code header) — no
+  allenai `trust_remote_code` download. The action-expert classes are pure torch
+  (no transformers dep beyond the VLM parts), so we **vendor just those classes** into
+  `models/molmoact2/action_expert.py` and never instantiate the 5.44B VLM.
+- **Deployable graph** = `ActionExpert.forward(noisy_actions[B,10,32], timestep[B],
+  ctx_k, ctx_v)` → velocity, where `ctx_k/ctx_v` are the VLM's per-layer K/V stacked
+  `[36, B, ctx_seq, 1024]` (the FastWAM vk/vv trick). The expert projects each layer's
+  K/V (`context_k/v_proj` 1024→768) and cross-attends internally. Host owns the VLM
+  prefill (`collect_layer_kv_states=True`), the Euler loop (`trajectory += dt·velocity`,
+  8 steps), un-normalization (`norm_stats.json`, `norm_tag="libero"`).
+- **Parity is honest.** Verified by reading the upstream loop: `ActionExpert.forward`
+  (modulation=None) is *mathematically identical* to the inference loop's per-step
+  `forward_with_context` — the block/final layers compute
+  `self.modulation(conditioning).chunk(...)` internally when modulation is None, which
+  is exactly what `prepare_modulation_cache` precomputes. No random-weight trap.
+- **fp16, no int8.** ~578M params → fp16 ~1.16GB loads on the ANE directly. RoPE is
+  already real cos/sin (no complex rewrite). SDPA runs mask-free (causal_attn=False) →
+  inject a **data-dependent all-true bool keep-mask** (`k.abs().sum() >= -1`, expanded)
+  so the mask-free `FoldMultiplyIntoSDPAScale` segfault can't trigger. (Bool keep-mask,
+  like FastWAM's — NOT an additive float mask, which folds.)
+- **Targeted weight fetch.** Don't download the 11GB checkpoint — the 588
+  `action_expert.*` tensors are **contiguous** in the single `model.safetensors`
+  (2.31GB span). Read the header offsets, range-fetch the one contiguous span (8
+  parallel chunks to beat CDN throttling), reconstruct a clean `action_expert.safetensors`.
+- **⚠️ LICENSE → INDEX-ONLY.** The upstream license is **unpopulated everywhere** (the
+  lerobot mirror, `allenai/MolmoAct2-LIBERO`, and base `allenai/MolmoAct2` all have no
+  `license:` field, no LICENSE file, no README badge as of 2026-07-08 — only the older
+  v1 `allenai/MolmoAct-7B` is apache-2.0). My earlier "LIBERO is explicitly apache"
+  claim did NOT hold up. An unpopulated license is not an affirmative redistribution
+  grant, so `coreai-fabric validate` flags it restricted and publish refuses the
+  weights path. **Deliverable = the reproducible recipe + measured Gate-B parity**
+  (like GR00T). Revisit for publish once AI2 populates the license.
+- One conversion path serves the 4 non-Think variants (identical arch); Think adds the
+  depth-reasoning branch.
+- **RESULT (2026-07-08):** fp16 asset **1.16GB**, Gate A + Gate B PASSED,
+  `graph_output_cosine` min **0.99999681** / median **0.99999941** over 8 obs
+  (threshold 0.999). Recipe `molmoact2-libero` status → verified. Publish correctly
+  refused (restricted license); terminal state = the verified reproducible recipe in
+  fabric (index-only, no catalog artifact — the GR00T precedent).
 
 ---
 
