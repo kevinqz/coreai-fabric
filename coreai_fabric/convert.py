@@ -147,6 +147,25 @@ def build_command(recipe: Recipe, tool: str, output: Path) -> list[str]:
             cmd += [f"--{key}", str(value)]
         return cmd
 
+    # VLM export path: Apple's coreai.vlm.export with a registry short-name
+    # (e.g. qwen3-vl -> Qwen3-VL-2B-Instruct). Produces a .vlm bundle with
+    # 3 components (vision.aimodel, embed.aimodel, model.aimodel) + vision
+    # config in metadata.json. Uses the same --output-dir/--output-name layout
+    # as coreai.llm.export, plus --max-context-length (default 4096).
+    if tool == "coreai.vlm.export":
+        cmd = [
+            tool,
+            registry_name or upstream["hf_repo"],
+            "--output-dir", str(out_dir),
+            "--output-name", recipe.id,
+            "--overwrite",
+        ]
+        if conv.get("max_context_length"):
+            cmd += ["--max-context-length", str(conv["max_context_length"])]
+        for key, value in sorted((conv.get("args") or {}).items()):
+            cmd += [f"--{key}", str(value)]
+        return cmd
+
     cmd = [
         tool,
         upstream["hf_repo"],

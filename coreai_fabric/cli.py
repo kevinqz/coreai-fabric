@@ -15,10 +15,12 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+from pathlib import Path
 
 from . import __version__
-from .recipes import find_recipe, load_all_recipes, recipe_schema, validate_recipe
+from .recipes import Recipe, find_recipe, load_all_recipes, recipe_schema, validate_recipe
 from .util import BOLD, DIM, GREEN, RED, RESET, YELLOW, err, find_root
 
 NEXT_STEP = {
@@ -289,32 +291,104 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def cmd_compile(args) -> int:
-    """Tier 3: AOT-compile a .aimodel bundle to .aimodelc.
+    """AOT-compile a .aimodel bundle to .aimodelc via Apple's coreai-build tool.
 
-    Ahead-of-time compilation is required for iOS deployment of large models (>4B) where
-    on-device JIT specialization overruns the per-process memory budget (jetsam kill).
-    The zoo documents this as the "4B wall" (knowledge/aot-and-specialization.md).
+    Ahead-of-time (AOT) compilation moves the expensive model-specialization work from
+    on-device (JIT) to build time. This is REQUIRED for iOS deployment of large models
+    (>4B parameters) where on-device JIT specialization overruns the per-process memory
+    budget and gets the app jetsam-killed (the "4B wall" — documented in the zoo's
+    knowledge/aot-and-specialization.md).
 
-    NOTE: This command requires the Core AI SDK's ahead-of-time compilation API, which
-    is not yet available in the macOS 27.0 beta SDK. The command prints the intended
-    invocation and exits with a clear message until the API ships.
+    Uses Apple's official `xcrun coreai-build compile` command (requires Metal Toolchain).
+    The compiled .aimodelc is written alongside the source .aimodel.
     """
-    print(f"compile: AOT-compile {args.id} for {args.target}")
+    import shutil
+    import subprocess
+
+    recipe = find_recipe(args.id)
+    if not recipe:
+        err(f"recipe '{args.id}' not found")
+        return 1
+
+    # Find the bundle
+    from .convert import bundle_path
+    bundle = bundle_path(find_root(), recipe)
+    if not bundle.is_dir():
+        err(f"bundle not found for {args.id} at {bundle} — run 'coreai-fabric convert {args.id}' first")
+        return 1
+
+    # Resolve xcrun (prefer Xcode-beta for macOS 27 SDK)
+    dev_dir = os.environ.get("DEVELOPER_DIR", "")
+    xcrun = shutil.which("xcrun")
+    if not xcrun:
+        err("xcrun not found — install Xcode or Xcode-beta")
+        return 1
+
+    # Check if coreai-build is available
+    env = os.environ.copy()
+    if dev_dir:
+        env["DEVELOPER_DIR"] = dev_dir
+    check = subprocess.run(
+        [xcrun, "--find", "coreai-build"],
+        capture_output=True, text=True, env=env
+    )
+    if check.returncode != 0:
+        print(f"compile: coreai-build not available")
+        print()
+        print("  The 'coreai-build' tool requires the Metal Toolchain component.")
+        print("  Install it with:")
+        print("    xcodebuild -downloadComponent MetalToolchain")
+        print()
+        print("  Then run this command again. If you're using Xcode-beta:")
+        print("    DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer \\")
+        print("      coreai-fabric compile " + args.id)
+        print()
+        print("  In the meantime, the manual command would be:")
+        cmd = _build_coreai_compile_cmd(xcrun, bundle, args.target)
+        print(f"    {cmd}")
+        return 1
+
+    # Build and run the compile command
+    cmd = _build_coreai_compile_cmd(xcrun, bundle, args.target, output_dir=bundle.parent / "compiled")
+    print(f"compile: AOT-compiling {args.id} for {args.target}")
+    print(f"  bundle: {bundle}")
+    print(f"  cmd:    {cmd}")
     print()
-    print("  STATUS: Not yet implemented — the Core AI SDK's ahead-of-time")
-    print("  compilation API is not available in the macOS 27.0 beta SDK.")
-    print()
-    print("  When the API ships, this command will:")
-    print(f"    1. Load the .aimodel bundle for recipe '{args.id}'")
-    print(f"    2. Specialize for {args.target} (static shapes, per-device-class)")
-    print(f"    3. Write the .aimodelc bundle alongside the .aimodel")
-    print(f"    4. Update metadata.json to point at the compiled bundle")
-    print()
-    print("  For now, compile manually using the Apple exporter's AOT flag")
-    print("  (see coreai-models knowledge/aot-and-specialization.md).")
+
     if args.dry_run:
-        print("\n  (dry-run: no changes made)")
-    return 1  # not yet implemented
+        print("(dry-run: no changes made)")
+        return 0
+
+    result = subprocess.run(cmd, shell=True, env=env)
+    if result.returncode != 0:
+        err(f"coreai-build failed with exit code {result.returncode}")
+        return result.returncode
+
+    print()
+    print(f"✓ AOT compilation complete")
+    compiled_dir = bundle.parent / "compiled"
+    if compiled_dir.is_dir():
+        aimodelc_files = list(compiled_dir.glob("*.aimodelc"))
+        print(f"  Compiled bundles: {len(aimodelc_files)}")
+        for f in aimodelc_files:
+            print(f"    {f.name}")
+        print()
+        print("  Next steps:")
+        print("    1. Ship the .aimodelc bundle in your app (iOS deployment)")
+        print("    2. Update metadata.json to point at the compiled bundle")
+        print(f"    3. Re-run 'coreai-fabric verify {args.id}' to confirm parity")
+    return 0
+
+
+def _build_coreai_compile_cmd(xcrun: str, bundle: Path, target: str,
+                               output_dir: Path | None = None) -> str:
+    """Build the xcrun coreai-build compile command string."""
+    parts = [xcrun, "coreai-build", "compile", str(bundle)]
+    parts += ["--platform", target.capitalize()]
+    parts += ["--min-deployment-version", "27.0"]
+    if output_dir:
+        parts += ["--output", str(output_dir)]
+    return " ".join(parts)
 
 
 def cmd_lerobot(args) -> int:
