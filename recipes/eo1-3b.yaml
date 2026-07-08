@@ -1,0 +1,93 @@
+id: eo1-3b
+upstream:
+  hf_repo: IPEC-COMMUNITY/EO-1-3B
+  revision: fe0a015d9349bdf886d898809213b3574eedf1f9
+  license: mit
+  license_terms: permissive
+  pipeline_tag: robotics
+  size_bytes: 7577182336
+conversion:
+  tool: models/eo1/export.py
+  min_tool_version: 0.4.1
+  args:
+    weights: build/_eo1
+  quantization: int8
+  precision: float32
+  action:
+    embodiment: multi_embodiment
+    robot_required: true
+    action_space:
+      dim: 32
+      max_action_dim: 32
+      chunk_size: 16
+      convention: per_embodiment_joint_space
+    sampling:
+      kind: flow_matching
+      num_steps: 10
+      solver: euler
+    normalization:
+      stats_source: upstream processor; the split graph operates in the policy's normalized
+        action space — the host un-normalizes. parity is measured in normalized space.
+    graphs:
+    - name: action_denoise_step
+expected:
+  format_version: '2.0'
+  bundle_files:
+  - metadata.json
+  - main.mlirb
+  - main.hash
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: graph_output_cosine
+    threshold: 0.999
+    tolerance: 0.0005
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: EO-1-3B-CoreAI
+  collection: CoreAI · Apple on-device
+catalog:
+  name: EO-1 3B (fabric)
+  family: EO-1
+  bundle_kind: action
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: false
+    custom_kernel: false
+    patch_required: false
+    aot_required: false
+  capabilities:
+  - vision-language-action
+  - robotics
+  modalities:
+    input:
+    - image
+    - text
+    - state
+    output:
+    - action
+  parameters: 3.77B
+  architecture: transformer
+  runner: CoreAIRunner
+  tokenizer_required: true
+  processor_required: true
+status: verified
+notes: 'EO-1 — a LeRobot v0.6.0 embodied VLA (IPEC-COMMUNITY/EO-1-3B @ fe0a015d, MIT). Qwen2.5-VL-3B
+  backbone + a flow-matching action head; the action denoise runs INSIDE the VLM at `<|action|>`-token
+  positions (coupled, num_action_layers 2), so there is no small separable head — the deployable
+  graph is the WHOLE Qwen2.5-VL LM forward. This asset ships the `action_denoise_step`: given
+  the host-embedded prefix (`inputs_embeds`, VL+text+state — bypassing the vision tower) plus
+  noisy action tokens + time, it runs embed_suffix → the 36-layer Qwen2.5 LM (use_cache=False)
+  → action_out_proj → velocity. The host owns embed_prefix (vision/text/state embedding),
+  the Euler loop (num_steps=10), and un-normalization. INT8 weight-only (torchao): the whole
+  ~3.77B VLM would be ~7.5GB fp16; int8 makes it ~2.8GB which loads on the ANE. Qwen2.5-VL
+  RoPE is real-valued (no complex-dtype issue). GATE B = graph_output_cosine (velocity torch-ref
+  vs the int8 .aimodel over seeded inputs incl. synthetic VL prefix embeds; min cosine 0.99999999893).
+  action_dim 32, chunk 16. Real conversion via models/eo1/export.py (loads EO1VisionFlowMatchingModel
+  via trust_remote_code).'
