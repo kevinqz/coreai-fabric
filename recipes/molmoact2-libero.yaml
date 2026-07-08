@@ -78,7 +78,7 @@ catalog:
   runner: CoreAIRunner
   tokenizer_required: true
   processor_required: true
-status: verified
+status: draft
 notes: 'MolmoAct2-LIBERO (AI2, arXiv:2605.02881) — a LeRobot v0.6.0 embodied VLA: Molmo2-ER
   VLM backbone + a flow-matching continuous action expert connected by PER-LAYER KV conditioning
   (one action block cross-attends to each of the 36 VLM layers'' key/value). INDEX-ONLY: the

@@ -616,6 +616,49 @@
       "pattern": "^https://github\\.com/.+/pull/[0-9]+$",
       "description": "URL of the open catalog PR written back by `register` after `gh pr create`. Status stays `published` until a human MERGES this PR; `register --mark-merged` then flips status to `registered`. Absent until a PR is opened."
     },
+    "lerobot": {
+      "description": "LeRobot-specific metadata for lerobot-coreai integration. When present, publish writes lerobot-coreai.json into the HF artifact alongside parity-report.json. Absent for non-LeRobot models.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "type": "string",
+          "description": "LeRobot version the source policy was trained with (e.g. '0.6.0')."
+        },
+        "commit": {
+          "type": ["string", "null"],
+          "description": "Optional LeRobot git commit SHA."
+        },
+        "policy_type": {
+          "type": "string",
+          "description": "Policy architecture (e.g. 'act', 'diffusion', 'pi0', 'pi05', 'smolvla', 'vqbet', 'evo1')."
+        },
+        "robot_type": {
+          "type": "string",
+          "description": "Robot type (e.g. 'so100', 'so101', 'aloha', 'libero')."
+        },
+        "dataset_format": {
+          "type": "string",
+          "description": "Dataset format (default 'LeRobotDataset')."
+        },
+        "public_import_path": {
+          "type": ["string", "null"],
+          "description": "Canonical LeRobot public import path for the policy (if any)."
+        },
+        "config_class": {
+          "type": ["string", "null"],
+          "description": "LeRobot config class name (if any)."
+        },
+        "checkpoint_format": {
+          "type": "string",
+          "description": "Checkpoint format (default 'safetensors')."
+        },
+        "action_representation": {
+          "type": "string",
+          "description": "Action representation (e.g. 'joint_position_delta')."
+        }
+      }
+    },
     "notes": {
       "type": [
         "string",

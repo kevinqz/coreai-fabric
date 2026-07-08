@@ -292,6 +292,12 @@ def render_model_card(root: Path, recipe, manifest: dict, report: dict,
     # conversion of that kind, so the card is validated against a real asset.
     bundle_kind = catalog_block.get("bundle_kind")
     if bundle_kind == "action":
+        # If the recipe has a lerobot: block, use the LeRobot-specific card template
+        # (adds LeRobot CoreAI compatibility block, inspect/dry-run instructions, safety note).
+        if recipe.data.get("lerobot"):
+            return _render_lerobot_action_card(root, recipe, manifest, report,
+                                               copyright_holder=copyright_holder,
+                                               collection_url=collection_url)
         # A robot policy gets the honest action card (needs-a-robot banner,
         # action_parity, NO chat language) — never the LLM template.
         return _render_action_card(root, recipe, manifest, report,
@@ -658,6 +664,78 @@ def _render_action_card(root: Path, recipe, manifest: dict, report: dict,
         precision=conv["precision"],
         quantization=conv["quantization"],
         date=today(),
+    )
+
+
+def _render_lerobot_action_card(root: Path, recipe, manifest: dict, report: dict,
+                                 *, copyright_holder: str | None = None,
+                                 collection_url: str | None = None) -> str:
+    """Card for a LeRobot-derived robot policy (bundle_kind: action + lerobot: block).
+
+    Extends the action card with LeRobot-specific blocks: LeRobot CoreAI compatibility
+    header, inspect/dry-run instructions, and the safety note. Uses the
+    model-card-lerobot-action.md template."""
+    # Get the full action card (reuse all the parity/attribution logic), then replace
+    # the template-specific sections. We read the LeRobot template and fill the new fields.
+    from . import FABRIC_REPO_URL
+    lr = recipe.data.get("lerobot", {})
+    publish_cfg = recipe.data.get("publish") or {}
+    repo_id = f"{publish_cfg.get('hf_target_namespace')}/{publish_cfg.get('repo_name')}"
+    template = (root / "templates" / "model-card-lerobot-action.md").read_text()
+
+    upstream = recipe.data["upstream"]
+    conv = recipe.data["conversion"]
+    action = conv.get("action") or {}
+    sampling = ((action.get("sampling") or {}).get("kind") or "flow_matching")
+    catalog_block = recipe.data.get("catalog") or {}
+
+    is_quantized = str(conv.get("quantization", "none")).strip().lower() not in ("", "none")
+    base_model_relation_line = "base_model_relation: quantized\n" if is_quantized else ""
+    tags = ["coreai", "core-ai", "coreai-fabric", "aimodel", "coreml", "apple",
+            "apple-silicon", "on-device", "robotics", "vla", "vision-language-action"]
+    tags_block = "".join(f"- {t}\n" for t in tags)
+    gated_frontmatter = ""
+    language_block = ""
+
+    # Parity block (reuse the action card's parity logic via the full action card render).
+    action_card = _render_action_card(root, recipe, manifest, report,
+                                      copyright_holder=copyright_holder,
+                                      collection_url=collection_url)
+    # Extract the parity section from the action card (between "## Parity" and the next "##").
+    import re
+    parity_match = re.search(r'(?:## Parity.*?|Verification.*?)(?=^## |\Z)', action_card, re.DOTALL | re.MULTILINE)
+    parity_block = parity_match.group(0).strip() if parity_match else f"Gate B status: {report.get('gate_b', {}).get('status', 'not_run')}"
+
+    # Provenance (simplified).
+    holder = copyright_holder or upstream.get("copyright_holder")
+    provenance_block = (
+        f"Weights © {holder}, " if holder else "Weights "
+    ) + f"licensed **{upstream['license']}** — see the bundled `LICENSE`."
+
+    mirror_ns = publish_cfg.get("mirror_namespace")
+    mirror_line = (
+        f"> **Canonical:** [`{repo_id}`](https://huggingface.co/{repo_id}) — source of truth. "
+        + (f"**Mirror:** [`{mirror_ns}/{publish_cfg.get('repo_name')}`]"
+           f"(https://huggingface.co/{mirror_ns}/{publish_cfg.get('repo_name')})."
+           if mirror_ns else ""))
+
+    return template.format(
+        license=upstream["license"],
+        upstream_hf_repo=upstream["hf_repo"],
+        base_model_relation_line=base_model_relation_line,
+        gated_frontmatter=gated_frontmatter,
+        language_block=language_block,
+        tags_block=tags_block,
+        mirror_line=mirror_line,
+        name=catalog_block.get("name", recipe.id),
+        lerobot_version=lr.get("version", "0.6.0"),
+        policy_type=lr.get("policy_type", recipe.id).upper(),
+        robot_type=lr.get("robot_type", "unknown"),
+        embodiment=action.get("embodiment", lr.get("robot_type", "unknown")),
+        sampling=sampling,
+        repo_id=repo_id,
+        parity_block=parity_block,
+        provenance_block=provenance_block,
     )
 
 
@@ -1124,6 +1202,12 @@ def cmd_publish(args) -> int:
     report_dir = (staging / variant) if variant else staging
     report_dir.mkdir(parents=True, exist_ok=True)
     (report_dir / "parity-report.json").write_text(json.dumps(report, indent=2) + "\n")
+    # When the recipe has a lerobot: block, write lerobot-coreai.json (spec §17.3).
+    if recipe.data.get("lerobot"):
+        from .lerobot import generate_lerobot_coreai_json, write_lerobot_coreai_json
+        lr_manifest = generate_lerobot_coreai_json(
+            recipe.data, parity_report=report, repo_id=repo_id)
+        write_lerobot_coreai_json(lr_manifest, report_dir)
     if manifest:
         (report_dir / "reproduce-manifest.json").write_text(
             json.dumps(sanitize_manifest(manifest, root), indent=2) + "\n")

@@ -83,7 +83,7 @@ catalog:
   runner: CoreAIRunner
   tokenizer_required: true
   processor_required: true
-status: verified
+status: registered
 notes: 'LOADS ON ANE + GATE B PASSES via GRAPH-SPLIT (2026-07-08): min graph_output_cosine
   0.99948 / median 0.99978 over 8 obs. The monolithic 36-layer dense-MoE graph exceeds the
   ANE single-program limit (0x10004 at both 3.58GB fp16 and 2.23GB int8 — a graph-complexity
@@ -121,3 +121,8 @@ notes: 'LOADS ON ANE + GATE B PASSES via GRAPH-SPLIT (2026-07-08): min graph_out
   the Apache-2.0 lingbotvla framework, MoE rewritten dense; loads the qwen_expert.* via a
   targeted 7.3GB safetensors range-fetch of the 6 shards — the 17.75GB Qwen3-VL backbone stays
   host-side).'
+published:
+  hf_repo: kevinqz/LingBot-VLA-2.0-CoreAI
+  revision: d948c78280f523bd18d5ca86b5d9bb70d5344e96
+  date: '2026-07-08'
+catalog_pr: https://github.com/kevinqz/coreai-catalog/pull/34
