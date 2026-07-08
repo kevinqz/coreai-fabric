@@ -73,9 +73,18 @@ ViTs. **Coupled / whole-model, same pattern as EO-1**: weight map is all `model.
 action tokens, no separable head. Backbone Qwen3-VL-4B-Instruct + depth (moge) +
 dino_video experts. License field on HF is empty but the repo README carries an
 explicit Apache-2.0 badge + `LICENSE` (like MolmoAct2-LIBERO) → publishable.
-**Build:** whole-VLM int8 (~3.4GB from 13GB fp16), export the action-token denoise
-pass — the EO-1 lane applies directly. **Priority: right after FastWAM, before the
-rest of v0.6.0** (user directive 2026-07-07).
+**Build:** whole-VLM int8 (~3.4GB from 13GB fp16). **⚠️ HARDER than EO-1 — it's a
+MoE VLA.** The action expert (`lingbotvla/models/vla/lingbot_vla/qwen2_action_expert.py`)
+is a **Qwen2-MoE** (`Qwen2FusedExperts`, group_gemm, dynamic top-k routing +
+`_update_moe_runtime_stats`), plus `flex_attention.py`, a Qwen3-VL-in-VLA patch, and
+MoGe (depth) + dino_video vision experts — all in robbyant's own `lingbotvla`
+framework (not LeRobot/transformers). **MoE dynamic routing is the export blocker**
+(data-dependent expert gather is coremltools-hostile): it must be made static
+(fixed routing / dense-fuse the experts) before export. flex_attention → SDPA (the
+config may allow a torch/SDPA mode like Wan did — check first). This is a
+research-grade conversion, NOT a mechanical int8 lane. Recommend: attempt AFTER the
+clean LeRobot coupled-VLMs (EO-1, MolmoAct2), or descope to a fixed-routing export.
+Priority was user-set (2026-07-07) but the MoE complexity reorders it realistically.
 
 ## EO-1 — `IPEC-COMMUNITY/EO-1-3B` (MIT, 3.77B)
 
