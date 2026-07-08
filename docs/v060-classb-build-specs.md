@@ -63,6 +63,60 @@ The **video expert is NOT in the asset** — its per-layer K/V arrive as a
   variant (apache), not the base; the 90%-built lane (`scratchpad/fastwam_int8.py`)
   needs only the weights swap. Other variant: `fastwam_robotwin_uncond_3cam_384`.
 
+## LingBot-VLA 2.0 — `robbyant/lingbot-vla-v2-6b` (Apache-2.0, 6.38B) — FEASIBILITY PROVEN, build in progress
+
+**The MoE export blocker is SOLVED (in principle) — the dense path already exists in
+the upstream code.** `Qwen2TokenMoeBlock.forward` has an eager `else` branch
+(`_moe_implementation != 'fused'`) that runs ALL experts and combines with a one-hot
+routing mask — pure torch (`stack`/`one_hot`/`einsum`/`topk`/`softmax`), no group_gemm,
+no data-dependent gather. The checkpoint stores the experts as fused 3D params
+(`experts.gate_proj [E, inter, hidden]`), so the deployable graph rewrites that eager
+combine as a dense einsum over the 3D weights — mathematically exact, export-friendly.
+
+**Architecture (inferred from checkpoint shapes — the HF `config.json` is a bare
+`{"vlm_family":"qwen3_vl"}` wrapper; real config comes from the framework yaml +
+weight shapes):** a pi0/EO-1-style **coupled shared-attention VLA**. Qwen3-VL-4B
+backbone + a parallel `qwen_expert` transformer; per layer, BOTH stacks compute q/k/v,
+they're concatenated, joint attention runs, then each stack applies its own o_proj +
+MLP. The action denoise runs in the expert stack conditioned on the VLM's cached
+prefix K/V — the EO-1/MolmoAct2 split (KV as graph inputs), plus MoE MLPs.
+
+- **qwen_expert:** 36 layers, ALL MoE. hidden 768; attention 32 q-heads / 8 kv-heads
+  (GQA) × head_dim 128 (q_proj 768→4096, k/v 768→1024); MoE 32 experts, top-4,
+  intermediate 512, **sigmoid** router + `routed_scaling_factor` 4.0 +
+  `e_score_correction_bias` (loss-free load-balance bias added to scores before top-k;
+  weights gathered from the *pre-bias* sigmoid scores); shared expert (intermediate
+  704) with a sigmoid gate; `adanorm_time` (time embedding drives AdaNorm on the
+  input/post-attn norms). ~7.15GB fp32 (901 tensors).
+- **Deployable graph** = `FlowMatchingV2.predict_velocity`: `embed_suffix(state, x_t,
+  timestep)` → suffix_embs + time (ada_cond); joint forward with
+  `inputs_embeds=[None, suffix]` (VLM branch None — its K/V come from
+  `past_key_values`), so only the expert computes q/k/v, the cached prefix K/V is
+  prepended, attention runs, o_proj + AdaNorm + dense-MoE per layer; final norm →
+  `action_out_proj` on the last `n_action_steps` → velocity. Host owns the Qwen3-VL
+  prefix (`embed_prefix`), the Euler loop (`sample_actions`), un-normalization.
+- **Attention = eager.** The deploy policy (`deploy/lingbot_vla_v2_policy.py`) itself
+  sets `attention_implementation='eager'` for inference → `our_eager_attention_forward`
+  (manual `softmax(QKᵀ/√d + mask)·V`). No SDPA at all → the mask-free
+  FoldMultiplyIntoSDPAScale segfault (macOS 27) is structurally avoided (better than
+  the bool-keep-mask workaround).
+- **License: Apache-2.0** (explicit README prose: "This project is licensed under the
+  Apache-2.0 License") → PUBLISHABLE (unlike MolmoAct2). Set the recipe license to
+  apache-2.0 citing the README.
+- **Weight fetch:** need only the qwen_expert + action heads (~7.3GB), NOT the 17.75GB
+  Qwen3-VL backbone (host-side). The qwen_expert tensors are near-contiguous per shard
+  (1–2 spans each across the 6 shards) → fetch one envelope range per shard, 6 parallel
+  downloads, reconstruct `qwen_expert.safetensors`.
+- **Size:** ~1.8B expert → int8 ~1.8GB (fp32 7.15GB / fp16 3.6GB); int8 to be safe on
+  ANE. Standalone-import the qwen2_action_expert classes + joint-forward (VLM=None
+  path) + embed_suffix, monkeypatch the MoE combine to the dense 3D einsum.
+- **STATUS (2026-07-08):** feasibility proven, architecture + config fully mapped, MoE
+  dense-fusion specified, deployable graph defined, apache confirmed, 7.3GB targeted
+  fetch in flight. Remaining: standalone harness + dense-MoE + eager-attn joint forward
+  + int8 export + Gate-B parity + publish. This is the single largest conversion in the
+  set (a 36-layer MoE joint-attention stack), not a mechanical lane.
+
+### (original notes retained below)
 ## LingBot-VLA 2.0 — `robbyant/lingbot-vla-v2-6b` (Apache-2.0 per README, 6.38B) — PRIORITY
 
 Brand-new (2026-07-07) robbyant VLA foundation model — NOT the LeRobot v0.6.0
