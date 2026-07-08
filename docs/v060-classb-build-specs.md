@@ -110,7 +110,24 @@ prefix K/V — the EO-1/MolmoAct2 split (KV as graph inputs), plus MoE MLPs.
 - **Size:** ~1.8B expert → int8 ~1.8GB (fp32 7.15GB / fp16 3.6GB); int8 to be safe on
   ANE. Standalone-import the qwen2_action_expert classes + joint-forward (VLM=None
   path) + embed_suffix, monkeypatch the MoE combine to the dense 3D einsum.
-- **RESULT (2026-07-08): op-coverage PROVEN; full-depth ANE load blocked.** The whole
+- **RESULT (2026-07-08): SOLVED — LOADS on ANE + Gate B PASSES via graph-split.**
+  min graph_output_cosine **0.99948** / median 0.99978 (8 obs), recipe `verified`,
+  publish dry-run clean (Apache-2.0). The monolithic 36-layer dense-MoE hit the ANE
+  single-program limit (0x10004, ~1.5GB graph-complexity ceiling: fp16 L=12/14 load,
+  L=18=1.79GB fails; int8 L=24=1.48GB loads). Fix: split the action expert into **4
+  loadable ANE programs** — a tiny `embed` + 3×12-layer fp16 blocks (~1.19GB each). The
+  host chains `embed→block0→block1→block2` and loads the big blocks **sequentially**
+  (load→run→free — they must not be co-resident in ANE memory). Bundle =
+  `lingbot-vla-v2.aimodel/{metadata,manifest}.json + programs/{embed,block0,block1,block2}.aimodel`;
+  `manifest.json` declares the chain + per-block prefix-K/V slices. fp16 chosen over int8
+  (int8 experts dropped worst-obs to 0.9982 < gate; fp16 blocks fit the ceiling). Driver:
+  `models/lingbotvla/export_split.py` (N-block). Two reusable ANE lessons: (a) 0x10004 is
+  a per-program graph-complexity ceiling, not disk/byte-size; (b) separate assets loaded
+  sequentially beat a multi-entrypoint asset (whose `AIModel.load` makes all programs
+  co-resident and re-crosses the limit).
+
+  ### (superseded) op-coverage-only result
+  The whole
   lane was built and run: standalone module (norm/attn/decoder verbatim, MoE dense
   einsum over the fused 3D weights), 911 weights loaded strict-clean, fp32 torch ref
   runs (velocity [1,32,55]). Export SUCCEEDS on coreai_torch 0.4.1 (fp16 3.58GB /
