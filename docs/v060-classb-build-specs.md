@@ -110,11 +110,28 @@ prefix K/V — the EO-1/MolmoAct2 split (KV as graph inputs), plus MoE MLPs.
 - **Size:** ~1.8B expert → int8 ~1.8GB (fp32 7.15GB / fp16 3.6GB); int8 to be safe on
   ANE. Standalone-import the qwen2_action_expert classes + joint-forward (VLM=None
   path) + embed_suffix, monkeypatch the MoE combine to the dense 3D einsum.
-- **STATUS (2026-07-08):** feasibility proven, architecture + config fully mapped, MoE
-  dense-fusion specified, deployable graph defined, apache confirmed, 7.3GB targeted
-  fetch in flight. Remaining: standalone harness + dense-MoE + eager-attn joint forward
-  + int8 export + Gate-B parity + publish. This is the single largest conversion in the
-  set (a 36-layer MoE joint-attention stack), not a mechanical lane.
+- **RESULT (2026-07-08): op-coverage PROVEN; full-depth ANE load blocked.** The whole
+  lane was built and run: standalone module (norm/attn/decoder verbatim, MoE dense
+  einsum over the fused 3D weights), 911 weights loaded strict-clean, fp32 torch ref
+  runs (velocity [1,32,55]). Export SUCCEEDS on coreai_torch 0.4.1 (fp16 3.58GB /
+  int8-experts 2.23GB). MoE dense-fusion is mathematically EXACT vs the sparse top-4
+  reference (cosine 1.0, maxdiff ~1e-4). A **2-layer int8-experts model LOADS on the
+  ANE and runs** (graph_output_cosine 0.999926) — every op lowers + executes (topk,
+  one_hot, gather, 3D batched einsum, eager softmax attention, repeat_interleave GQA,
+  AdaRMSNorm FiLM, manual int8 dequant). **BUT the full 36-layer asset fails ANE load
+  with Program load failure `0x10004`** at BOTH fp16 (3.58GB) and int8-experts (2.23GB)
+  — under FastWAM's 4GB int8 that loads fine, so this is a **graph-COMPLEXITY limit**
+  (36 layers × 32-way dense-MoE einsums = a very large op/constant count), not a byte
+  limit. Purging `coreai-cache` (11GB→38GB free) did not help — it's structural.
+  **The conversion is proven feasible; only the single-program full-depth load is
+  blocked.** Fixes: a sparse-gather export (needs coreai_torch static top-k gather), a
+  graph-split (ship N sub-graphs of fewer layers, host chains the residual stream), or
+  an ANE program-size raise. Apache-2.0 → publishable once loadable. Findings:
+  `build/lingbot-vla-v2/op-coverage-findings.json`.
+
+  This mirrors the GR00T milestone (op-coverage proven, not a hosted artifact) but for a
+  different reason: GR00T is license-gated, lingbot-vla-v2 is ANE-program-size-gated. It
+  is the single largest conversion in the set — a 36-layer MoE joint-attention stack.
 
 ### (original notes retained below)
 ## LingBot-VLA 2.0 — `robbyant/lingbot-vla-v2-6b` (Apache-2.0 per README, 6.38B) — PRIORITY
