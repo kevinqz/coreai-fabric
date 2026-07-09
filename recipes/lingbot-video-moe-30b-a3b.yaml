@@ -64,7 +64,7 @@ catalog:
   runner: CoreAIVideoPipeline
   tokenizer_required: true
   processor_required: true
-status: published
+status: registered
 notes: 'LingBot-Video MoE 30B-A3B (robbyant/lingbot-video-moe-30b-a3b @ f2e538f6, apache-2.0)
   — the flagship Mixture-of-Experts member of the LingBotVideoPipeline family: ~30B total
   / ~3B active ("A3B"), ~3x faster inference via grouped-expert execution, T2I / T2V / TI2V
