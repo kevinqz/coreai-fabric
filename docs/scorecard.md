@@ -25,3 +25,12 @@ _embed -> block0 -> block1 -> block2_
 |---|--------|-------|-------|-----------|--------|---------|
 | 1 | lingbot-vla-v2 | 0.999477 | 8 | float32 | registered |  |
 
+### Cell: `graph_output_cosine` · flattened · synthetic · float32
+_single-graph forward_
+
+| # | recipe | value | n_obs | precision | status | waivers |
+|---|--------|-------|-------|-----------|--------|---------|
+| 1 | lingbot-video-dense-1.3b-dit | 1 | 8 | float32 | registered |  |
+| 2 | lingbot-video-dense-1.3b-vae-streaming | 1 | 8 | float32 | registered |  |
+| 3 | miril-drone-2b-1 | 1 | 8 | float32 | registered |  |
+

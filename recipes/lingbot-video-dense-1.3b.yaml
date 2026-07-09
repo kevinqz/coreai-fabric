@@ -64,6 +64,8 @@ catalog:
   runner: CoreAIVideoPipeline
   tokenizer_required: true
   processor_required: true
+  blocks:
+  - wan-vae-decoder
 status: registered
 notes: 'LingBot-Video Dense 1.3B (robbyant/lingbot-video-dense-1.3b @ f9789a7d, apache-2.0)
   — the dense member of the open LingBotVideoPipeline family (T2I / T2V / TI2V; trained on

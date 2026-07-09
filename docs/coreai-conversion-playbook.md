@@ -30,6 +30,9 @@ Apple Core AI `.aimodel` assets on the ANE (macOS 27 / Xcode-27-beta, coreai_tor
 | framework import storm (distributed/triton/flash-attn) | **T5** — standalone-import pattern |
 | empty/unpopulated upstream license | **T6** — index-only, no weights path |
 | N unmerged catalog PRs conflicting pairwise | **T7** — batch from fresh main |
+| `transformers 5.x`/version conflict, class not in pinned libs, no modeling code in repo | **T8** — cross-venv ExportedProgram transfer |
+| `GuardOnDataDependentSymNode`, unbacked `u0`, `.tolist()`/`.item()`, `masked_select` | **T9** — data-dependent → static bake / graph-cut |
+| causal conv `feat_cache`, KV-cache, streaming/chunked decode | **T10** — stateful cache as multi-tensor graph I/O |
 
 ## 0. The split discipline (the organizing principle)
 
@@ -111,6 +114,13 @@ compile cache does nothing — it's structural. Mapped crossover for that graph:
 L=12/14 blocks load (~1.2–1.4 GB), fp16 L=18 = 1.79 GB fails; int8 L=18 = 1.11 GB /
 L=24 = 1.48 GB load.
 
+**It's COMPLEXITY, not size — so don't assume big → split.** The LingBot-Video DiT
+(24-layer *dense* transformer, **5.43 GB fp32**) loads WHOLE as a single program — 3.8×
+the ~1.5 GB MoE ceiling — because its structure (plain attn + SwiGLU, no MoE dense-fusion
+blow-up) is within the complexity budget. The ~1.5 GB figure is a **MoE-specific**
+crossover; a dense stack of the same byte-size can be fine. **Try the monolith first,
+split only when it actually returns 0x10004.**
+
 **Fix = graph-split.** Split the stack into N SEPARATE `.aimodel` programs, chain them on
 the host, and **load each big program then FREE it (never co-resident).**
 
@@ -171,6 +181,61 @@ modeling file must import standalone.
   cleanly), and always `git checkout main && git pull` before opening the next.
 - **Sequence:** `validate → convert → verify (gate A + B) → publish (permissive only) →
   register (opens catalog PR) → merge → register --mark-merged`.
+
+## 8. Cross-venv ExportedProgram transfer — **T8**
+
+**Framework scope:** models whose framework version conflicts with the coreai-torch pin
+(e.g. transformers 5.x for Gemma-4 vs the pinned `<5.0`), esp. when the repo ships NO
+modeling code so `trust_remote_code` can't help and the class isn't in the pinned libs.
+**Precondition:** the scratch venv's `torch` MUST equal the toolchain `torch` (2.9.0) —
+`torch.export.save`/`load` is version-sensitive. Do NOT mutate the shared toolchain venv.
+
+When the real model can't be imported in the toolchain venv: build a **scratch venv**
+(`python3 -m venv`, `pip install "transformers==<model's ver>" "torch==2.9.0"`), load the
+REAL model there, `torch.export.export(...)` → `torch.export.save(ep, "m.pt2")`, plus dump
+the fp32 reference (`refs.npy`) + fixed inputs. Then in the toolchain venv:
+`torch.export.load("m.pt2")` → `run_decompositions(get_decomp_table())` →
+`TorchConverter().add_exported_program(...)` → `to_coreai()`. **Bit-exact by construction**
+(the real aten graph is captured, not reverse-engineered) — this is the reference-validated
+alternative to T5 vendoring. Used for Miril-Drone (Gemma-4 vision). If the model is
+diffusers-based (no transformers-version conflict), skip the scratch venv — load the real
+class in the ONE toolchain venv (LingBot-Video DiT). Running external modeling code needs
+explicit user authorization (the auto-mode classifier gates it); review it first
+(no network/subprocess/exec).
+
+## 9. Data-dependent control flow → static bake / graph-cut — **T9**
+
+**Framework scope:** any export where `torch.export` raises `GuardOnDataDependentSymNode`
+(unbacked symint `u0`) — `.tolist()`/`.item()`, boolean `masked_select`, lazy table
+rebuilds, or a `.max().tolist()` guard. **Precondition:** only valid because the deployable
+export uses a FIXED input shape — the dropped dynamism is genuinely constant for that shape;
+the host reproduces the (constant) op. Always self-validate the patched module vs the real
+forward (cosine ~1) BEFORE export.
+
+- **`.tolist()` / `.item()` on a shape-derived scalar** (e.g. `text_lens = mask.sum().tolist()`)
+  → replace with the STATIC python value (`L = encoder_hidden_states.shape[1]`).
+- **Boolean `masked_select` with a data-dependent count** (e.g. a pooler dropping padded
+  tokens, `x[mask]` → `(u0, D)`) → **cut the exported graph BEFORE it** (ship the static
+  pre-mask output; the host applies the constant selection), or index_select with baked
+  constant indices. Miril's pooler: stop at the static `[1,280,768]`, host owns 280→256.
+- **Lazy/stateful table rebuild inside forward** (RoPE `freqs_cis` built + `.max().tolist()`
+  guard) → precompute the table EAGERLY for the fixed shape and **bake it as a constant
+  buffer** (feeds T1's real-RoPE rewrite). LingBot-Video DiT + Miril position grid.
+
+## 10. Stateful cache (feat_cache / KV) as multi-tensor graph I/O — **T10**
+
+**Framework scope:** streaming/chunked decoders that thread a stateful cache across calls —
+WAN VAE causal-conv `feat_cache`, or a KV-cache. **Precondition:** reach STEADY STATE before
+sampling the cache template — priming with only the first chunk leaves sentinel markers
+(`'Rep'`/`None`), not tensors; decode first-chunk + one subsequent chunk first.
+
+Ship the SUBSEQUENT-chunk graph: `(chunk_input, *cache_in) -> (output, *cache_out)`, with the
+cache as N positional tensor I/O; the host loops it feeding `cache_out -> cache_in` (chunk 0
+uses a separate first-chunk asset). Capture a cache TEMPLATE from a steady-state prime, thread
+only the TENSOR slots (bake the non-tensor `None` slots), and `detach()` cache tensors before
+`.numpy()` in the parity loop. LingBot-Video VAE streaming: 32 cache tensors (6 shapes, 33
+conv slots, 1 baked-None). This is the general form of the Class-B "prefix K/V as graph
+inputs" pattern (T0), for a decoder rather than a denoiser.
 
 ## 7. Scorecard (what this produced)
 

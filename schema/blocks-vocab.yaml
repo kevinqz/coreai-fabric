@@ -48,3 +48,17 @@ blocks:
     description: InternVL3 vision-language embedder (EVO1's VL front).
   - id: vit-patch16-512
     description: Generic patch-16 ViT @ 512px image encoder (the lingbot envelope).
+  - id: wan-vae-decoder
+    description: AutoencoderKLWan video VAE decoder (latent -> pixel frames; pure 3D conv, no
+      attention; spatial 8x / temporal 4x). First-chunk decode. Shared byte-identical across the
+      LingBot video family (world-v2 + video-dense + video-moe).
+  - id: wan-vae-decoder-streaming
+    description: AutoencoderKLWan VAE decoder, SUBSEQUENT-chunk — the causal conv feat_cache
+      threaded as multi-tensor graph I/O (32 cache tensors for this config) for continuous decode.
+  - id: lingbot-video-dit
+    description: LingBotVideoTransformer3DModel dense diffusion transformer (denoise step) — joint
+      self-attn (QK-norm), SwiGLU, 4 sandwich RMSNorms, AdaLN scale_shift, real-baked 3D RoPE,
+      linear patch-embed. The generative core of the LingBot-Video pipeline.
+  - id: gemma4-vision-encoder
+    description: Gemma-4 vision tower (gemma4_vision ViT) — clipped-linears, QK-norm, sandwich
+      RMSNorms, SwiGLU, RoPE, learned position table; patches -> pooled soft tokens. Miril-Drone.

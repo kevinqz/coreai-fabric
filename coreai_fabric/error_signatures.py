@@ -65,6 +65,15 @@ TABLE: list[tuple[str, str, list[re.Pattern[str]]]] = [
         re.compile(r"(vocab|tokenizer).*(mismatch|size|length)", re.IGNORECASE),
         re.compile(r"token.*(out of range|index error)", re.IGNORECASE),
     ]),
+    ("data_dependent", "failed", [
+        # torch.export can't specialize a data-dependent value (unbacked symint u0):
+        # .tolist()/.item() on shape-derived scalars, boolean masked_select, lazy
+        # table rebuilds. Fix = playbook T9 (static bake / graph-cut-before).
+        re.compile(r"GuardOnDataDependentSymNode", re.IGNORECASE),
+        re.compile(r"data-dependent\s+(expression|value|symnode)", re.IGNORECASE),
+        re.compile(r"could\s+not\s+(guard\s+on|extract\s+specialized).*\bu\d", re.IGNORECASE),
+        re.compile(r"unbacked\s+symint", re.IGNORECASE),
+    ]),
     ("license_blocked", "blocked", [
         re.compile(r"gated\s+repo|access.*denied.*license", re.IGNORECASE),
         re.compile(r"must.*accept.*terms", re.IGNORECASE),

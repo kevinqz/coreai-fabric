@@ -73,6 +73,8 @@ catalog:
   runner: CoreAIVideoPipeline
   tokenizer_required: true
   processor_required: true
+  blocks:
+  - wan-vae-decoder-streaming
 status: registered
 notes: 'LingBot-Video Dense 1.3B — the STREAMING (subsequent-chunk) VAE decoder, the companion
   to the published first-chunk VAE (lingbot-video-dense-1.3b). Together they give CONTINUOUS

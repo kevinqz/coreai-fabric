@@ -72,7 +72,9 @@ _(no recipe composes this block yet — a vocab entry ahead of use.)_
 ## `eurobert-encoder`
 _EuroBERT text encoder (pulpie-orange token-classification lanes)._
 
-_(no recipe composes this block yet — a vocab entry ahead of use.)_
+| recipe | envelope | status | measured-Gate-B |
+|--------|----------|--------|-----------------|
+| pulpie-orange-small | float32 | draft | — |
 
 ## `siglip-so400m-vit`
 _SigLIP-SO400M vision transformer (the encoder fused inside VLAs)._
@@ -97,4 +99,34 @@ _(no recipe composes this block yet — a vocab entry ahead of use.)_
 _Generic patch-16 ViT @ 512px image encoder (the lingbot envelope)._
 
 _(no recipe composes this block yet — a vocab entry ahead of use.)_
+
+## `wan-vae-decoder`
+_AutoencoderKLWan video VAE decoder (latent -> pixel frames; pure 3D conv, no attention; spatial 8x / temporal 4x). First-chunk decode. Shared byte-identical across the LingBot video family (world-v2 + video-dense + video-moe)._
+
+| recipe | envelope | status | measured-Gate-B |
+|--------|----------|--------|-----------------|
+| lingbot-video-dense-1.3b | float32 | registered | measured @ float32 (?, n_obs=8) |
+| lingbot-video-moe-30b-a3b | float32 | registered | measured @ float32 (?, n_obs=8) |
+| lingbot-world-v2-14b-causal-fast | float32 | draft | — |
+
+## `wan-vae-decoder-streaming`
+_AutoencoderKLWan VAE decoder, SUBSEQUENT-chunk — the causal conv feat_cache threaded as multi-tensor graph I/O (32 cache tensors for this config) for continuous decode._
+
+| recipe | envelope | status | measured-Gate-B |
+|--------|----------|--------|-----------------|
+| lingbot-video-dense-1.3b-vae-streaming | float32 | registered | measured @ float32 (?, n_obs=8) |
+
+## `lingbot-video-dit`
+_LingBotVideoTransformer3DModel dense diffusion transformer (denoise step) — joint self-attn (QK-norm), SwiGLU, 4 sandwich RMSNorms, AdaLN scale_shift, real-baked 3D RoPE, linear patch-embed. The generative core of the LingBot-Video pipeline._
+
+| recipe | envelope | status | measured-Gate-B |
+|--------|----------|--------|-----------------|
+| lingbot-video-dense-1.3b-dit | float32 | registered | measured @ float32 (?, n_obs=8) |
+
+## `gemma4-vision-encoder`
+_Gemma-4 vision tower (gemma4_vision ViT) — clipped-linears, QK-norm, sandwich RMSNorms, SwiGLU, RoPE, learned position table; patches -> pooled soft tokens. Miril-Drone._
+
+| recipe | envelope | status | measured-Gate-B |
+|--------|----------|--------|-----------------|
+| miril-drone-2b-1 | float32 | registered | measured @ float32 (?, n_obs=8) |
 

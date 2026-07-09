@@ -72,6 +72,8 @@ catalog:
   runner: CoreAIRunner
   tokenizer_required: true
   processor_required: true
+  blocks:
+  - gemma4-vision-encoder
 status: registered
 notes: 'Miril-Drone-2B-1 (MirilAI/Miril-Drone-2B-1 @ 40bde4fe, apache-2.0) — an aerial / drone-imagery
   VLM: scene captioning, VQA, and operational pointing (coarse 0-1000 coordinates for landing

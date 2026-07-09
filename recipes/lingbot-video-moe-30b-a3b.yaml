@@ -64,6 +64,8 @@ catalog:
   runner: CoreAIVideoPipeline
   tokenizer_required: true
   processor_required: true
+  blocks:
+  - wan-vae-decoder
 status: registered
 notes: 'LingBot-Video MoE 30B-A3B (robbyant/lingbot-video-moe-30b-a3b @ f2e538f6, apache-2.0)
   — the flagship Mixture-of-Experts member of the LingBotVideoPipeline family: ~30B total

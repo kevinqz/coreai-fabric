@@ -73,6 +73,8 @@ catalog:
   runner: CoreAIVideoPipeline
   tokenizer_required: true
   processor_required: true
+  blocks:
+  - lingbot-video-dit
 status: registered
 notes: 'LingBot-Video Dense 1.3B — the DiT (denoising transformer), companion to the already-published
   VAE decoder (lingbot-video-dense-1.3b). This is the generative CORE (the "brain"), apache-2.0
