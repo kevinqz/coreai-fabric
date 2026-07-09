@@ -1,4 +1,3 @@
-# coreai-fabric recipe — scaffolded by `coreai-fabric new MirilAI/Miril-Drone-2B-1`, catalog block added by hand.
 id: miril-drone-2b-1
 upstream:
   hf_repo: MirilAI/Miril-Drone-2B-1
@@ -31,6 +30,20 @@ parity:
     metric: graph_output_cosine
     threshold: 0.999
     tolerance: 0.0005
+    protocol:
+      n_obs: 8
+      reference_dtype: float32
+      granularity: flattened
+      input_protocol: synthetic
+      graph_boundary: single-graph forward
+    measured:
+      status: passed
+      value: 0.9999999999984324
+      n_obs: 8
+      measurement_source: graph-output-parity-measured.json
+      min_chunk_cosine: 0.9999999999984324
+      mean_chunk_cosine: 0.9999999999986535
+      measured_on: apple_silicon
 publish:
   hf_target_namespace: kevinqz
   repo_name: Miril-Drone-2B-1-CoreAI
@@ -49,7 +62,6 @@ catalog:
     aot_required: false
   capabilities:
   - image-feature-extraction
-  - vision-language
   modalities:
     input:
     - image
@@ -60,78 +72,87 @@ catalog:
   runner: CoreAIRunner
   tokenizer_required: true
   processor_required: true
-status: draft
-notes: >-
-  Miril-Drone-2B-1 (MirilAI/Miril-Drone-2B-1 @ 40bde4fe, apache-2.0) — an aerial /
-  drone-imagery VLM: scene captioning, VQA, and operational pointing (coarse 0-1000
-  coordinates for landing / inspection cues). Explicitly NOT a flight controller /
-  VLA — outputs are review cues requiring human validation; it emits text/JSON, not
-  flight commands. Derived from Google Gemma-4-E2B-it (the ~2B-effective MatFormer
-  variant; ~5B raw bf16 on disk, 10.3GB) — architecture Gemma4ForConditional
-  Generation (vision tower + Gemma-4 LM). LICENSE: the repo declares apache-2.0, but
-  the Gemma-4 base carries Google's Gemma Terms of Use — treat as review-required at
-  publish (mirror the upstream LICENSE/NOTICE; publish may need
-  --acknowledge-license-review).
+status: registered
+notes: 'Miril-Drone-2B-1 (MirilAI/Miril-Drone-2B-1 @ 40bde4fe, apache-2.0) — an aerial / drone-imagery
+  VLM: scene captioning, VQA, and operational pointing (coarse 0-1000 coordinates for landing
+  / inspection cues). Explicitly NOT a flight controller / VLA — outputs are review cues requiring
+  human validation; it emits text/JSON, not flight commands. Derived from Google Gemma-4-E2B-it
+  (the ~2B-effective MatFormer variant; ~5B raw bf16 on disk, 10.3GB) — architecture Gemma4ForConditional
+  Generation (vision tower + Gemma-4 LM). LICENSE: the repo declares apache-2.0, but the Gemma-4
+  base carries Google''s Gemma Terms of Use — treat as review-required at publish (mirror
+  the upstream LICENSE/NOTICE; publish may need --acknowledge-license-review).
 
-  ARCHITECTURE (config.json): Gemma4ForConditionalGeneration, model_type gemma4 —
-  THREE towers: vision (gemma4_vision, ViT hidden 768 / 16 layers / 12 heads /
-  patch 16), text (gemma4_text, hidden 1536 / 35 layers, the ~2B LM), audio
-  (gemma4_audio, unused for image inference). vision_soft_tokens_per_image + image
-  token bookkeeping in the top-level config.
+  ARCHITECTURE (config.json): Gemma4ForConditionalGeneration, model_type gemma4 — THREE towers:
+  vision (gemma4_vision, ViT hidden 768 / 16 layers / 12 heads / patch 16), text (gemma4_text,
+  hidden 1536 / 35 layers, the ~2B LM), audio (gemma4_audio, unused for image inference).
+  vision_soft_tokens_per_image + image token bookkeeping in the top-level config.
 
-  WHY NOT THE WHOLE-VLM LANE: fabric's VLM export (coreai.vlm.export) gates on a
-  hardcoded SUPPORTED_MODELS dict that is Qwen3-VL-ONLY (register_specs injects only
-  Qwen3-VL specs); it does NOT handle Gemma-4. AND transformers 4.57.6 (fabric's
-  pinned toolchain) has NO Gemma4 class, and the repo ships NO modeling code
-  (trust_remote_code can't help). So the whole-VLM forward is not convertible with
-  current tooling.
+  WHY NOT THE WHOLE-VLM LANE: fabric''s VLM export (coreai.vlm.export) gates on a hardcoded
+  SUPPORTED_MODELS dict that is Qwen3-VL-ONLY (register_specs injects only Qwen3-VL specs);
+  it does NOT handle Gemma-4. AND transformers 4.57.6 (fabric''s pinned toolchain) has NO
+  Gemma4 class, and the repo ships NO modeling code (trust_remote_code can''t help). So the
+  whole-VLM forward is not convertible with current tooling.
 
-  DEPLOYABLE CORE = the gemma4_vision ENCODER (the proven graph_output_cosine
-  image-feature-extraction lane, same as SenseNova's SigLIP / lingbot-vision-vit):
-  image [1,3,S,S] -> per-patch feature tokens. Exported via a VENDORED standalone
-  ViT (gemma4_vision geometry: pre-norm transformer, hidden 768, 16 layers, patch
-  16), loading the vision_tower.* weights via a targeted safetensors slice out of
-  model.safetensors. fp32; single static-size .aimodel. Host owns the image
-  processor + the Gemma-4 LM + de-tokenization. GATE B = graph_output_cosine
-  (identical seeded images through the fp32 torch vision tower vs the .aimodel, min
-  cosine n_obs>=8) — conversion fidelity, not task accuracy. This mirrors exactly
-  how SenseNova entered (whole model unsupported -> ship the vision encoder core).
+  DEPLOYABLE CORE = the gemma4_vision ENCODER (the proven graph_output_cosine image-feature-extraction
+  lane, same as SenseNova''s SigLIP / lingbot-vision-vit): image patches -> pooled feature
+  tokens. Exported by CAPTURING THE REAL Gemma4VisionModel graph (torch.export in a scratch
+  venv) and lowering the transferred ExportedProgram in the toolchain venv — NOT a hand-vendored
+  ViT (see BUILT below); bit-exact by construction. fp32; single static-size .aimodel. Host
+  owns the image processor + the Gemma-4 LM + de-tokenization. GATE B = graph_output_cosine
+  (real fp32 vision tower vs the .aimodel, min cosine n_obs>=8) — conversion fidelity, not task
+  accuracy. Mirrors how SenseNova entered (whole model unsupported -> ship the vision core).
 
-  LICENSE: repo declares apache-2.0 but the Gemma-4 base carries Google's Gemma
-  Terms of Use — review-required at publish (mirror LICENSE/NOTICE; may need
-  --acknowledge-license-review).
+  LICENSE: repo declares apache-2.0 but the Gemma-4 base carries Google''s Gemma Terms of
+  Use — review-required at publish (mirror LICENSE/NOTICE; may need --acknowledge-license-review).
 
-  TOOLCHAIN CONFLICT (measured 2026-07-09): the config was written with
-  transformers 5.13.0 and Gemma4 support lives ONLY in transformers 5.x — which
-  conflicts with the pinned toolchain (coreai-torch wants transformers>=4.57,<5.0;
-  the fabric .venv has 4.57.6). The shared .venv must NOT be mutated (a parallel
-  agent uses it). So the real Gemma4 impl cannot be loaded in the export venv.
+  TOOLCHAIN CONFLICT (measured 2026-07-09): the config was written with transformers 5.13.0
+  and Gemma4 support lives ONLY in transformers 5.x — which conflicts with the pinned toolchain
+  (coreai-torch wants transformers>=4.57,<5.0; the fabric .venv has 4.57.6). The shared .venv
+  must NOT be mutated (a parallel agent uses it). So the real Gemma4 impl cannot be loaded
+  in the export venv.
 
-  VISION-TOWER ARCHITECTURE (from safetensors keys + vision_config @ 40bde4fe):
-  weights are plain BF16 (`.linear.weight`); the `.input_min/max` + `.output_min/max`
-  scalars are USED (`use_clipped_linears: true` — the linears clip activations to
-  those ranges, NOT just observer stats). patch_embedder.input_proj is a LINEAR
-  [768,768] over pre-flattened 16x16x3 patches (host does im2col), + a learned
-  position_embedding_table [2,10240,768]. 16 encoder layers, each a Gemma-style
-  block: sandwich norms (input_layernorm / post_attention_layernorm /
-  pre_feedforward_layernorm / post_feedforward_layernorm, RMSNorm eps 1e-6),
-  self_attn with q_norm/k_norm (QK-norm), 12 heads x 64 head_dim, RoPE
-  (rope_parameters present), SwiGLU mlp (gate/up/down, intermediate 3072). Plus
-  `standardize` + `pooling_kernel_size`. embed_vision.embedding_projection [1536,768]
+  VISION-TOWER ARCHITECTURE (from safetensors keys + vision_config @ 40bde4fe): weights are
+  plain BF16 (`.linear.weight`); the `.input_min/max` + `.output_min/max` scalars are USED
+  (`use_clipped_linears: true` — the linears clip activations to those ranges, NOT just observer
+  stats). patch_embedder.input_proj is a LINEAR [768,768] over pre-flattened 16x16x3 patches
+  (host does im2col), + a learned position_embedding_table [2,10240,768]. 16 encoder layers,
+  each a Gemma-style block: sandwich norms (input_layernorm / post_attention_layernorm / pre_feedforward_layernorm
+  / post_feedforward_layernorm, RMSNorm eps 1e-6), self_attn with q_norm/k_norm (QK-norm),
+  12 heads x 64 head_dim, RoPE (rope_parameters present), SwiGLU mlp (gate/up/down, intermediate
+  3072). Plus `standardize` + `pooling_kernel_size`. embed_vision.embedding_projection [1536,768]
   bridges vision features -> the LM hidden (host-side).
 
-  PLAN (two-venv, reference-validated vendor — the reliable path): (1) a SCRATCH
-  venv with transformers==5.13 loads the REAL Gemma4 vision tower and emits the
-  fp32 reference output over seeded patch inputs; (2) a VENDORED standalone
-  gemma4_vision module (pure torch, no transformers) in the toolchain .venv is
-  torch.export'd + lowered by coreai_torch; (3) Gate B = graph_output_cosine of the
-  vendored .aimodel vs the scratch-venv reference (>=0.999) — this VALIDATES the
-  vendored architecture against the real one before shipping. Alternative: save the
-  ExportedProgram in the scratch venv (torch.export.save) and load it in the
-  toolchain venv (torch.export.load) for to_coreai, skipping the vendor if torch
-  versions align.
+  PLAN (two-venv, reference-validated vendor — the reliable path): (1) a SCRATCH venv with
+  transformers==5.13 loads the REAL Gemma4 vision tower and emits the fp32 reference output
+  over seeded patch inputs; (2) a VENDORED standalone gemma4_vision module (pure torch, no
+  transformers) in the toolchain .venv is torch.export''d + lowered by coreai_torch; (3) Gate
+  B = graph_output_cosine of the vendored .aimodel vs the scratch-venv reference (>=0.999)
+  — this VALIDATES the vendored architecture against the real one before shipping. Alternative:
+  save the ExportedProgram in the scratch venv (torch.export.save) and load it in the toolchain
+  venv (torch.export.load) for to_coreai, skipping the vendor if torch versions align.
 
-  STATUS: draft — weights downloaded (10.3GB, 3 bf16 shards). This is a research
-  build, not a quick conversion, because of the transformers-5.x conflict + the
-  custom clipped-linear Gemma vision block. models/miril/export.py NOT YET WRITTEN.
-  analyze verdict logged to attempts/miril-drone-2b-1.jsonl.
+  BUILT + GATE B MEASURED (2026-07-09, coreai-torch 0.4.1 / coremltools 9.0): min graph_output_cosine
+  0.99999999999843 / median 0.99999999999867 over n_obs=8 (8 seeded 896x896 images). Asset
+  ~617MB fp32, LOADS OK. The two-venv method WORKED and is bit-exact BY CONSTRUCTION (the
+  real impl''s graph is captured, not reverse-engineered): models/miril/ref_export.py runs
+  in a scratch venv (transformers==5.13, torch==2.9 == toolchain torch), builds the REAL Gemma4VisionModel,
+  loads the vision_tower.* weights (658 tensors, 0 miss/unexp), emits the fp32 reference +
+  torch.export.save -> vision.pt2; models/miril/export.py loads that ExportedProgram in the
+  toolchain venv and lowers it via coreai_torch. Deployable graph: pixel_values [1,2520,768]
+  (pre-flattened 16x16x3 patches for a fixed 896x896 image) -> pooled vision soft-tokens [1,280,768].
+  TWO export shaping choices, both because the input size is FIXED: (1) pixel_position_ids
+  is baked as a constant grid (host uses the same processor geometry) so the position-embed
+  gather folds; (2) the graph stops at the POOLER output (static [1,280,768]) — the model''s
+  final padding-drop (280 -> 256 soft tokens) is a data-dependent boolean masked-select (unbacked
+  symint u0) that coreai_torch can''t lower, and it is CONSTANT for a fixed image, so the
+  host owns it. Host also owns the image processor (im2col to patches), the 280->256 selection,
+  and the Gemma-4 LM. GATE B on the [1,280,768] pooled tokens.
+
+  STATUS: verified locally (index-only? NO — apache-2.0, PUBLISHABLE modulo the Gemma NOTICE
+  at publish). Weights downloaded (10.3GB, 3 bf16 shards); scratch venv + vision.pt2 + refs
+  under scratchpad (not hosted). analyze verdict logged to attempts/miril-drone-2b-1.jsonl.'
+published:
+  hf_repo: kevinqz/Miril-Drone-2B-1-CoreAI
+  revision: 645f25930ce2170de1d147aa49f54b2762d7c1f5
+  date: '2026-07-09'
+catalog_pr: https://github.com/kevinqz/coreai-catalog/pull/39
