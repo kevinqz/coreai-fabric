@@ -43,7 +43,7 @@ def _load_fabric_register():
     return reg, load_all_recipes
 
 
-def build_entries_for_recipe(reg, recipe):
+def build_entries_for_recipe(reg, recipe, eval_keys=None):
     """Simulate the publish→register handoff without a real upload."""
     r = recipe
     # A published block + a minimal file manifest is what `publish` would have written.
@@ -58,7 +58,7 @@ def build_entries_for_recipe(reg, recipe):
         {"path": f"{r.id}.aimodel/main.hash", "sha256": "b" * 64, "size_bytes": 32},
         {"path": f"{r.id}.aimodel/metadata.json", "sha256": "c" * 64, "size_bytes": 105},
     ]
-    model_entry = reg.build_model_entry(r, files)
+    model_entry = reg.build_model_entry(r, files, catalog_eval_keys=eval_keys)
     artifact_entry = reg.build_artifact_entry(r, files, "0.4.1")
     source_record = reg.build_source_record() if hasattr(reg, "build_source_record") else None
     return model_entry, artifact_entry, source_record
@@ -108,6 +108,10 @@ def main() -> int:
         catalog_yaml = yaml.safe_load((work / "catalog.yaml").read_text())
         artifacts_yaml = yaml.safe_load((work / "artifacts.yaml").read_text())
         existing_ids = {m["id"] for m in catalog_yaml["models"]}
+        # Feature-detect which evaluation fields THIS catalog checkout accepts, so
+        # the emitted entries match the schema whether or not the Phase-0 schema PR
+        # has landed (RFC §4.3 — the wire-up is merge-order-decoupled).
+        eval_keys = reg.catalog_evaluation_keys(work)
 
         injected = 0
         for recipe in recipes:
@@ -124,7 +128,7 @@ def main() -> int:
                 continue
             if recipe.id in existing_ids:
                 continue  # already in the catalog; skip to avoid a duplicate-id error
-            me, ae, src = build_entries_for_recipe(reg, recipe)
+            me, ae, src = build_entries_for_recipe(reg, recipe, eval_keys=eval_keys)
             catalog_yaml["models"].append(me)
             artifacts_yaml["artifacts"].append(ae)
             injected += 1

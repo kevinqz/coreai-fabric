@@ -93,7 +93,25 @@ def catalog_protocol_extension(report: dict | None) -> dict | None:
     return ext or None
 
 
-def _catalog_evaluation(report: dict | None) -> dict | None:
+def catalog_evaluation_keys(catalog_path) -> set[str] | None:
+    """The property names the TARGET catalog's model.schema.json `evaluation` block
+    accepts. Used to feature-detect which Phase-0 fields to emit (RFC §4.3) so the
+    fabric↔catalog wire-up is decoupled from merge order: before the schema PR
+    lands the catalog lacks these keys and nothing extra is emitted (cross-contract
+    stays green); after it lands they flow automatically, no further fabric change.
+    None when unreadable — then only the always-accepted baseline is emitted."""
+    if not catalog_path:
+        return None
+    spath = Path(catalog_path) / "schema" / "model.schema.json"
+    try:
+        schema = json.loads(spath.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    props = (((schema.get("properties") or {}).get("evaluation") or {}).get("properties")) or {}
+    return set(props) or None
+
+
+def _catalog_evaluation(report: dict | None, accepted_keys: set[str] | None = None) -> dict | None:
     """The measured parity signature (from build/<id>/parity-report.json gate_b),
     verbatim, for the catalog `evaluation` field — emitting ONLY the fields the
     live catalog schema accepts (F13: one authority, no rejected additional
@@ -138,6 +156,16 @@ def _catalog_evaluation(report: dict | None) -> dict | None:
     if isinstance(waivers, list) and waivers:
         tag = "waivers: " + ", ".join(str(w) for w in waivers)
         ev["reason"] = f"{ev['reason']} [{tag}]" if ev.get("reason") else tag
+    # Feature-detected Phase-0 extension (RFC §4.3): emit the richer fields
+    # (value / min_cosine / protocol / …) IFF the target catalog schema accepts
+    # them. Decoupled from merge order — safe in both states (see
+    # catalog_evaluation_keys). Once coreai-catalog's evaluation schema PR lands,
+    # `accepted_keys` gains these names and the number + full signature flow to the
+    # catalog with no further fabric change.
+    if accepted_keys:
+        for k, v in (catalog_protocol_extension(report) or {}).items():
+            if k in accepted_keys and k not in ev:
+                ev[k] = v
     return ev
 
 
@@ -186,7 +214,7 @@ def _fidelity_tier(quantization: str, report: dict | None) -> str | None:
 
 
 def build_model_entry(recipe: Recipe, files: list[dict], *, notes_suffix: str = "",
-                      report: dict | None = None) -> dict:
+                      report: dict | None = None, catalog_eval_keys: set[str] | None = None) -> dict:
     catalog_block = recipe.data.get("catalog")
     if not catalog_block:
         raise SystemExit(
@@ -273,7 +301,7 @@ def build_model_entry(recipe: Recipe, files: list[dict], *, notes_suffix: str = 
     tier = _fidelity_tier(conv["quantization"], report)
     if tier:
         entry["size"]["fidelity_tier"] = tier
-    evaluation = _catalog_evaluation(report)
+    evaluation = _catalog_evaluation(report, catalog_eval_keys)
     if evaluation:
         entry["evaluation"] = evaluation
     # C4: emit a typed io_contract so a fabric model is as agent-ready as the
@@ -566,13 +594,16 @@ def cmd_register(args) -> int:
     files = _resolve_published_digests(recipe)
     tool_version = _tool_version_from_manifest(root, recipe)
     report = _load_parity_report(root, recipe)
+    catalog_path = Path(args.catalog_path).resolve() if args.catalog_path else None
+    # Feature-detect which evaluation fields the target catalog accepts (RFC §4.3).
+    eval_keys = catalog_evaluation_keys(catalog_path)
     model_entry = build_model_entry(
-        recipe, files, notes_suffix=_notes_suffix_from_report(report), report=report
+        recipe, files, notes_suffix=_notes_suffix_from_report(report), report=report,
+        catalog_eval_keys=eval_keys,
     )
     artifact_entry = build_artifact_entry(recipe, files, tool_version)
     source_record = build_source_record()
 
-    catalog_path = Path(args.catalog_path).resolve() if args.catalog_path else None
     if catalog_path:
         errors = validate_against_catalog_schemas(catalog_path, model_entry, artifact_entry)
         if errors:

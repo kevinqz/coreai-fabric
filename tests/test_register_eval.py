@@ -119,3 +119,24 @@ def test_no_waiver_leaves_reason_untouched():
           "min_action_cosine": 0.999, "n_obs": 8, "reason": "clean"}
     ev = _catalog_evaluation(_report(gb))
     assert ev["reason"] == "clean"
+
+
+def test_phase0_extension_emitted_only_when_catalog_accepts():
+    # RFC §4.3 wire-up: the value/protocol extension is emitted IFF the target
+    # catalog schema accepts those keys — decoupled from merge order.
+    gb = {"metric": "graph_output_cosine", "status": "passed", "value": 0.9999,
+          "min_cosine": 0.9999, "min_chunk_cosine": 0.9999, "n_obs": 8, "threshold": 0.999,
+          "protocol": {"n_obs": 8, "reference_dtype": "float32", "granularity": "flattened",
+                       "input_protocol": "synthetic", "graph_boundary": "single-graph forward"}}
+    # Pre-schema-PR: no accepted_keys -> baseline only (value/protocol NOT emitted).
+    ev0 = _catalog_evaluation(_report(gb))
+    assert "value" not in ev0 and "protocol" not in ev0
+    # Post-schema-PR: the catalog accepts them -> emitted.
+    keys = {"metric", "status", "min_chunk_cosine", "n_obs", "value", "threshold",
+            "min_cosine", "protocol"}
+    ev1 = _catalog_evaluation(_report(gb), keys)
+    assert ev1["value"] == 0.9999
+    assert ev1["protocol"]["granularity"] == "flattened"
+    # Partial acceptance -> only the accepted subset (protocol absent).
+    ev2 = _catalog_evaluation(_report(gb), {"metric", "status", "min_chunk_cosine", "value"})
+    assert ev2["value"] == 0.9999 and "protocol" not in ev2
