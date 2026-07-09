@@ -91,9 +91,28 @@ notes: >-
   than the VLA-v2 split. Gate B = graph_output_cosine of the chained fp16 output vs
   the fp32 torch DiT denoise-step over seeded (latent, timestep, text) inputs.
 
-  STATUS: validated PLAN. models/lingbotvideo/dit_export.py is NOT YET WRITTEN; the
-  LingBotVideoTransformer3DModel is CUSTOM (not diffusers) — vendor a standalone
-  forward from github.com/Robbyant/lingbot-video (like lingbot-vla-v2 vendored
-  action_expert.py). Weights = transformer/diffusion_pytorch_model.safetensors only
-  (the VAE + text encoder stay out). Download deferred so it doesn't starve the
-  in-flight Miril-Drone fetch. Smallest of the video DiTs -> best first target.
+  WEIGHT STRUCTURE CONFIRMED (2026-07-09, transformer/*.safetensors, 2.79GB bf16):
+  patch_embedder LINEAR [2048,64] (16 latent-ch x patch [1,2,2] = 64 -> 2048);
+  text_embedder (linear_1 [2048,2560] + norm + linear_2 [2048,2048]); time_embedder
+  ([2048,256]->[2048,2048]) + time_modulation [12288,2048] (6x2048 AdaLN);
+  norm_out_modulation [4096,2048]; proj_out [64,2048]. 24 blocks, each: attn
+  (to_q/k/v/out [2048,2048] + norm_q/norm_k [128] QK-norm — a SINGLE joint self-attn,
+  NO separate cross-attn; text is joined into the sequence), SwiGLU ffn
+  (gate/up [6144,2048] + down [2048,6144]), FOUR sandwich RMSNorms (norm1/norm2/
+  norm_post_attn/norm_post_ffn), per-block scale_shift_table [1,12288]. CLEAN, all
+  standard ops (linear/RMSNorm/SwiGLU/SDPA-or-eager attn/AdaLN) — NO data-dependent
+  control flow, so it should lower cleanly (unlike Miril's pooler masked-select).
+
+  NOT diffusers-Wan-loadable: diffusers 0.37 WanTransformer3DModel differs (attn1+attn2
+  cross-attn, GEGLU, single norm2, conv patch-embed) — key + structural mismatch. So
+  the reference needs the UPSTREAM package (github.com/Robbyant/lingbot-video, built on
+  Wan2.2). EXECUTION (proven two-venv method, cf. Miril [[coreai-lingbot-world-v2-video]]):
+  scratch venv with the lingbot-video package + torch==2.9 -> load LingBotVideoTransformer3DModel
+  + weights -> denoise-step forward (noisy_latent, timestep, text_embeds -> velocity)
+  -> torch.export.save; toolchain venv -> load + GRAPH-SPLIT (2.79GB bf16 > ~1.5GB
+  0x10004 ceiling -> embed + 2x12-layer blocks, host chains) -> lower -> Gate B vs the
+  real denoise-step. Weights downloaded (build/_lingbotvideo/dense_dit.safetensors).
+
+  STATUS: draft — architecture fully mapped, weights in hand, method proven; the
+  remaining build is the upstream-package scratch venv + the 2-block graph-split
+  (models/lingbotvideo/dit_export.py NOT YET WRITTEN). Apache -> publishable.
