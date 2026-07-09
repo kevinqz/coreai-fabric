@@ -52,6 +52,20 @@ parity:
     metric: graph_output_cosine
     threshold: 0.999
     tolerance: 0.0005
+    protocol:
+      n_obs: 8
+      reference_dtype: float32
+      granularity: flattened
+      graph_boundary: embed -> block0 -> block1 -> block2
+      input_protocol: recorded
+    measured:
+      status: passed
+      value: 0.9994773978846515
+      n_obs: 8
+      measurement_source: graph-output-parity-measured.json
+      min_chunk_cosine: 0.9994773978846515
+      mean_chunk_cosine: 0.9997901725659877
+      measured_on: apple_silicon
 publish:
   hf_target_namespace: kevinqz
   repo_name: LingBot-VLA-2.0-CoreAI
@@ -83,6 +97,10 @@ catalog:
   runner: CoreAIRunner
   tokenizer_required: true
   processor_required: true
+  blocks:
+  - mote-action-expert
+  - siglip-so400m-vit
+  - qwen2-vl-lm
 status: registered
 notes: 'LOADS ON ANE + GATE B PASSES via GRAPH-SPLIT (2026-07-08): min graph_output_cosine
   0.99948 / median 0.99978 over 8 obs. The monolithic 36-layer dense-MoE graph exceeds the

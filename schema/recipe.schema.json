@@ -338,6 +338,72 @@
             "greedy_token_exact": {
               "type": "boolean",
               "description": "LLMs only: additionally require greedy-decoded tokens to match the upstream exactly."
+            },
+            "measured": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "The DURABLE measured Gate-B result (RFC Phase 0, finding F6). Written by `coreai-fabric verify` from the harness report so the number lives in git (the recipe), not only in the gitignored build/<id>/parity-report.json. This is what makes the catalog `evaluation` and docs/scorecard.md reproducible on a fresh clone / CI — before this, the value died with build/ and register emitted no number. Privacy-scrubbed (platform family only). Not hand-authored.",
+              "properties": {
+                "status": {"type": "string", "enum": ["passed", "failed", "skipped", "not_run"]},
+                "value": {"type": "number", "description": "The headline metric value the gate was judged on."},
+                "n_obs": {"type": "integer", "minimum": 1},
+                "min_chunk_cosine": {"type": "number"},
+                "mean_chunk_cosine": {"type": "number"},
+                "margin_gated_match_rate": {"type": "number"},
+                "argmax_match_rate": {"type": "number"},
+                "top5_agreement_rate": {"type": "number"},
+                "max_action_mae": {"type": "number", "minimum": 0},
+                "max_relative_action_mae": {"type": "number", "minimum": 0},
+                "measured_on": {"type": "string", "description": "Platform family only (privacy: never the specific chip/OS build)."},
+                "reason": {"type": "string"},
+                "measurement_source": {"type": "string"}
+              }
+            },
+            "protocol": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "The measurement SIGNATURE for the Gate-B number (RFC Phase 0, finding F2). 'The Gate-B number' is several incommensurable quantities (match-rate vs cosine, per-row vs flattened, synthetic vs recorded, fp16 vs fp32); without this block a raw value cannot be compared to anything. Written by `coreai-fabric verify` from the harness report — not hand-authored. All fields optional, but when present they are validated.",
+              "properties": {
+                "n_obs": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Number of observations (prompts/frames) the number was measured over."
+                },
+                "seed": {
+                  "type": "integer",
+                  "description": "Seed fixing the deterministic input set / sampler noise."
+                },
+                "input_protocol": {
+                  "type": "string",
+                  "enum": ["synthetic", "recorded", "mixed"],
+                  "description": "Where the inputs came from. synthetic = torch.rand/seeded random (the smolvla 0.02-cosine catastrophe is the standing warning); recorded = real dataset frames/pixels; mixed = a documented blend. Replaces the schema description that falsely claimed recorded LeRobot inputs everywhere."
+                },
+                "reference_dtype": {
+                  "type": "string",
+                  "enum": ["float32", "float16", "bfloat16"],
+                  "description": "Precision of the torch reference the asset was compared against."
+                },
+                "granularity": {
+                  "type": "string",
+                  "enum": ["per_row", "flattened", "per_token"],
+                  "description": "How the per-observation metric was aggregated. flattened = whole-tensor cosine (structurally inflated for wide outputs); per_row = per-row min; per_token = per-token min. Leaderboards exist only within a cell that matches this."
+                },
+                "graph_boundary": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "What the number spans (e.g. 'encode→denoise', 'whole-LM', 'action head'). A reduced-boundary export (head-only) cannot cite a whole-graph number."
+                },
+                "loaded_on_ane": {
+                  "type": "boolean",
+                  "description": "Deployability signal, DISTINCT from parity (finding F11): an AR generator reloading N multi-GB programs per token can pass cosine while being undeployable. True only when the composed bundle loaded + ran on the ANE at the claimed envelope."
+                },
+                "waivers": {
+                  "type": "array",
+                  "items": {"type": "string", "minLength": 1},
+                  "uniqueItems": true,
+                  "description": "Named relaxations applied (e.g. 'near_zero_action'). Surfaced into the catalog evaluation, never silently marks passed-below-bar."
+                }
+              }
             }
           }
         }
@@ -612,6 +678,12 @@
         },
         "streaming": {
           "type": "boolean"
+        },
+        "blocks": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1, "pattern": "^[a-z0-9][a-z0-9._-]*$"},
+          "uniqueItems": true,
+          "description": "RFC Phase 2 (F5): OPTIONAL architectural-block ids this recipe composes (e.g. siglip-so400m-vit, qwen2-7b-lm). A block string carries NO license/weights of its own — the license axis stays per-recipe (upstream.hf_repo/license). Unknown ids are a validate WARNING, never an error (YAGNI: don't block conversion on vocab lag). Valid ids are listed in schema/blocks-vocab.yaml (the single fabric-side authority); a derived reverse index lives in docs/blocks-index.md (generated, never stored)."
         }
       }
     },
@@ -620,11 +692,13 @@
       "enum": [
         "draft",
         "converted",
+        "failed",
+        "blocked",
         "verified",
         "published",
         "registered"
       ],
-      "description": "Pipeline stage. Advanced only by the corresponding fabric command."
+      "description": "Pipeline stage. Advanced only by the corresponding fabric command. `failed` = a conversion/parity attempt ran and did not pass (RFC Phase 1, F8); `blocked` = blocked on an external ceiling (ANE 0x10004 program ceiling, license, toolchain skew). Both carry a committed attempts/<id>.jsonl record of why."
     },
     "published": {
       "type": "object",

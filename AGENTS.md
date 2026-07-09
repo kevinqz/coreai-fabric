@@ -53,6 +53,27 @@ pip install -e ".[hf,test]"
 hf auth login
 ```
 
+## 0. analyze — refusal-first decomposition of an upstream (RFC F1/F3)
+
+```bash
+coreai-fabric analyze sensenova/SenseNova-Vision-7B-MoT
+coreai-fabric analyze lerobot/diffusion_pusht --allow-manual
+```
+
+A refusal-first reconnaissance of an upstream HF repo **before** you scaffold a
+recipe. It never emits "SOLVED" or a coverage % — its output vocabulary is
+exactly **"candidate lane — verify against modeling code"** or **"MANUAL
+ANALYSIS REQUIRED"**. Config-derived decomposition works on ~0 of the multi-block
+upstreams it targets (the flagship SenseNova's configs are a textbook-Qwen2 stub
+against a 29.2GB checkpoint).
+
+Hard tripwires force MANUAL: `auto_map`/`trust_remote_code`, stub config, gated
+repo, `model.pt`-only, or a **weight-bytes vs config-implied-params contradiction**
+(the tripwire that catches a hidden MoT — 29.2GB checkpoint vs a textbook-Qwen2
+stub). LeRobot `config.json type` → driver family + verbatim shape prefill (it
+never invents shapes). Every emission is logged to `attempts/<id>.jsonl` so
+matcher precision is measurable. Exit 2 on MANUAL unless `--allow-manual`.
+
 ## 1. new — scaffold a recipe
 
 ```bash
@@ -131,6 +152,23 @@ Outputs on success:
   runs fine on macOS 26)
 - recipe `status: converted`
 
+### run — capture a conversion (incl. failures) into attempts/ (RFC F8)
+
+```bash
+coreai-fabric run qwen3-0.6b
+coreai-fabric run qwen3-0.6b --print-command
+```
+
+`run` executes the **exact** invocation `convert --print-command` emits (the
+drivers do not change) and instruments it: it captures the exit code + stderr,
+distills an `error_signature` class, and appends a JSONL record to **committed**
+`attempts/<id>.jsonl` — **including failures**. Failed exports previously left
+zero structured trace; this is the weakness-mining loop's data substrate. The
+`error_signature` (0x10004, complex128, OOM, parity_below_threshold, …) decides
+whether a non-zero exit is `blocked` (an external ceiling) or `failed` (a fixable
+attempt); `unclassified` is a signal the table needs a new entry. See
+`docs/reflect-ritual.md` for the loop that mines these records.
+
 ## 4. verify — Gate A + Gate B
 
 ```bash
@@ -153,6 +191,17 @@ coreai-fabric verify qwen3-0.6b
 Writes `build/<id>/parity-report.json`. Status advances to `verified` only
 when BOTH gates pass (exit 0). Gate A pass + Gate B not_run = exit 2
 ("partial") and the status does not advance.
+
+**Protocol signature (RFC F2):** on a measured run (pass OR fail), `verify`
+writes `parity.gate_b.protocol` back into the recipe — `n_obs`, `input_protocol`
+(synthetic/recorded — the smolvla 0.02-cosine catastrophe is why this is
+recorded), `reference_dtype`, `granularity`, `graph_boundary`, `loaded_on_ane`
+(deployability, distinct from cosine), and `waivers`. "The Gate-B number" is
+several incommensurable quantities; without this block a raw value cannot be
+compared to anything. A failed verify now sets `status: failed` (it wrote status
+only on pass before) — unless the recipe is already published/registered (a
+spot-check is not an un-publish). See `docs/scorecard.md` for the generated
+per-cell ranking.
 
 ## 5. publish — upload to the publisher's own HF namespace
 

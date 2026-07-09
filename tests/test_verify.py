@@ -211,3 +211,58 @@ def test_gate_b_action_parity_rejects_malformed_measurement(tmp_path):
     result = run_gate_b(tmp_path, _action_recipe(tmp_path))
     assert result["status"] == "not_run"
     assert "not a valid" in result["reason"]
+
+
+# ---- Phase 0: protocol signature (RFC F2/F6/F7) ----
+
+def test_protocol_from_report_signs_measured_result(tmp_path):
+    from coreai_fabric.verify import protocol_from_report
+
+    recipe = _recipe(tmp_path)
+    recipe.data["parity"]["gate_b"]["metric"] = "graph_output_cosine"
+    gate_b = {"metric": "graph_output_cosine", "value": 0.9999, "status": "passed",
+              "n_obs": 8, "reference_dtype": "float32",
+              "measurement_source": "graph-output-parity-measured.json"}
+    proto = protocol_from_report(gate_b, recipe)
+    assert proto is not None
+    assert proto["n_obs"] == 8
+    assert proto["reference_dtype"] == "float32"
+    assert proto["granularity"] == "flattened"  # metric-keyed
+    assert proto["graph_boundary"] == "single-graph forward"
+
+
+def test_protocol_from_report_none_for_unmeasured(tmp_path):
+    # A pure not_run with no measurement fields has nothing to sign — never fabricated.
+    from coreai_fabric.verify import protocol_from_report
+
+    recipe = _recipe(tmp_path)
+    gate_b = {"metric": "per_token_logit_cosine", "status": "not_run", "value": None,
+              "reason": "no runner configured"}
+    assert protocol_from_report(gate_b, recipe) is None
+
+
+def test_protocol_records_near_zero_waiver(tmp_path):
+    from coreai_fabric.verify import protocol_from_report
+
+    recipe = _action_recipe(tmp_path)
+    gate_b = {"metric": "action_parity", "value": 0.999, "status": "passed",
+              "n_obs": 8, "near_zero_conditioned": True,
+              "measurement_source": "action-parity-measured.json"}
+    proto = protocol_from_report(gate_b, recipe)
+    assert proto is not None
+    assert "near_zero_action" in proto["waivers"]
+    assert proto["granularity"] == "per_row"
+
+
+def test_protocol_records_graph_split_boundary(tmp_path):
+    # A split-export action lane names its graph boundary from conversion.action.graphs.
+    from coreai_fabric.verify import protocol_from_report
+
+    recipe = _action_recipe(tmp_path)
+    recipe.data.setdefault("conversion", {})["action"] = {
+        "graphs": [{"name": "embed"}, {"name": "block0"}, {"name": "tail"}]}
+    gate_b = {"metric": "action_parity", "value": 0.999, "status": "passed", "n_obs": 8,
+              "measurement_source": "action-parity-measured.json"}
+    proto = protocol_from_report(gate_b, recipe)
+    assert proto is not None
+    assert proto["graph_boundary"] == "embed -> block0 -> tail"

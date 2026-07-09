@@ -1,6 +1,18 @@
 # Conversion outputs — never committed; fabric never hosts weights.
 build/
 
+# RFC F10: never commit extracted weights / block slices. These are derivative
+# data of (often NC) upstreams; the publish bundle content allowlist also guards
+# the upload path, but this keeps them out of git too.
+*.safetensors
+*.bin
+*.pt
+*.ckpt
+*.weights
+# ...except vendored test fixtures that are tiny + deliberately committed:
+!tests/fixtures/*.safetensors
+!tests/fixtures/**/*.bin
+
 # Python
 __pycache__/
 *.py[cod]

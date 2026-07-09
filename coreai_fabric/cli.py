@@ -29,6 +29,8 @@ NEXT_STEP = {
     "verified": "coreai-fabric publish {id}",
     "published": "coreai-fabric register {id} --catalog-path ../coreai-catalog",
     "registered": "(done — indexed by coreai-catalog)",
+    "failed": "inspect attempts/{id}.jsonl + build/{id}/parity-report.json; fix and `coreai-fabric run {id}` again",
+    "blocked": "blocked on an external ceiling (ANE 0x10004 / license / toolchain skew) — see notes",
 }
 
 
@@ -89,12 +91,27 @@ def cmd_status(args) -> int:
         recipes = [find_recipe(args.id, root)]
     else:
         recipes = load_all_recipes(root)
+    # failed/blocked are off the happy-path linear stage progression: render them
+    # as a marker after the last happy-path stage reached, not as a position in
+    # the line (their index is not comparable to converted/verified).
     stages = ["draft", "converted", "verified", "published", "registered"]
     for r in recipes:
-        marker_line = " -> ".join(
-            f"{GREEN}[{s}]{RESET}" if stages.index(r.status) >= i else f"{DIM}{s}{RESET}"
-            for i, s in enumerate(stages)
-        )
+        if r.status in ("failed", "blocked"):
+            # Show the happy-path stages up to the last one before the stall,
+            # then a colored terminal marker. Heuristic: failed/blocked can only
+            # occur at or after the converted stage (an attempt ran).
+            happy_idx = 1  # converted is the furthest happy-path stage reached
+            marker_line = " -> ".join(
+                f"{GREEN}[{s}]{RESET}" if i <= happy_idx else f"{DIM}{s}{RESET}"
+                for i, s in enumerate(stages)
+            )
+            color = RED if r.status == "failed" else YELLOW
+            marker_line += f" {color}-> [{r.status}]{RESET}"
+        else:
+            marker_line = " -> ".join(
+                f"{GREEN}[{s}]{RESET}" if stages.index(r.status) >= i else f"{DIM}{s}{RESET}"
+                for i, s in enumerate(stages)
+            )
         print(f"{BOLD}{r.id}{RESET}  {marker_line}")
         print(f"  upstream: {r.data.get('upstream', {}).get('hf_repo', '?')}")
         if r.data.get("published"):
@@ -180,6 +197,23 @@ def build_parser() -> argparse.ArgumentParser:
     p_conv.add_argument("--print-command", action="store_true",
                         help="print the converter invocation without running it")
 
+    # RFC Phase 1 (F8): the single failure-capture choke point. Executes the exact
+    # invocation `convert --print-command` emits, instruments it, and appends a
+    # committed attempts/<id>.jsonl record (including failures) — the weakness-
+    # mining loop's data substrate. The drivers do not change.
+    p_run = sub.add_parser("run", help="run a conversion and capture it (incl. failures) into attempts/<id>.jsonl")
+    p_run.add_argument("id")
+    p_run.add_argument("--print-command", action="store_true",
+                       help="print the converter invocation without running it")
+
+    # RFC Phase 3 (F1/F3): refusal-first decomposition of an upstream HF repo.
+    # Never "SOLVED", never a coverage %; either a candidate lane (verify against
+    # modeling code) or MANUAL ANALYSIS REQUIRED (a tripwire fired).
+    p_an = sub.add_parser("analyze", help="refusal-first decomposition of an upstream HF repo (F1/F3)")
+    p_an.add_argument("hf_repo", help="upstream Hugging Face repo id (owner/name)")
+    p_an.add_argument("--allow-manual", action="store_true",
+                      help="exit 0 even when the verdict is MANUAL ANALYSIS REQUIRED")
+
     p_ver = sub.add_parser("verify", help="Gate A (structure) + Gate B (numeric parity); writes parity-report.json")
     p_ver.add_argument("id")
 
@@ -263,6 +297,14 @@ def main(argv: list[str] | None = None) -> int:
         from .convert import cmd_convert
 
         return cmd_convert(args)
+    if args.command == "run":
+        from .run import cmd_run
+
+        return cmd_run(args)
+    if args.command == "analyze":
+        from .analyze import cmd_analyze
+
+        return cmd_analyze(args)
     if args.command == "verify":
         from .verify import cmd_verify
 

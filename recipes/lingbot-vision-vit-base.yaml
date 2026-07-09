@@ -58,6 +58,8 @@ catalog:
   runner: CoreAIRunner
   tokenizer_required: false
   processor_required: true
+  blocks:
+  - lingbot-vit
 status: registered
 notes: 'LingBot-Vision ViT-B/16 (robbyant/lingbot-vision-vit-base @ f606f8c6, apache-2.0)
   — a self-supervised vision backbone for dense spatial perception (depth / segmentation features).

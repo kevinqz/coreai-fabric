@@ -9,7 +9,7 @@ from jsonschema import Draft202012Validator
 
 from .util import find_root, read_yaml
 
-STATUSES = ["draft", "converted", "verified", "published", "registered"]
+STATUSES = ["draft", "converted", "failed", "blocked", "verified", "published", "registered"]
 
 #: Licenses fabric treats as permissive for triage purposes. Deliberately small
 #: and conservative; anything else is review_required. Triage labels are not
@@ -124,7 +124,7 @@ def validate_recipe(recipe: Recipe, schema: dict) -> list[Issue]:
                 hint="`coreai-fabric publish` writes this block; do not set the status by hand",
             )
         )
-    if has_published and status in ("draft", "converted", "verified"):
+    if has_published and status in ("draft", "converted", "failed", "blocked", "verified"):
         issues.append(
             Issue(
                 name,
@@ -136,6 +136,76 @@ def validate_recipe(recipe: Recipe, schema: dict) -> list[Issue]:
         )
 
     issues.extend(triage_license(recipe))
+    issues.extend(_check_blocks(recipe))
+    issues.extend(_check_protocol_signature(recipe))
+    return issues
+
+
+#: The comparability signature a MEASURED Gate-B number must carry (RFC F2). A raw
+#: value is incommensurable without these — they are the scorecard's cell key.
+_REQUIRED_PROTOCOL_FIELDS = ("input_protocol", "reference_dtype", "granularity", "graph_boundary")
+_MEASURED_NUMERIC = ("value", "min_chunk_cosine", "mean_chunk_cosine", "margin_gated_match_rate",
+                     "argmax_match_rate", "top5_agreement_rate", "max_action_mae", "max_relative_action_mae")
+
+
+def _check_protocol_signature(recipe: "Recipe") -> list["Issue"]:
+    """RFC F2 (required-when-measured): a recipe carrying a DURABLE measured
+    Gate-B number (`gate_b.measured`, written by verify) MUST carry the full
+    protocol signature. Legacy/pre-Phase-0 recipes (no `measured` block — their
+    numbers lived in gitignored build/) are exempt, so this never retroactively
+    reddens the committed fleet; it holds every newly-verified recipe to F2."""
+    gb = (recipe.data.get("parity") or {}).get("gate_b") or {}
+    measured = gb.get("measured")
+    if not isinstance(measured, dict):
+        return []
+    if not any(isinstance(measured.get(k), (int, float)) for k in _MEASURED_NUMERIC):
+        return []  # a `measured` block with no numeric core is not a measurement
+    proto = gb.get("protocol") or {}
+    missing = [f for f in _REQUIRED_PROTOCOL_FIELDS if not proto.get(f)]
+    if not missing:
+        return []
+    return [Issue(
+        recipe.path.name, "error", "parity.gate_b.protocol",
+        f"measured recipe is missing protocol signature field(s): {', '.join(missing)}",
+        hint="re-run `coreai-fabric verify` — a measured Gate-B number needs its full "
+             "comparability signature (F2); it cannot be ranked without it",
+    )]
+
+
+def _known_block_ids(root: Path | None = None) -> set[str]:
+    """Load the valid block-id vocabulary from schema/blocks-vocab.yaml (RFC F13:
+    fabric is the single authority). Empty set if the file is absent — an unknown
+    id then warns (vocab lag), never errors."""
+    root = root or find_root()
+    vpath = root / "schema" / "blocks-vocab.yaml"
+    if not vpath.is_file():
+        return set()
+    try:
+        vocab = read_yaml(vpath)
+    except Exception:  # noqa: BLE001 — a malformed vocab file shouldn't crash validate
+        return set()
+    blocks = vocab.get("blocks") if isinstance(vocab, dict) else None
+    if not isinstance(blocks, list):
+        return set()
+    return {str(b.get("id")) for b in blocks if isinstance(b, dict) and b.get("id")}
+
+
+def _check_blocks(recipe: Recipe) -> list[Issue]:
+    """RFC Phase 2 (F5/F13): an unknown block id is a WARNING (vocab lag, never
+    a conversion blocker). A block string carries no license of its own."""
+    issues: list[Issue] = []
+    blocks = (recipe.data.get("catalog") or {}).get("blocks")
+    if not isinstance(blocks, list) or not blocks:
+        return issues
+    known = _known_block_ids()
+    # If the vocab file exists, unknown ids warn; if it's absent, we don't check.
+    if known:
+        for bid in blocks:
+            if isinstance(bid, str) and bid not in known:
+                issues.append(Issue(
+                    recipe.path.name, "warning", "catalog.blocks",
+                    f"block id '{bid}' is not in schema/blocks-vocab.yaml",
+                    hint="add it to schema/blocks-vocab.yaml, or fix the typo (unknown ids warn, never error)"))
     return issues
 
 

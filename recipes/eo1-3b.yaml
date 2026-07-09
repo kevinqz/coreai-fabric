@@ -77,6 +77,9 @@ catalog:
   runner: CoreAIRunner
   tokenizer_required: true
   processor_required: true
+  blocks:
+  - qwen2-vl-lm
+  - flow-matching-action-head
 status: registered
 notes: 'EO-1 — a LeRobot v0.6.0 embodied VLA (IPEC-COMMUNITY/EO-1-3B @ fe0a015d, MIT). Qwen2.5-VL-3B
   backbone + a flow-matching action head; the action denoise runs INSIDE the VLM at `<|action|>`-token
