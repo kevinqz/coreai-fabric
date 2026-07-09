@@ -47,56 +47,90 @@ def recipe_url(recipe: Recipe) -> str:
     return f"{FABRIC_REPO_URL}/blob/main/recipes/{recipe.id}.yaml"
 
 
-#: Fields of a gate_b report that belong in the catalog `evaluation`. RFC Phase 0
-#: (F6): this MUST carry the numeric `value` (the live catalog held no Gate-B
-#: number for any action lane before) plus the full protocol signature (F2).
-_EVAL_KEYS = (
-    "metric", "status", "value", "threshold", "tolerance", "n_obs",
-    "min_cosine", "median_cosine", "mean_cosine",           # cosine-family
-    "min_action_cosine", "min_chunk_cosine",                 # action aliases -> min_cosine
-    "margin_gated_match_rate", "margin_gated_ci95",          # greedy_parity family
-    "argmax_match_rate", "top5_agreement_rate", "matched", "compared",
-    "greedy_token_exact", "reference_dtype", "flip_margin_nats",
-    "num_steps", "chunk_len", "max_relative_action_mae", "measurement_source",
+#: Fields of a gate_b report that the LIVE coreai-catalog `evaluation` schema
+#: accepts today (verified against ../coreai-catalog 2026-07-09). These carry the
+#: measured parity numbers to the catalog without breaking the cross-contract
+#: check. The catalog schema's `additionalProperties: false` means anything not
+#: in this set is REJECTED — so we emit only the accepted vocabulary.
+_EVAL_KEYS_ACCEPTED = (
+    "metric", "status", "reason",
+    # greedy_parity family
+    "margin_gated_match_rate", "margin_gated_ci95", "argmax_match_rate",
+    "top5_agreement_rate", "matched", "compared", "greedy_token_exact",
+    "reference_dtype", "flip_margin_nats",
+    # action_parity family (catalog-accepted names)
+    "n_obs", "min_chunk_cosine", "mean_chunk_cosine",
+    "max_action_mae", "max_relative_action_mae",
+    # framework provenance
+    "framework", "framework_version",
+    "runner", "measured_on",
+)
+
+#: The Phase-0 protocol signature + generic numeric core (RFC F2/F6) that the
+#: catalog schema does NOT yet accept. These are the documented batched follow-up
+#: PR to coreai-catalog (RFC §4.3). We keep them in the RECIPE (the durable
+#: fabric-side home) and the generated docs/scorecard.md; they reach the catalog
+#: only after the schema PR lands. `catalog_protocol_extension()` returns them so
+#: the follow-up PR is a one-call wire-up.
+_EVAL_PHASE0_PENDING = (
+    "value", "threshold", "tolerance", "min_cosine", "median_cosine",
+    "num_steps", "chunk_len", "measurement_source",
 )
 
 
-# Action-lane harnesses report the per-obs minimum as `min_action_cosine`; the
-# generic cosine lane reports it as `min_cosine`. Normalize to one key so the
-# catalog cell comparison is honest (F2).
-_ACTION_COSINE_ALIASES = ("min_action_cosine", "min_chunk_cosine")
+def catalog_protocol_extension(report: dict | None) -> dict | None:
+    """The Phase-0 evaluation fields the catalog schema PR will add (RFC §4.3).
+    Kept here so the catalog follow-up is a one-call wire-up: when the live
+    catalog accepts `value`/`min_cosine`/`protocol`, fold this into
+    `_catalog_evaluation`. None when unmeasured."""
+    if not report:
+        return None
+    gb = report.get("gate_b", {})
+    ext = {k: gb[k] for k in _EVAL_PHASE0_PENDING if k in gb and gb[k] is not None}
+    protocol = gb.get("protocol") or {}
+    if isinstance(protocol, dict) and protocol:
+        ext["protocol"] = dict(protocol)
+    return ext or None
 
 
 def _catalog_evaluation(report: dict | None) -> dict | None:
     """The measured parity signature (from build/<id>/parity-report.json gate_b),
-    verbatim, for the catalog `evaluation` field — so the number reaches the
-    catalog instead of dying as a note. RFC Phase 0 (F6): now carries the numeric
-    value + min/median cosine + n_obs + the full protocol block. None when
-    unmeasured.
+    verbatim, for the catalog `evaluation` field — emitting ONLY the fields the
+    live catalog schema accepts (F13: one authority, no rejected additional
+    properties). The richer protocol signature lives in the RECIPE
+    (gate_b.protocol, written by verify) and the generated scorecard; it reaches
+    the catalog via the batched schema follow-up (catalog_protocol_extension).
 
-    NOTE: the catalog `evaluation` schema (separate repo, coreai-catalog) must be
-    extended to accept these numeric + protocol fields — a batched, human-gated
-    follow-up PR (RFC §4.3). register emits the richer block regardless;
-    `scripts/cross_contract_check.py` surfaces any catalog-side gap as drift."""
+    None when unmeasured (no numeric core)."""
     if not report:
         return None
     gb = report.get("gate_b", {})
-    ev = {k: gb[k] for k in _EVAL_KEYS if k in gb and gb[k] is not None}
-    # Normalize the action-lane cosine aliases to the canonical `min_cosine`.
-    if "min_cosine" not in ev:
-        for alias in _ACTION_COSINE_ALIASES:
+    ev = {k: gb[k] for k in _EVAL_KEYS_ACCEPTED if k in gb and gb[k] is not None}
+    # F2: the action lane reports the per-obs min as `min_action_cosine` — the
+    # catalog's accepted name is `min_chunk_cosine`. Normalize so the cell
+    # comparison is honest.
+    if "min_chunk_cosine" not in ev:
+        for alias in ("min_action_cosine", "min_cosine"):
             if isinstance(gb.get(alias), (int, float)):
-                ev["min_cosine"] = gb[alias]
+                ev["min_chunk_cosine"] = gb[alias]
                 break
-    # RFC F7 rule 3: waivers surface — never silently mark passed-below-bar.
-    protocol = gb.get("protocol") or {}
-    waivers = protocol.get("waivers")
-    if isinstance(waivers, list) and waivers:
-        ev["waivers"] = list(waivers)
-    # Carry the protocol signature so the number is never cited without context.
-    if isinstance(protocol, dict) and protocol:
-        ev["protocol"] = {k: v for k, v in protocol.items() if k != "waivers"} | (
-            {"waivers": list(waivers)} if waivers else {})
+    if "mean_chunk_cosine" not in ev and isinstance(gb.get("mean_cosine"), (int, float)):
+        ev["mean_chunk_cosine"] = gb["mean_cosine"]
+    if not ev.get("metric"):
+        return None
+    # F6: an evaluation with no numeric core is not a measurement.
+    numeric_keys = ("min_chunk_cosine", "mean_chunk_cosine", "margin_gated_match_rate",
+                    "argmax_match_rate", "top5_agreement_rate", "max_action_mae",
+                    "max_relative_action_mae")
+    if not any(isinstance(ev.get(k), (int, float)) for k in numeric_keys):
+        return None
+    env = gb.get("environment", {})
+    # PRIVACY: never surface the publisher's specific hardware/OS build. Report only
+    # the generic platform family (the harness emits `platform`/`accelerator`).
+    measured_on = env.get("accelerator") or env.get("platform")
+    if measured_on:
+        ev["measured_on"] = str(measured_on)
+    return ev
     if not ev.get("metric"):
         return None
     # F6: an evaluation with no numeric core (value / min_cosine / match-rate

@@ -73,8 +73,11 @@ def test_model_entry_carries_measured_parity_into_catalog():
     assert _schema_errors("model.schema.json", entry) == []
     assert entry["evaluation"]["metric"] == "greedy_parity"
     assert entry["evaluation"]["argmax_match_rate"] == 0.958
-    # RFC F6: the numeric value now reaches the catalog (it was dropped before).
-    assert entry["evaluation"]["value"] == 1.0
+    # RFC F6: the greedy_parity numbers reach the catalog in the vocabulary it accepts.
+    assert entry["evaluation"]["margin_gated_match_rate"] == 1.0
+    # RFC F13: the generic `value` is NOT emitted to the catalog (it rejects it);
+    # it lives fabric-side in the recipe + catalog_protocol_extension.
+    assert "value" not in entry["evaluation"]
     # PRIVACY: measured_on carries only the generic accelerator family, never the chip model.
     assert entry["evaluation"]["measured_on"] == "apple_silicon"
     # RFC F7 rule 2: a pass WITHOUT n_obs>=8 cannot be high_fidelity — it is balanced.

@@ -1,55 +1,70 @@
-"""RFC Phase 0c (F6/F7): the measured parity number + protocol signature reach
-the catalog `evaluation`, and the fidelity tier is derived from margin/n_obs/
-waivers — never a collapse of any pass to high_fidelity."""
+"""RFC Phase 0c + F13 (F6/F7): the measured parity number + protocol signature
+reach the catalog via the vocabulary the LIVE catalog schema accepts, and the
+fidelity tier is derived from margin/n_obs/waivers — never a collapse of any
+pass to high_fidelity. The generic `value`/`protocol` fields live in the recipe
+(catalog_protocol_extension) pending the batched catalog schema PR."""
 from __future__ import annotations
 
 from coreai_fabric.register import (
     _catalog_evaluation,
     _fidelity_tier,
+    catalog_protocol_extension,
 )
-from coreai_fabric.recipes import Recipe
 
 
 def _report(gate_b: dict) -> dict:
     return {"gate_a": {"status": "passed"}, "gate_b": gate_b}
 
 
-def test_eval_carries_numeric_value_and_min_cosine():
-    # F6: the numeric value + min cosine reach the catalog (dropped before).
-    gb = {"metric": "graph_output_cosine", "status": "passed", "value": 0.9999,
-          "min_cosine": 0.9999, "n_obs": 8, "threshold": 0.999, "tolerance": 0.0005}
-    ev = _catalog_evaluation(_report(gb))
-    assert ev["value"] == 0.9999
-    assert ev["min_cosine"] == 0.9999
-    assert ev["n_obs"] == 8
-
-
-def test_eval_normalizes_action_cosine_alias_to_min_cosine():
-    # The action lane reports min as `min_action_cosine`; normalize to `min_cosine`.
+def test_eval_carries_action_cosine_in_catalog_vocabulary():
+    # F6: the numeric min cosine reaches the catalog under the action-lane name
+    # the live catalog accepts (min_chunk_cosine), aliased from min_action_cosine.
     gb = {"metric": "action_parity", "status": "passed", "value": 0.999,
           "min_action_cosine": 0.999, "n_obs": 8}
     ev = _catalog_evaluation(_report(gb))
-    assert ev["min_cosine"] == 0.999
+    assert ev["min_chunk_cosine"] == 0.999
+    assert ev["n_obs"] == 8
 
 
-def test_eval_surfaces_waivers_from_protocol():
-    # F7 rule 3: waivers surface into the catalog evaluation, never silent.
-    gb = {"metric": "action_parity", "status": "passed", "value": 0.999, "n_obs": 8,
-          "protocol": {"waivers": ["near_zero_action"], "granularity": "per_row"}}
+def test_eval_carries_greedy_parity_numbers():
+    gb = {"metric": "greedy_parity", "status": "passed", "value": 1.0,
+          "margin_gated_match_rate": 1.0, "argmax_match_rate": 0.958,
+          "matched": 46, "compared": 48, "reference_dtype": "float16"}
     ev = _catalog_evaluation(_report(gb))
-    assert ev["waivers"] == ["near_zero_action"]
-    assert ev["protocol"]["waivers"] == ["near_zero_action"]
-    assert ev["protocol"]["granularity"] == "per_row"
+    assert ev["argmax_match_rate"] == 0.958
+    assert ev["margin_gated_match_rate"] == 1.0
 
 
-def test_eval_carries_protocol_block():
-    gb = {"metric": "graph_output_cosine", "status": "passed", "value": 0.9999, "n_obs": 8,
+def test_protocol_extension_carries_value_and_protocol():
+    # F6/F2: the generic value + full protocol live here, pending the catalog PR.
+    gb = {"metric": "graph_output_cosine", "status": "passed", "value": 0.9999,
+          "min_cosine": 0.9999, "threshold": 0.999, "n_obs": 8,
           "protocol": {"n_obs": 8, "reference_dtype": "float32", "granularity": "flattened",
                        "input_protocol": "recorded", "graph_boundary": "single-graph forward"}}
+    ext = catalog_protocol_extension(_report(gb))
+    assert ext["value"] == 0.9999
+    assert ext["min_cosine"] == 0.9999
+    assert ext["protocol"]["reference_dtype"] == "float32"
+    assert ext["protocol"]["granularity"] == "flattened"
+
+
+def test_protocol_extension_carries_waivers():
+    gb = {"metric": "action_parity", "status": "passed", "value": 0.999,
+          "protocol": {"waivers": ["near_zero_action"], "granularity": "per_row"}}
+    ext = catalog_protocol_extension(_report(gb))
+    assert ext["protocol"]["waivers"] == ["near_zero_action"]
+
+
+def test_eval_emits_no_rejected_additional_properties():
+    # F13: the catalog uses additionalProperties:false. value/protocol must NOT
+    # appear in the catalog-bound evaluation (they live in catalog_protocol_extension).
+    gb = {"metric": "action_parity", "status": "passed", "value": 0.999,
+          "min_action_cosine": 0.999, "n_obs": 8,
+          "protocol": {"granularity": "per_row"}}
     ev = _catalog_evaluation(_report(gb))
-    assert ev["protocol"]["reference_dtype"] == "float32"
-    assert ev["protocol"]["granularity"] == "flattened"
-    assert ev["protocol"]["input_protocol"] == "recorded"
+    assert "value" not in ev
+    assert "protocol" not in ev
+    assert "min_cosine" not in ev  # normalized to min_chunk_cosine (catalog-accepted)
 
 
 def test_fidelity_tier_bare_pass_is_balanced_not_high_fidelity():
