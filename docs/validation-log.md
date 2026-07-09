@@ -367,3 +367,24 @@ Assets + parity JSON under build/ (gitignored). Recipes: pulpie-orange-small (ve
 index-only), lingbot-video-dense-1.3b (verified, publishable), lingbot-video-moe-30b-a3b
 (draft — VAE verified by identity, 30B MoE DiT = research-grade). The
 lingbot-video-rewriter-lora is a prompt-rewriter LoRA, out of scope for a .aimodel lane.
+
+---
+
+## 2026-07-08 — Published the LingBot-Video VAE decoders (first video assets)
+
+Both LingBot-Video members are Apache-2.0, so their VAE-decoder assets are
+**publishable** (world-v2 is CC-BY-NC-SA → stays index-only). Enabled publishing by
+authoring `templates/model-card-video.md` + `_render_video_card` + a `bundle_kind ==
+"video"` dispatch branch in `render_model_card` (fabric refused to ship a card that
+misdescribes a video asset — only llm/action/token-classification/image-feature/
+reward templates existed).
+
+- **lingbot-video-dense-1.3b** → published `kevinqz/LingBot-Video-Dense-1.3B-CoreAI`
+  @ 3106a28e, catalog PR kevinqz/coreai-catalog#36. Gate B 0.99999999999941.
+- **lingbot-video-moe-30b-a3b** → its own vae/ safetensors fetched (byte-identical,
+  SHA256 d6e524b3…, confirmed from the LFS pointer before download even finished),
+  built, Gate B 0.99999999999941, published `kevinqz/LingBot-Video-MoE-30B-A3B-CoreAI`
+  @ fc741242, catalog PR #37.
+
+Both `verify` runs pass Gate A + Gate B; `register` injected the gate_b `protocol`
+block (surgical-registry). Recipes stay `published` until PRs #36/#37 merge.

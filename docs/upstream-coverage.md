@@ -76,13 +76,15 @@ same VAE. `LingBotVideoPipeline` (T2I/T2V/TI2V).
 
 | Model | Notes | Recipe | Status |
 |---|---|---|---|
-| ✅ lingbot-video-dense-1.3b | VAE decoder built, Gate B 0.99999999999941 | `recipes/lingbot-video-dense-1.3b.yaml` | **verified**, publishable |
-| ✅ lingbot-video-moe-30b-a3b | VAE verified by identity; 30B MoE DiT = research | `recipes/lingbot-video-moe-30b-a3b.yaml` | **draft** |
+| ✅ lingbot-video-dense-1.3b | VAE decoder, Gate B 0.99999999999941 | `recipes/lingbot-video-dense-1.3b.yaml` | **published** ([HF](https://huggingface.co/kevinqz/LingBot-Video-Dense-1.3B-CoreAI), [PR #36](https://github.com/kevinqz/coreai-catalog/pull/36)) |
+| ✅ lingbot-video-moe-30b-a3b | VAE decoder built from its own (identical) weights, Gate B 0.99999999999941 | `recipes/lingbot-video-moe-30b-a3b.yaml` | **published** ([HF](https://huggingface.co/kevinqz/LingBot-Video-MoE-30B-A3B-CoreAI), [PR #37](https://github.com/kevinqz/coreai-catalog/pull/37)) |
 | 🚫 lingbot-video-rewriter-lora | prompt-rewriter LoRA — a text adapter, not a `.aimodel` core | — | out-of-scope |
 
-The dense VAE decoder is built + verified and, being Apache-2.0, is publishable. The
-MoE's VAE is the same shared family weights (recipe draft pending its own hash confirm);
-its 30B MoE DiT is a dedicated graph-split campaign. The rewriter LoRA is out of scope.
+Both VAE decoders are **published+registered** (Apache-2.0) — the first video assets
+in the fleet. Both were built from their own vae/ safetensors, both byte-identical
+(SHA256 d6e524b3…) to world-v2's VAE. Each repo's DiT is a dedicated campaign; the
+rewriter LoRA is out of scope. Recipes stay `published` until PRs #36/#37 merge, then
+`register --mark-merged` flips them to `registered`.
 
 ## 6. robbyant/lingbot-world-v2 — ✅ done this session (bonus)
 
@@ -100,9 +102,11 @@ feat_cache-as-I/O, then the 14B DiT graph-split. See `docs/validation-log.md`.
 - ~~pulpie-orange-small~~ ✅ done (verified, index-only)
 - ~~lingbot-video-dense-1.3b VAE~~ ✅ done (verified, publishable)
 
+- ~~Publish lingbot-video-dense-1.3b~~ ✅ published+registered (HF + catalog PR #36)
+- ~~Publish lingbot-video-moe-30b-a3b VAE~~ ✅ published+registered (HF + catalog PR #37)
+
 Remaining:
-1. **Publish `lingbot-video-dense-1.3b`** — Apache-2.0 VAE decoder asset, ready to
-   register (kevinqz/LingBot-Video-Dense-1.3B-CoreAI) → the first publishable video asset.
+1. **Merge catalog PRs #36/#37**, then `register --mark-merged` on both.
 2. **SenseNova export.py** — turn the draft into a measured Gate-B number (index-only).
 3. **Streaming feat_cache-as-I/O** — finishes the VAE lane for the whole video family
    (world-v2 + video-dense + video-moe share the asset).

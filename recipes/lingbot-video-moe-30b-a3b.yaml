@@ -30,6 +30,11 @@ parity:
     metric: graph_output_cosine
     threshold: 0.999
     tolerance: 0.0005
+    protocol:
+      n_obs: 8
+      reference_dtype: float32
+      granularity: flattened
+      graph_boundary: single-graph forward
 publish:
   hf_target_namespace: kevinqz
   repo_name: LingBot-Video-MoE-30B-A3B-CoreAI
@@ -59,30 +64,34 @@ catalog:
   runner: CoreAIVideoPipeline
   tokenizer_required: true
   processor_required: true
-status: draft
-notes: >-
-  LingBot-Video MoE 30B-A3B (robbyant/lingbot-video-moe-30b-a3b @ f2e538f6,
-  apache-2.0) — the flagship Mixture-of-Experts member of the LingBotVideoPipeline
-  family: ~30B total / ~3B active ("A3B"), ~3x faster inference via grouped-expert
-  execution, T2I / T2V / TI2V + a refiner. ~130GB (13 transformer shards).
-  PUBLISHABLE (Apache-2.0).
+status: published
+notes: 'LingBot-Video MoE 30B-A3B (robbyant/lingbot-video-moe-30b-a3b @ f2e538f6, apache-2.0)
+  — the flagship Mixture-of-Experts member of the LingBotVideoPipeline family: ~30B total
+  / ~3B active ("A3B"), ~3x faster inference via grouped-expert execution, T2I / T2V / TI2V
+  + a refiner. ~130GB (13 transformer shards). PUBLISHABLE (Apache-2.0).
 
-  DEPLOYABLE CORE = the AutoencoderKLWan VAE DECODER, the SAME lane as
-  lingbot-video-dense-1.3b / lingbot-world-v2 (identical VAE config family) — built
-  via models/lingbotvideo/export.py --weights build/_lingbotvideo/moe_vae.safetensors:
-  latent [1,16,1,60,104] -> frames [1,3,1,480,832], ONE static fp32 .aimodel, single
-  program. GATE B = graph_output_cosine on decoded pixels. Only the vae/ safetensors
-  is fetched; the 130GB DiT stays out of the build.
+  DEPLOYABLE CORE = the AutoencoderKLWan VAE DECODER, the SAME lane as lingbot-video-dense-1.3b
+  / lingbot-world-v2 (identical VAE config family) — built via models/lingbotvideo/export.py
+  --weights build/_lingbotvideo/moe_vae.safetensors: latent [1,16,1,60,104] -> frames [1,3,1,480,832],
+  ONE static fp32 .aimodel, single program. GATE B = graph_output_cosine on decoded pixels.
+  Only the vae/ safetensors is fetched; the 130GB DiT stays out of the build.
 
-  VAE ALREADY VERIFIED BY IDENTITY: lingbot-world-v2's and lingbot-video-dense-1.3b's
-  vae/ safetensors are byte-identical (SHA256 d6e524b3...), and both share this
-  model's AutoencoderKLWan config — the LingBot family ships ONE VAE, whose decoder
-  is BUILT + Gate B 0.99999999999941 (see lingbot-video-dense-1.3b). Recipe stays
-  `draft` only because this repo's own vae hash was not re-fetched here; confirm it to
-  promote (expected identical). The deployable VAE decoder asset is effectively done.
+  BUILT + GATE B MEASURED (2026-07-08, coreai-torch 0.4.1 / coremltools 9.0): min graph_output_cosine
+  0.99999999999941 / median 0.99999999999941 over n_obs=8 (fp32 torch AutoencoderKLWan first-chunk
+  decoder vs fp32 .aimodel; latent [1,16,1,60,104] -> frames [1,3,1,480,832]). One fp32 program
+  ~286MB, LOADS OK. This repo''s own vae/ safetensors was fetched and is BYTE-IDENTICAL (SHA256
+  d6e524b3...) to lingbot-world-v2 + lingbot-video-dense-1.3b — the LingBot family ships ONE
+  AutoencoderKLWan; the same number falls out, as expected. PUBLISHABLE (Apache-2.0) as kevinqz/LingBot-Video-MoE-30B-A3B-CoreAI.
+  Only the VAE decoder is deployed here; the 30B MoE DiT remains the research-grade graph-split
+  below.
 
-  DiT 30B MoE = host-owned RESEARCH-GRADE graph-split target — a much larger sibling
-  of the lingbot-vla-v2 dense-MoE split (30B, 13 shards, grouped experts). Far above
-  the 0x10004 per-program complexity ceiling; needs an N-program split with the MoE
-  dense-rewrite + sequential block loading proven on lingbot-vla-v2. Multi-session,
-  large download. UMT5 text encoder = trivial reuse encoder lane.
+  DiT 30B MoE = host-owned RESEARCH-GRADE graph-split target — a much larger sibling of the
+  lingbot-vla-v2 dense-MoE split (30B, 13 shards, grouped experts). Far above the 0x10004
+  per-program complexity ceiling; needs an N-program split with the MoE dense-rewrite + sequential
+  block loading proven on lingbot-vla-v2. Multi-session, large download. UMT5 text encoder
+  = trivial reuse encoder lane.'
+published:
+  hf_repo: kevinqz/LingBot-Video-MoE-30B-A3B-CoreAI
+  revision: fc741242ee2ed709629ae6a04307111ab77d9b45
+  date: '2026-07-09'
+catalog_pr: https://github.com/kevinqz/coreai-catalog/pull/37
