@@ -9,7 +9,7 @@ from jsonschema import Draft202012Validator
 
 from .util import find_root, read_yaml
 
-STATUSES = ["draft", "converted", "verified", "published", "registered"]
+STATUSES = ["draft", "converted", "failed", "blocked", "verified", "published", "registered"]
 
 #: Licenses fabric treats as permissive for triage purposes. Deliberately small
 #: and conservative; anything else is review_required. Triage labels are not
@@ -124,7 +124,7 @@ def validate_recipe(recipe: Recipe, schema: dict) -> list[Issue]:
                 hint="`coreai-fabric publish` writes this block; do not set the status by hand",
             )
         )
-    if has_published and status in ("draft", "converted", "verified"):
+    if has_published and status in ("draft", "converted", "failed", "blocked", "verified"):
         issues.append(
             Issue(
                 name,

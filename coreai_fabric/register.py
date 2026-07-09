@@ -47,21 +47,64 @@ def recipe_url(recipe: Recipe) -> str:
     return f"{FABRIC_REPO_URL}/blob/main/recipes/{recipe.id}.yaml"
 
 
-#: Fields of a greedy_parity gate_b report that belong in the catalog `evaluation`.
-_EVAL_KEYS = ("metric", "status", "reason", "margin_gated_match_rate", "margin_gated_ci95",
-              "argmax_match_rate", "top5_agreement_rate", "matched", "compared",
-              "greedy_token_exact", "reference_dtype", "flip_margin_nats")
+#: Fields of a gate_b report that belong in the catalog `evaluation`. RFC Phase 0
+#: (F6): this MUST carry the numeric `value` (the live catalog held no Gate-B
+#: number for any action lane before) plus the full protocol signature (F2).
+_EVAL_KEYS = (
+    "metric", "status", "value", "threshold", "tolerance", "n_obs",
+    "min_cosine", "median_cosine", "mean_cosine",           # cosine-family
+    "min_action_cosine", "min_chunk_cosine",                 # action aliases -> min_cosine
+    "margin_gated_match_rate", "margin_gated_ci95",          # greedy_parity family
+    "argmax_match_rate", "top5_agreement_rate", "matched", "compared",
+    "greedy_token_exact", "reference_dtype", "flip_margin_nats",
+    "num_steps", "chunk_len", "max_relative_action_mae", "measurement_source",
+)
+
+
+# Action-lane harnesses report the per-obs minimum as `min_action_cosine`; the
+# generic cosine lane reports it as `min_cosine`. Normalize to one key so the
+# catalog cell comparison is honest (F2).
+_ACTION_COSINE_ALIASES = ("min_action_cosine", "min_chunk_cosine")
 
 
 def _catalog_evaluation(report: dict | None) -> dict | None:
     """The measured parity signature (from build/<id>/parity-report.json gate_b),
     verbatim, for the catalog `evaluation` field — so the number reaches the
-    catalog instead of dying as a note. None when unmeasured."""
+    catalog instead of dying as a note. RFC Phase 0 (F6): now carries the numeric
+    value + min/median cosine + n_obs + the full protocol block. None when
+    unmeasured.
+
+    NOTE: the catalog `evaluation` schema (separate repo, coreai-catalog) must be
+    extended to accept these numeric + protocol fields — a batched, human-gated
+    follow-up PR (RFC §4.3). register emits the richer block regardless;
+    `scripts/cross_contract_check.py` surfaces any catalog-side gap as drift."""
     if not report:
         return None
     gb = report.get("gate_b", {})
     ev = {k: gb[k] for k in _EVAL_KEYS if k in gb and gb[k] is not None}
+    # Normalize the action-lane cosine aliases to the canonical `min_cosine`.
+    if "min_cosine" not in ev:
+        for alias in _ACTION_COSINE_ALIASES:
+            if isinstance(gb.get(alias), (int, float)):
+                ev["min_cosine"] = gb[alias]
+                break
+    # RFC F7 rule 3: waivers surface — never silently mark passed-below-bar.
+    protocol = gb.get("protocol") or {}
+    waivers = protocol.get("waivers")
+    if isinstance(waivers, list) and waivers:
+        ev["waivers"] = list(waivers)
+    # Carry the protocol signature so the number is never cited without context.
+    if isinstance(protocol, dict) and protocol:
+        ev["protocol"] = {k: v for k, v in protocol.items() if k != "waivers"} | (
+            {"waivers": list(waivers)} if waivers else {})
     if not ev.get("metric"):
+        return None
+    # F6: an evaluation with no numeric core (value / min_cosine / match-rate
+    # family) is not a measurement — return None so the catalog doesn't get a
+    # hollow "metric+status" shell with no number.
+    numeric_keys = ("value", "min_cosine", "margin_gated_match_rate",
+                    "argmax_match_rate", "top5_agreement_rate")
+    if not any(isinstance(ev.get(k), (int, float)) for k in numeric_keys):
         return None
     if isinstance(gb.get("runner"), str):
         ev["runner"] = gb["runner"]
@@ -74,15 +117,42 @@ def _catalog_evaluation(report: dict | None) -> dict | None:
     return ev
 
 
+#: A pass must clear the threshold by at least this absolute margin AND be
+#: measured over at least this many observations to be called `high_fidelity`.
+#: A bare pass (right at the bar, or underpowered) is `balanced`; a waivered
+#: pass is `balanced` too. (RFC F7 rule 2: never collapse pass -> high_fidelity.)
+HIGH_FIDELITY_MARGIN = 0.0005
+HIGH_FIDELITY_MIN_OBS = 8
+
+
 def _fidelity_tier(quantization: str, report: dict | None) -> str | None:
-    """size (lossy, e.g. int4) / high_fidelity (~lossless, e.g. int8) / balanced —
-    from the MEASURED gate_b when available, else the quantization tier."""
+    """size (lossy, e.g. int4) / high_fidelity (~lossless) / balanced — from the
+    MEASURED gate_b per F7 rule 2 (margin + n_obs + waivers), never a collapse of
+    any pass to high_fidelity. Quantization tier is a tiebreaker hint ONLY when
+    no measured number exists."""
     gb = (report or {}).get("gate_b", {})
     status = gb.get("status")
-    if status == "passed":
-        return "high_fidelity"
     if status == "failed":
         return "size"
+    if status == "passed":
+        value = gb.get("value")
+        threshold = gb.get("threshold")
+        n_obs = gb.get("n_obs")
+        waivers = (gb.get("protocol") or {}).get("waivers")
+        # Margin over the bar: threshold-relative for cosine-style metrics
+        # (graph_output_cosine / action_parity / per_token_logit_cosine), absolute
+        # for greedy_parity (a match-RATE with no meaningful threshold, e.g. 0.958).
+        has_margin = (
+            isinstance(value, (int, float))
+            and ((isinstance(threshold, (int, float)) and value - threshold >= HIGH_FIDELITY_MARGIN)
+                 or (threshold is None and value >= 0.99))
+        )
+        if (has_margin and isinstance(n_obs, int)
+                and n_obs >= HIGH_FIDELITY_MIN_OBS
+                and not waivers):
+            return "high_fidelity"
+        return "balanced"  # a bare/waivered/underpowered pass is NOT high_fidelity
+    # Unmeasured (not_run): fall back to the quantization hint, honestly labeled.
     q = str(quantization).lower()
     if q in ("int8", "8bit"):
         return "high_fidelity"
@@ -401,13 +471,35 @@ def _tool_version_from_manifest(root: Path, recipe: Recipe) -> str | None:
 
 
 def _load_parity_report(root: Path, recipe: Recipe) -> dict | None:
+    """Load the parity report, and ensure the durable protocol signature (RFC
+    Phase 0, written into the recipe by verify) is present on gate_b even when
+    the gitignored build/<id>/parity-report.json is stale or absent. The recipe
+    is the provenance record; the report is the transient measurement."""
     rpath = parity_report_path(root, recipe)
-    if not rpath.is_file():
-        return None
-    try:
-        return json.loads(rpath.read_text())
-    except json.JSONDecodeError:
-        return None
+    report = None
+    if rpath.is_file():
+        try:
+            report = json.loads(rpath.read_text())
+        except json.JSONDecodeError:
+            report = None
+    # The recipe carries the durable protocol block + the canonical threshold;
+    # fold it onto the report's gate_b so register always sees the full signature.
+    recipe_gate_b = (recipe.data.get("parity") or {}).get("gate_b") or {}
+    recipe_protocol = recipe_gate_b.get("protocol")
+    if report is None:
+        if not recipe_protocol:
+            return None
+        # Build report gone but recipe carries a signed protocol: synthesize a
+        # minimal report so _catalog_evaluation / _fidelity_tier can run.
+        report = {"gate_b": {"status": recipe_gate_b.get("status", "not_run"),
+                             "metric": recipe_gate_b.get("metric")}}
+    gb = report.setdefault("gate_b", {})
+    if isinstance(recipe_protocol, dict) and recipe_protocol:
+        gb["protocol"] = dict(recipe_protocol)
+    for k in ("threshold", "tolerance", "n_obs", "value"):
+        if k not in gb and k in recipe_gate_b:
+            gb[k] = recipe_gate_b[k]
+    return report
 
 
 def _notes_suffix_from_report(report: dict | None) -> str:

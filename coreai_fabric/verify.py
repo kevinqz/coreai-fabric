@@ -39,6 +39,106 @@ METADATA_RECIPE_KEYS = {
 }
 
 
+# Granularity per metric family (RFC Phase 0, F2). "The Gate-B number" is several
+# incommensurable quantities; granularity is one axis that fixes comparability.
+# A flattened whole-tensor cosine is structurally inflated for wide outputs vs a
+# per-row min; a leaderboard across the two crowns the inflated one. Recorded here
+# so the protocol block carried to the catalog names the truth.
+METRIC_GRANULARITY = {
+    "action_parity": "per_row",
+    "graph_output_cosine": "flattened",
+    "per_token_logit_cosine": "per_token",
+    "greedy_parity": "per_token",
+}
+
+
+def protocol_from_report(gate_b: dict, recipe: Recipe) -> dict | None:
+    """Distill the measurement SIGNATURE from a Gate-B result + recipe (RFC §4.2).
+
+    The harness report already carries most of these fields (n_obs,
+    reference_dtype, per_obs_*, near_zero_conditioned) — they currently die in the
+    gitignored parity-report. This builds the durable protocol block written back
+    into the recipe so the number can never again be cited without its context.
+
+    Returns None when there is no measurement to sign (status not_run with no
+    value/protocol fields) — we never fabricate a signature.
+    """
+    if not isinstance(gate_b, dict):
+        return None
+    metric = gate_b.get("metric")
+    # Only sign when there is a real measurement or a real signature already
+    # present in the harness output (n_obs / reference_dtype / etc.). A pure
+    # not_run with none of those has nothing to sign.
+    has_measurement = (
+        isinstance(gate_b.get("value"), (int, float))
+        or isinstance(gate_b.get("n_obs"), int)
+        or gate_b.get("reference_dtype") is not None
+        or gate_b.get("per_obs_cosine") is not None
+        or gate_b.get("per_obs_ref_rms") is not None
+    )
+    if not has_measurement:
+        return None
+
+    proto: dict = {}
+
+    n_obs = gate_b.get("n_obs")
+    if isinstance(n_obs, int) and n_obs >= 1:
+        proto["n_obs"] = n_obs
+    elif gate_b.get("seed") is not None:
+        proto["seed"] = gate_b["seed"]
+
+    rdtype = gate_b.get("reference_dtype")
+    if isinstance(rdtype, str) and rdtype in ("float32", "float16", "bfloat16"):
+        proto["reference_dtype"] = rdtype
+
+    if metric in METRIC_GRANULARITY:
+        proto["granularity"] = METRIC_GRANULARITY[metric]
+
+    # input_protocol: recorded by default for the action/graph lanes whose
+    # harnesses feed real LeRobot dataset frames/pixels (the standard contract,
+    # see docs/parity-protocol.md). synthetic for a torch.rand smoke (the
+    # smolvla 0.02-cosine catastrophe is why this field exists). We infer from
+    # measurement_source/notes; when unknowable we OMIT (never guess).
+    src = str(gate_b.get("measurement_source") or "").lower()
+    reason = str(gate_b.get("reason") or "").lower()
+    if metric == "action_parity" or "recorded" in src or "real" in src:
+        proto["input_protocol"] = "recorded"
+    elif "rand" in src or "synthetic" in src or "rand" in reason:
+        proto["input_protocol"] = "synthetic"
+
+    # graph_boundary: what the number spans. From the recipe's split-export
+    # graphs when declared, else a metric-default.
+    conv = recipe.data.get("conversion", {})
+    graphs = (conv.get("action") or {}).get("graphs")
+    if isinstance(graphs, list) and graphs:
+        names = [str(g.get("name", "")) for g in graphs if isinstance(g, dict)]
+        proto["graph_boundary"] = " -> ".join(n for n in names if n) or "split-graph"
+    elif metric == "greedy_parity":
+        proto["graph_boundary"] = "whole-LM KV-cache decode"
+    elif metric == "per_token_logit_cosine":
+        proto["graph_boundary"] = "single-graph next-token"
+    elif metric == "graph_output_cosine":
+        proto["graph_boundary"] = "single-graph forward"
+    elif metric == "action_parity":
+        proto["graph_boundary"] = "encode -> denoise"
+
+    # loaded_on_ane: deployability signal DISTINCT from parity (F11). We only
+    # assert it when the harness/note says so (e.g. a graph-split smoke that
+    # loaded the bundle). Otherwise absent — never inferred from a cosine pass.
+    notes = (gate_b.get("reason") or "") + " " + str(gate_b.get("note") or "")
+    nl = notes.lower()
+    if "loaded on ane" in nl or "loads on ane" in nl or "loaded on the ane" in nl:
+        proto["loaded_on_ane"] = True
+    elif "0x10004" in nl or "program load failure" in nl or "did not load" in nl:
+        proto["loaded_on_ane"] = False
+
+    # Waivers: a named relaxation applied (surfaced, never silent — F7 rule 3).
+    if gate_b.get("near_zero_conditioned"):
+        proto.setdefault("waivers", []).append("near_zero_action")
+
+    return proto or None
+
+
 #: Metric for a quantized PRODUCTION `coreai.llm.export` asset: task accuracy
 #: vs upstream (e.g. tinyMMLU) rather than raw logit fidelity, which a 4bit
 #: asset legitimately fails. The only conforming evaluator is Apple's
@@ -386,6 +486,12 @@ def cmd_verify(args) -> int:
         from .util import write_yaml
 
         recipe.data["status"] = "verified"
+        # RFC Phase 0 (F2): write the measurement SIGNATURE back into the recipe
+        # so the number is never cited without its protocol. The harness report
+        # already carries these fields; they died in the gitignored build/ before.
+        proto = protocol_from_report(gate_b, recipe)
+        if proto:
+            recipe.data["parity"]["gate_b"]["protocol"] = proto
         write_yaml(recipe.path, recipe.data)
         ok(f"recipe status -> verified ({recipe.path.name})")
         print(f"next: coreai-fabric publish {recipe.id}")
@@ -397,4 +503,23 @@ def cmd_verify(args) -> int:
         )
         return 2
     err("verification failed (see report)")
+    # RFC Phase 1 (F8): a failed verify writes status + protocol too. Today it
+    # wrote status only on pass, leaving failed attempts with no durable trace.
+    # Guard: never regress an already-published/registered recipe to `failed`
+    # (re-verifying a published model is a spot-check, not an un-publish). The
+    # failed report is always written; the status flip is gated to pre-publish.
+    from .util import write_yaml
+
+    proto = protocol_from_report(gate_b, recipe)
+    if proto:
+        recipe.data["parity"]["gate_b"]["protocol"] = proto
+    if recipe.data.get("status") not in ("published", "registered"):
+        recipe.data["status"] = "failed"
+        write_yaml(recipe.path, recipe.data)
+        ok(f"recipe status -> failed ({recipe.path.name}); see {rpath.relative_to(root)}")
+    else:
+        warn(f"Gate B failed but {recipe.id} is already {recipe.data['status']} — "
+             "report written, status NOT regressed (a spot-check is not an un-publish)")
+        if proto:
+            write_yaml(recipe.path, recipe.data)
     return 1

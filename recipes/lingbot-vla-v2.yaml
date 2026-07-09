@@ -52,6 +52,12 @@ parity:
     metric: graph_output_cosine
     threshold: 0.999
     tolerance: 0.0005
+    protocol:
+      n_obs: 8
+      reference_dtype: float32
+      granularity: flattened
+      graph_boundary: embed -> block0 -> block1 -> block2
+      input_protocol: recorded
 publish:
   hf_target_namespace: kevinqz
   repo_name: LingBot-VLA-2.0-CoreAI

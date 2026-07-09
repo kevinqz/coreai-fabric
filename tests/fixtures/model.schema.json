@@ -346,13 +346,20 @@
       "description": "Groups multiple quantization tiers of the SAME conversion (e.g. an int4 and int8 variant published to one HF repo). Models sharing a variant_group are tiers of one asset — consumers pick by size/fidelity. Typically the shared HF repo id."
     },
     "evaluation": {
-      "description": "Measured fidelity of a quantized conversion vs the reference (the greedy_parity signature from fabric's parity runner). Carries the numbers verbatim so they reach the catalog instead of dying as a note. Absent/pending when not measured — never guessed.",
+      "description": "Measured fidelity of a quantized conversion vs the reference (the greedy_parity signature from fabric's parity runner). Carries the numbers verbatim so they reach the catalog instead of dying as a note. RFC Phase 0 (F2/F6): now also carries the raw `value` + min/median cosine + n_obs + the full measurement `protocol` (the signature that fixes comparability — 'the Gate-B number' is several incommensurable quantities without it). Absent/pending when not measured — never guessed. NOTE: the live coreai-catalog schema needs the matching extension (batched follow-up PR); this fixture is the fabric-side mirror.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "metric": { "type": "string", "enum": ["greedy_parity", "benchmark_accuracy", "per_token_logit_cosine", "graph_output_cosine"] },
+        "metric": { "type": "string", "enum": ["greedy_parity", "benchmark_accuracy", "per_token_logit_cosine", "graph_output_cosine", "action_parity"] },
         "status": { "type": "string", "enum": ["passed", "failed", "not_run", "pending"] },
         "reason": { "type": "string" },
+        "value": { "type": "number" },
+        "threshold": { "type": "number", "minimum": 0, "maximum": 1 },
+        "tolerance": { "type": "number", "minimum": 0 },
+        "n_obs": { "type": "integer", "minimum": 1 },
+        "min_cosine": { "type": "number" },
+        "median_cosine": { "type": "number" },
+        "mean_cosine": { "type": "number" },
         "margin_gated_match_rate": { "type": "number", "minimum": 0, "maximum": 1 },
         "margin_gated_ci95": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
         "argmax_match_rate": { "type": "number", "minimum": 0, "maximum": 1 },
@@ -362,6 +369,26 @@
         "greedy_token_exact": { "type": "boolean" },
         "reference_dtype": { "type": "string" },
         "flip_margin_nats": { "type": "number" },
+        "num_steps": { "type": "integer", "minimum": 1 },
+        "chunk_len": { "type": "integer", "minimum": 1 },
+        "max_relative_action_mae": { "type": "number", "minimum": 0 },
+        "measurement_source": { "type": "string" },
+        "waivers": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "protocol": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "The measurement signature that fixes comparability (RFC F2).",
+          "properties": {
+            "n_obs": { "type": "integer", "minimum": 1 },
+            "seed": { "type": "integer" },
+            "input_protocol": { "type": "string", "enum": ["synthetic", "recorded", "mixed"] },
+            "reference_dtype": { "type": "string", "enum": ["float32", "float16", "bfloat16"] },
+            "granularity": { "type": "string", "enum": ["per_row", "flattened", "per_token"] },
+            "graph_boundary": { "type": "string", "minLength": 1 },
+            "loaded_on_ane": { "type": "boolean" },
+            "waivers": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+          }
+        },
         "runner": { "type": "string" },
         "measured_on": { "type": "string" }
       }

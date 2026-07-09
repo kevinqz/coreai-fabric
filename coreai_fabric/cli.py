@@ -29,6 +29,8 @@ NEXT_STEP = {
     "verified": "coreai-fabric publish {id}",
     "published": "coreai-fabric register {id} --catalog-path ../coreai-catalog",
     "registered": "(done — indexed by coreai-catalog)",
+    "failed": "inspect attempts/{id}.jsonl + build/{id}/parity-report.json; fix and `coreai-fabric run {id}` again",
+    "blocked": "blocked on an external ceiling (ANE 0x10004 / license / toolchain skew) — see notes",
 }
 
 
@@ -89,12 +91,27 @@ def cmd_status(args) -> int:
         recipes = [find_recipe(args.id, root)]
     else:
         recipes = load_all_recipes(root)
+    # failed/blocked are off the happy-path linear stage progression: render them
+    # as a marker after the last happy-path stage reached, not as a position in
+    # the line (their index is not comparable to converted/verified).
     stages = ["draft", "converted", "verified", "published", "registered"]
     for r in recipes:
-        marker_line = " -> ".join(
-            f"{GREEN}[{s}]{RESET}" if stages.index(r.status) >= i else f"{DIM}{s}{RESET}"
-            for i, s in enumerate(stages)
-        )
+        if r.status in ("failed", "blocked"):
+            # Show the happy-path stages up to the last one before the stall,
+            # then a colored terminal marker. Heuristic: failed/blocked can only
+            # occur at or after the converted stage (an attempt ran).
+            happy_idx = 1  # converted is the furthest happy-path stage reached
+            marker_line = " -> ".join(
+                f"{GREEN}[{s}]{RESET}" if i <= happy_idx else f"{DIM}{s}{RESET}"
+                for i, s in enumerate(stages)
+            )
+            color = RED if r.status == "failed" else YELLOW
+            marker_line += f" {color}-> [{r.status}]{RESET}"
+        else:
+            marker_line = " -> ".join(
+                f"{GREEN}[{s}]{RESET}" if stages.index(r.status) >= i else f"{DIM}{s}{RESET}"
+                for i, s in enumerate(stages)
+            )
         print(f"{BOLD}{r.id}{RESET}  {marker_line}")
         print(f"  upstream: {r.data.get('upstream', {}).get('hf_repo', '?')}")
         if r.data.get("published"):

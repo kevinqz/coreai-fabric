@@ -17,6 +17,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history so scripts/check_gate_flip.py can diff against the PR base.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -27,6 +30,11 @@ jobs:
 
       - name: Validate all recipes (schema + license triage, aggregated errors)
         run: coreai-fabric validate
+
+      # RFC Phase 0d (F7 rule 1): refuse a same-commit gate relaxation + status
+      # flip (the pi0fast precedent). Runs against origin/main...HEAD on PRs.
+      - name: Gate-flip guard (no same-commit gate redefinition + status flip)
+        run: python scripts/check_gate_flip.py --base origin/main
 
       - name: Tests (recipe contract, register generator vs vendored catalog schemas, Gate A, doc-check)
         run: python -m pytest -q

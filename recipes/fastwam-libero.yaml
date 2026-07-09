@@ -47,6 +47,12 @@ parity:
     metric: graph_output_cosine
     threshold: 0.999
     tolerance: 0.0005
+    protocol:
+      n_obs: 8
+      reference_dtype: float32
+      granularity: flattened
+      graph_boundary: action_denoise_step
+      input_protocol: recorded
 publish:
   hf_target_namespace: kevinqz
   repo_name: FastWAM-LIBERO-CoreAI

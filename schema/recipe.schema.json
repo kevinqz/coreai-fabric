@@ -338,6 +338,52 @@
             "greedy_token_exact": {
               "type": "boolean",
               "description": "LLMs only: additionally require greedy-decoded tokens to match the upstream exactly."
+            },
+            "protocol": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "The measurement SIGNATURE for the Gate-B number (RFC Phase 0, finding F2). 'The Gate-B number' is several incommensurable quantities (match-rate vs cosine, per-row vs flattened, synthetic vs recorded, fp16 vs fp32); without this block a raw value cannot be compared to anything. Written by `coreai-fabric verify` from the harness report — not hand-authored. All fields optional, but when present they are validated.",
+              "properties": {
+                "n_obs": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Number of observations (prompts/frames) the number was measured over."
+                },
+                "seed": {
+                  "type": "integer",
+                  "description": "Seed fixing the deterministic input set / sampler noise."
+                },
+                "input_protocol": {
+                  "type": "string",
+                  "enum": ["synthetic", "recorded", "mixed"],
+                  "description": "Where the inputs came from. synthetic = torch.rand/seeded random (the smolvla 0.02-cosine catastrophe is the standing warning); recorded = real dataset frames/pixels; mixed = a documented blend. Replaces the schema description that falsely claimed recorded LeRobot inputs everywhere."
+                },
+                "reference_dtype": {
+                  "type": "string",
+                  "enum": ["float32", "float16", "bfloat16"],
+                  "description": "Precision of the torch reference the asset was compared against."
+                },
+                "granularity": {
+                  "type": "string",
+                  "enum": ["per_row", "flattened", "per_token"],
+                  "description": "How the per-observation metric was aggregated. flattened = whole-tensor cosine (structurally inflated for wide outputs); per_row = per-row min; per_token = per-token min. Leaderboards exist only within a cell that matches this."
+                },
+                "graph_boundary": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "What the number spans (e.g. 'encode→denoise', 'whole-LM', 'action head'). A reduced-boundary export (head-only) cannot cite a whole-graph number."
+                },
+                "loaded_on_ane": {
+                  "type": "boolean",
+                  "description": "Deployability signal, DISTINCT from parity (finding F11): an AR generator reloading N multi-GB programs per token can pass cosine while being undeployable. True only when the composed bundle loaded + ran on the ANE at the claimed envelope."
+                },
+                "waivers": {
+                  "type": "array",
+                  "items": {"type": "string", "minLength": 1},
+                  "uniqueItems": true,
+                  "description": "Named relaxations applied (e.g. 'near_zero_action'). Surfaced into the catalog evaluation, never silently marks passed-below-bar."
+                }
+              }
             }
           }
         }
@@ -620,11 +666,13 @@
       "enum": [
         "draft",
         "converted",
+        "failed",
+        "blocked",
         "verified",
         "published",
         "registered"
       ],
-      "description": "Pipeline stage. Advanced only by the corresponding fabric command."
+      "description": "Pipeline stage. Advanced only by the corresponding fabric command. `failed` = a conversion/parity attempt ran and did not pass (RFC Phase 1, F8); `blocked` = blocked on an external ceiling (ANE 0x10004 program ceiling, license, toolchain skew). Both carry a committed attempts/<id>.jsonl record of why."
     },
     "published": {
       "type": "object",

@@ -73,9 +73,19 @@ def test_model_entry_carries_measured_parity_into_catalog():
     assert _schema_errors("model.schema.json", entry) == []
     assert entry["evaluation"]["metric"] == "greedy_parity"
     assert entry["evaluation"]["argmax_match_rate"] == 0.958
+    # RFC F6: the numeric value now reaches the catalog (it was dropped before).
+    assert entry["evaluation"]["value"] == 1.0
     # PRIVACY: measured_on carries only the generic accelerator family, never the chip model.
     assert entry["evaluation"]["measured_on"] == "apple_silicon"
-    assert entry["size"]["fidelity_tier"] == "high_fidelity"   # Gate B passed
+    # RFC F7 rule 2: a pass WITHOUT n_obs>=8 cannot be high_fidelity — it is balanced.
+    assert entry["size"]["fidelity_tier"] == "balanced"
+    # With an adequate sample (n_obs>=8) AND a clear margin AND no waiver -> high_fidelity.
+    report["gate_b"]["n_obs"] = 8
+    assert build_model_entry(recipe, FAKE_FILES, report=report)["size"]["fidelity_tier"] == "high_fidelity"
+    # A waivered pass (near_zero_action) is NEVER high_fidelity, even with a big sample.
+    report["gate_b"]["protocol"] = {"waivers": ["near_zero_action"]}
+    assert build_model_entry(recipe, FAKE_FILES, report=report)["size"]["fidelity_tier"] == "balanced"
+    del report["gate_b"]["protocol"]
     # variant_group was removed from catalog schema — no longer emitted
     # A failed report → the size tier, honestly.
     report["gate_b"]["status"] = "failed"
