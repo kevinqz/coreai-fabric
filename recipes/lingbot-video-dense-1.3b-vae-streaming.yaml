@@ -1,0 +1,101 @@
+id: lingbot-video-dense-1.3b-vae-streaming
+upstream:
+  hf_repo: robbyant/lingbot-video-dense-1.3b
+  revision: f9789a7d9b4772a47aba62d4eb5282ddefd1da21
+  license: apache-2.0
+  license_terms: permissive
+  pipeline_tag: text-to-video
+  size_bytes: 12175278564
+conversion:
+  tool: models/lingbotvideo/vae_streaming_export.py
+  min_tool_version: 0.4.1
+  args:
+    component: vae_decoder
+    weights: build/_lingbotvideo/dense_vae.safetensors
+  quantization: none
+  precision: float32
+expected:
+  format_version: '2.0'
+  bundle_files:
+  - metadata.json
+  - main.mlirb
+  - main.hash
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: graph_output_cosine
+    threshold: 0.999
+    tolerance: 0.0005
+    protocol:
+      n_obs: 8
+      reference_dtype: float32
+      granularity: flattened
+      input_protocol: synthetic
+      graph_boundary: single-graph forward
+    measured:
+      status: passed
+      value: 0.999999999998963
+      n_obs: 8
+      measurement_source: graph-output-parity-measured.json
+      min_chunk_cosine: 0.999999999998963
+      mean_chunk_cosine: 0.9999999999990083
+      measured_on: apple_silicon
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: LingBot-Video-Dense-1.3B-VAE-Streaming-CoreAI
+  collection: CoreAI · Apple on-device
+catalog:
+  name: LingBot-Video Dense 1.3B VAE (streaming) (fabric)
+  family: LingBot-Video
+  bundle_kind: video
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: false
+    custom_kernel: false
+    patch_required: false
+    aot_required: false
+  capabilities:
+  - text-to-video
+  modalities:
+    input:
+    - text
+    - image
+    output:
+    - video
+  parameters: 1.3B
+  architecture: diffusion
+  runner: CoreAIVideoPipeline
+  tokenizer_required: true
+  processor_required: true
+status: registered
+notes: 'LingBot-Video Dense 1.3B — the STREAMING (subsequent-chunk) VAE decoder, the companion
+  to the published first-chunk VAE (lingbot-video-dense-1.3b). Together they give CONTINUOUS
+  video decode: the host decodes chunk 0 with the first-chunk asset, then loops THIS asset
+  feeding the causal conv cache forward. apache-2.0 -> PUBLISHABLE. The VAE is shared across
+  the LingBot video family (world-v2 + video-dense + video-moe, byte-identical weights), so
+  this one streaming asset serves all three.
+
+  DEPLOYABLE GRAPH = one subsequent chunk: (z_chunk [1,16,1,Hl,Wl], 32 cache_in tensors) ->
+  (frames [1,3,4,Hl*8,Wl*8], 32 cache_out tensors), first_chunk=False. The WAN AutoencoderKLWan
+  decoder threads a causal conv cache (feat_map) across chunks; this ships it as 32-tensor
+  graph I/O (6 distinct shapes, ~155MB fp32 state; 33 conv slots, 1 un-cached None baked).
+  Host owns un-normalization (latents_mean/std), frame assembly, and looping cache_out ->
+  cache_in. models/lingbotvideo/vae_streaming_export.py.
+
+  BUILT + GATE B MEASURED (2026-07-09, coreai-torch 0.4.1 / coremltools 9.0): min graph_output_cosine
+  0.99999999999896 / median 0.99999999999901 over n_obs=8 (torch subsequent-chunk decode with
+  feat_cache threaded vs the .aimodel over seeded (chunk, steady-state-primed cache) states).
+  Asset ~293MB fp32, LOADS OK, single program. The steady-state cache (all 32 tensors) is
+  reached after first_chunk + one subsequent chunk; only tensor slots are threaded (non-tensor
+  None slots baked). Gate B on the decoded frames.'
+published:
+  hf_repo: kevinqz/LingBot-Video-Dense-1.3B-VAE-Streaming-CoreAI
+  revision: 412a07ea06531b44ea452f8818bf2c2c6c564c02
+  date: '2026-07-09'
+catalog_pr: https://github.com/kevinqz/coreai-catalog/pull/41
