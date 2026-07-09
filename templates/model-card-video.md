@@ -10,18 +10,14 @@ library_name: coreai
 
 # {name}
 
-An Apple Core AI conversion of the **VAE decoder** from
-[{upstream_hf_repo}](https://huggingface.co/{upstream_hf_repo}) — the
-`AutoencoderKLWan` video autoencoder's decode path, mapping a **video latent** to
-**pixel frames**. Produced by [coreai-fabric]({recipe_url}) and indexed by
+An Apple Core AI conversion of {component_intro} from
+[{upstream_hf_repo}](https://huggingface.co/{upstream_hf_repo}). Produced by
+[coreai-fabric]({recipe_url}) and indexed by
 [coreai-catalog](https://github.com/kevinqz/coreai-catalog).
 
-> **VAE decoder, not the full video pipeline.** A video diffusion model is four
-> separable blocks — text encoder, VAE encoder, denoising DiT, and this VAE
-> decoder. This asset is ONLY the decoder (latent → pixels). The **host owns** the
-> text encoder, the DiT few-step denoise loop, latent un-normalization
-> (`latents_mean`/`latents_std`), frame assembly, and — for multi-chunk streaming —
-> the causal `feat_cache`. It does not, by itself, generate video from a prompt.
+> **One component, not the full video pipeline.** A video diffusion model is
+> separable blocks — text encoder, VAE encoder, denoising DiT, and VAE decoder.
+> {component_callout}
 
 ## Model facts
 
@@ -31,10 +27,7 @@ An Apple Core AI conversion of the **VAE decoder** from
 
 ## Use it — this needs host code you supply
 
-The bundle is a single static-size graph: `z [1,16,T,H/8,W/8]` in → `frames
-[1,3,Tp,H,W]` out (spatial 8× / temporal 4× upsampling, first-chunk decode).
-**You supply** the DiT denoise loop that produces the latent, the latent
-un-normalization, and frame assembly in your host code (Swift or Python).
+{component_usage}
 
 ```bash
 pip install coreai-catalog && coreai-catalog install {recipe_id}

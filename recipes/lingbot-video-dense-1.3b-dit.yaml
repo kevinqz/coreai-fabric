@@ -12,16 +12,14 @@ conversion:
   args:
     component: dit_denoise_step
     weights: build/_lingbotvideo/dense_dit.safetensors
-  quantization: float16
+  quantization: none
   precision: float32
 expected:
   format_version: '2.0'
   bundle_files:
   - metadata.json
-  - manifest.json
-  - programs/embed.aimodel/main.mlirb
-  - programs/block0.aimodel/main.mlirb
-  - programs/block1.aimodel/main.mlirb
+  - main.mlirb
+  - main.hash
 parity:
   gate_a:
     checks:
@@ -32,6 +30,20 @@ parity:
     metric: graph_output_cosine
     threshold: 0.999
     tolerance: 0.0005
+    protocol:
+      n_obs: 8
+      reference_dtype: float32
+      granularity: flattened
+      input_protocol: synthetic
+      graph_boundary: single-graph forward
+    measured:
+      status: passed
+      value: 0.9999999999991931
+      n_obs: 8
+      measurement_source: graph-output-parity-measured.json
+      min_chunk_cosine: 0.9999999999991931
+      mean_chunk_cosine: 0.9999999999993227
+      measured_on: apple_silicon
 publish:
   hf_target_namespace: kevinqz
   repo_name: LingBot-Video-Dense-1.3B-DiT-CoreAI
@@ -61,58 +73,63 @@ catalog:
   runner: CoreAIVideoPipeline
   tokenizer_required: true
   processor_required: true
-status: draft
-notes: >-
-  LingBot-Video Dense 1.3B — the DiT (denoising transformer), companion to the
-  already-published VAE decoder (lingbot-video-dense-1.3b). This is the generative
-  CORE (the "brain"), apache-2.0 → PUBLISHABLE. Together with the VAE decoder + a
-  host-owned text encoder + flow-UniPC sampler it is the full T2V/I2V pipeline.
+status: registered
+notes: 'LingBot-Video Dense 1.3B — the DiT (denoising transformer), companion to the already-published
+  VAE decoder (lingbot-video-dense-1.3b). This is the generative CORE (the "brain"), apache-2.0
+  → PUBLISHABLE. Together with the VAE decoder + a host-owned text encoder + flow-UniPC sampler
+  it is the full T2V/I2V pipeline.
 
-  ARCHITECTURE (transformer/config.json): LingBotVideoTransformer3DModel — hidden
-  2048, depth 24, 16 heads x 128 head_dim, in/out 16 channels, patch_size [1,2,2],
-  text_dim 2560 (cross-attn text conditioning), FFN intermediate 6144, 3D RoPE
-  (axes_dims [32,48,48], rope_theta 256), norm_eps 1e-6. **DENSE, NOT MoE**
-  (num_experts 0 — the moe_intermediate/num_experts_per_tok fields are vestigial
-  shared-config; only lingbot-video-moe-30b-a3b activates them). **NON-CAUSAL** —
-  no sliding-window / sink / num_frames_per_block fields (unlike world-v2's
-  causal-fast streaming DiT), so full bidirectional attention, NO KV-cache. Simpler
-  than both the world-v2 14B causal DiT and the 30B MoE.
+  ARCHITECTURE (transformer/config.json): LingBotVideoTransformer3DModel — hidden 2048, depth
+  24, 16 heads x 128 head_dim, in/out 16 channels, patch_size [1,2,2], text_dim 2560 (cross-attn
+  text conditioning), FFN intermediate 6144, 3D RoPE (axes_dims [32,48,48], rope_theta 256),
+  norm_eps 1e-6. **DENSE, NOT MoE** (num_experts 0 — the moe_intermediate/num_experts_per_tok
+  fields are vestigial shared-config; only lingbot-video-moe-30b-a3b activates them). **NON-CAUSAL**
+  — no sliding-window / sink / num_frames_per_block fields (unlike world-v2''s causal-fast
+  streaming DiT), so full bidirectional attention, NO KV-cache. Simpler than both the world-v2
+  14B causal DiT and the 30B MoE.
 
-  DEPLOYABLE GRAPH = one denoise step: (noisy_latent [1,16,T,Hl,Wl], timestep,
-  text_embeds [1,L,2560]) -> predicted velocity [1,16,T,Hl,Wl]. Host owns the
-  flow-UniPC sampler loop, the text encoder (UMT5-style), and the VAE decode (the
-  published asset). fp16.
+  DEPLOYABLE GRAPH = one denoise step: (noisy_latent [1,16,T,Hl,Wl], timestep, text_embeds
+  [1,L,2560]) -> predicted velocity [1,16,T,Hl,Wl]. Host owns the flow-UniPC sampler loop,
+  the text encoder (UMT5-style), and the VAE decode (the published asset). fp16.
 
-  PLANNED LANE (graph-split, cf. lingbot-vla-v2): ~1.3B params, fp16 ~2.6GB > the
-  ~1.5GB 0x10004 per-program ceiling, so split into a tiny `embed` program
-  (patch-embed + time/text projections + rope) + N layer-blocks (start N=2 x 12
-  layers, ~1.3GB fp16 each), host chains them (embed -> block0 -> block1) loading
-  the big blocks SEQUENTIALLY. NO KV-cache state to thread (non-causal) — simpler
-  than the VLA-v2 split. Gate B = graph_output_cosine of the chained fp16 output vs
-  the fp32 torch DiT denoise-step over seeded (latent, timestep, text) inputs.
+  BUILT + GATE B MEASURED (2026-07-09, coreai-torch 0.4.1 / coremltools 9.0): min graph_output_cosine
+  0.99999999999919 / median 0.99999999999933 over n_obs=8. Asset ~5.43GB fp32, LOADS OK as
+  a SINGLE PROGRAM — NO graph-split needed. The 0x10004 ceiling is a graph-COMPLEXITY limit,
+  not pure size; this 1.35B dense DiT''s structure loads whole at 5.43GB fp32 (unlike lingbot-vla-v2''s
+  MoE, which needed the split). The FIRST generative-video DiT (the denoising "brain") on
+  Core AI. Fixed static input for export: latent [1,16,1,32,32] + text [1,64,2560] -> velocity
+  [1,16,1,32,32]. Two export accommodations (both math-preserving, self-validated at cosine
+  0.99999988 vs the real complex forward): (1) STATIC text length replaces the upstream''s
+  data-dependent encoder_attention_mask.sum().tolist(); (2) the lazy complex64 RoPE (data-dependent
+  .tolist() + table rebuild) is BAKED to a constant real cos/sin buffer and apply_rotary_emb
+  is monkeypatched to real arithmetic ((x0*cos - x1*sin, x0*sin + x1*cos)) — coreai_torch
+  can''t lower complex64. cp_* are nn.Identity (no context-parallel). Attention lowers via
+  dispatch_attention_fn -> SDPA. Gate B = fp32 torch (complex RoPE) denoise-step vs the .aimodel.
 
-  WEIGHT STRUCTURE CONFIRMED (2026-07-09, transformer/*.safetensors, 2.79GB bf16):
-  patch_embedder LINEAR [2048,64] (16 latent-ch x patch [1,2,2] = 64 -> 2048);
-  text_embedder (linear_1 [2048,2560] + norm + linear_2 [2048,2048]); time_embedder
-  ([2048,256]->[2048,2048]) + time_modulation [12288,2048] (6x2048 AdaLN);
-  norm_out_modulation [4096,2048]; proj_out [64,2048]. 24 blocks, each: attn
-  (to_q/k/v/out [2048,2048] + norm_q/norm_k [128] QK-norm — a SINGLE joint self-attn,
-  NO separate cross-attn; text is joined into the sequence), SwiGLU ffn
-  (gate/up [6144,2048] + down [2048,6144]), FOUR sandwich RMSNorms (norm1/norm2/
-  norm_post_attn/norm_post_ffn), per-block scale_shift_table [1,12288]. CLEAN, all
-  standard ops (linear/RMSNorm/SwiGLU/SDPA-or-eager attn/AdaLN) — NO data-dependent
-  control flow, so it should lower cleanly (unlike Miril's pooler masked-select).
+  WEIGHT STRUCTURE CONFIRMED (2026-07-09, transformer/*.safetensors, 2.79GB bf16): patch_embedder
+  LINEAR [2048,64] (16 latent-ch x patch [1,2,2] = 64 -> 2048); text_embedder (linear_1 [2048,2560]
+  + norm + linear_2 [2048,2048]); time_embedder ([2048,256]->[2048,2048]) + time_modulation
+  [12288,2048] (6x2048 AdaLN); norm_out_modulation [4096,2048]; proj_out [64,2048]. 24 blocks,
+  each: attn (to_q/k/v/out [2048,2048] + norm_q/norm_k [128] QK-norm — a SINGLE joint self-attn,
+  NO separate cross-attn; text is joined into the sequence), SwiGLU ffn (gate/up [6144,2048]
+  + down [2048,6144]), FOUR sandwich RMSNorms (norm1/norm2/ norm_post_attn/norm_post_ffn),
+  per-block scale_shift_table [1,12288]. CLEAN, all standard ops (linear/RMSNorm/SwiGLU/SDPA-or-eager
+  attn/AdaLN) — NO data-dependent control flow, so it should lower cleanly (unlike Miril''s
+  pooler masked-select).
 
-  NOT diffusers-Wan-loadable: diffusers 0.37 WanTransformer3DModel differs (attn1+attn2
-  cross-attn, GEGLU, single norm2, conv patch-embed) — key + structural mismatch. So
-  the reference needs the UPSTREAM package (github.com/Robbyant/lingbot-video, built on
-  Wan2.2). EXECUTION (proven two-venv method, cf. Miril [[coreai-lingbot-world-v2-video]]):
-  scratch venv with the lingbot-video package + torch==2.9 -> load LingBotVideoTransformer3DModel
-  + weights -> denoise-step forward (noisy_latent, timestep, text_embeds -> velocity)
-  -> torch.export.save; toolchain venv -> load + GRAPH-SPLIT (2.79GB bf16 > ~1.5GB
-  0x10004 ceiling -> embed + 2x12-layer blocks, host chains) -> lower -> Gate B vs the
-  real denoise-step. Weights downloaded (build/_lingbotvideo/dense_dit.safetensors).
+  NOT diffusers-Wan-loadable (diffusers 0.37 WanTransformer3DModel differs: attn1+attn2 cross-attn,
+  GEGLU, single norm2, conv patch-embed), so the real model is loaded via the UPSTREAM package
+  (github.com/Robbyant/lingbot-video, reviewed: torch+diffusers only, os.environ config flags
+  — no network/subprocess/exec). Since it''s diffusers-based (no transformers-version conflict,
+  unlike Miril), the reference + export + lowering all run in the ONE toolchain venv (no scratch
+  venv needed). Driver: models/lingbotvideo/dit_export.py (Step replicates the B=1 dense path
+  + baked real RoPE; self-validates vs the real forward, then torch.export -> coreai_torch).
 
-  STATUS: draft — architecture fully mapped, weights in hand, method proven; the
-  remaining build is the upstream-package scratch venv + the 2-block graph-split
-  (models/lingbotvideo/dit_export.py NOT YET WRITTEN). Apache -> publishable.
+  STATUS: BUILT + verified as a single fp32 program (Gate B 0.99999999999919). Apache-2.0
+  -> PUBLISHABLE. Completes the LingBot-Video dense pipeline on Core AI: VAE decoder (published)
+  + this DiT + a host-owned text encoder + flow-UniPC sampler.'
+published:
+  hf_repo: kevinqz/LingBot-Video-Dense-1.3B-DiT-CoreAI
+  revision: bd1f37920541f7d9cbb05c29cf9619ed10c90523
+  date: '2026-07-09'
+catalog_pr: https://github.com/kevinqz/coreai-catalog/pull/40

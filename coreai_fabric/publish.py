@@ -878,6 +878,9 @@ def _render_token_classification_card(root: Path, recipe, manifest: dict, report
         recipe_id=recipe.id,
         mirror_line=mirror_line,
         facts_block=facts_block,
+        component_intro=locals().get("component_intro", ""),
+        component_callout=locals().get("component_callout", ""),
+        component_usage=locals().get("component_usage", ""),
         min_os=min_os_str,
         gate_a_status=report["gate_a"]["status"],
         evaluation_block=evaluation_block,
@@ -993,6 +996,9 @@ def _render_image_feature_extraction_card(root: Path, recipe, manifest: dict, re
         recipe_id=recipe.id,
         mirror_line=mirror_line,
         facts_block=facts_block,
+        component_intro=locals().get("component_intro", ""),
+        component_callout=locals().get("component_callout", ""),
+        component_usage=locals().get("component_usage", ""),
         min_os=min_os_str,
         gate_a_status=report["gate_a"]["status"],
         evaluation_block=evaluation_block,
@@ -1044,19 +1050,52 @@ def _render_video_card(root: Path, recipe, manifest: dict, report: dict,
     main = bundle_path(root, recipe) / "main.mlirb"
     size_str = _human_size(main.stat().st_size) if main.is_file() else "—"
 
-    # decoded output shape from the measured parity JSON, if present
+    # which video component this asset ships (drives the honest, component-specific card prose)
+    component = (conv.get("args") or {}).get("component", "vae_decoder")
     gb = report.get("gate_b", {})
     out_shape = gb.get("output_shape")
     out_str = "×".join(str(x) for x in out_shape) if out_shape else "—"
+    if component == "dit_denoise_step":
+        component_intro = ("the **denoising DiT** (one flow-matching denoise step) of the "
+                           f"`{catalog_block.get('family', 'video')}` video diffusion model")
+        component_callout = ("This asset is ONLY the DiT denoise-step: (noisy latent, timestep, text "
+                             "embeddings) → predicted velocity. The **host owns** the text encoder, the "
+                             "flow-UniPC sampler loop that calls this step, and the VAE decode. It does "
+                             "not, by itself, generate video from a prompt.")
+        component_usage = ("The bundle is a single static-size graph: `hidden_states` (noisy latent), "
+                           "`timestep`, `encoder_hidden_states` (text) in → `velocity` out. **You supply** "
+                           "the sampler loop (flow-UniPC), the text encoder, and the VAE decode in your "
+                           "host code (Swift or Python).")
+        deployable_core = "DiT denoise-step (latent + timestep + text → velocity)"
+        asset_kind = "single-graph diffusion transformer (one denoise step)"
+        shape_label = "Velocity shape"
+        ref_desc = "torch DiT denoise-step"
+        ref_over = "seeded (latent, timestep, text) inputs"
+    else:
+        component_intro = ("the **VAE decoder** — the `AutoencoderKLWan` decode path, mapping a video "
+                           "latent to pixel frames")
+        component_callout = ("This asset is ONLY the decoder (latent → pixels). The **host owns** the "
+                             "text encoder, the DiT few-step denoise loop, latent un-normalization "
+                             "(`latents_mean`/`latents_std`), frame assembly, and the streaming cache. It "
+                             "does not, by itself, generate video from a prompt.")
+        component_usage = ("The bundle is a single static-size graph: `z` (video latent) in → `frames` "
+                           "out (spatial 8× / temporal 4× upsampling, first-chunk decode). **You supply** "
+                           "the DiT denoise loop, latent un-normalization, and frame assembly in your host "
+                           "code (Swift or Python).")
+        deployable_core = "AutoencoderKLWan VAE decoder (latent → frames)"
+        asset_kind = "single-graph VAE decoder (first-chunk decode)"
+        shape_label = "Decoded frame shape"
+        ref_desc = "torch VAE decoder"
+        ref_over = "seeded latents"
     facts_rows = [
         ("Parameters (upstream)", catalog_block.get("parameters", "—")),
         ("Architecture", catalog_block.get("architecture", "—")),
         ("Capabilities", ", ".join(catalog_block.get("capabilities", [])) or "—"),
-        ("Deployable core", "AutoencoderKLWan VAE decoder (latent → frames)"),
-        ("Decoded frame shape", out_str),
+        ("Deployable core", deployable_core),
+        (shape_label, out_str),
         ("Quantization / precision", f"{conv.get('quantization', '—')} / {conv.get('precision', '—')}"),
         ("On-disk size", size_str),
-        ("Asset kind", "single-graph VAE decoder (first-chunk decode)"),
+        ("Asset kind", asset_kind),
         ("assetVersion", meta.get("assetVersion", "—")),
     ]
     facts_block = "".join(f"| {k} | {v} |\n" for k, v in facts_rows)
@@ -1071,9 +1110,8 @@ def _render_video_card(root: Path, recipe, manifest: dict, report: dict,
         n = gb.get("n_obs") or "N"
         evaluation_block = (
             f"- **Gate B — graph_output_cosine: {gb['value']:.6f} min output cosine**{med_str} "
-            f"vs the {ref} torch VAE decoder over {n} seeded latents, measured on {dev}. Certifies the "
-            f"export decodes the SAME pixels as the source VAE — a conversion-fidelity metric, not "
-            f"end video quality."
+            f"vs the {ref} {ref_desc} over {n} {ref_over}, measured on {dev}. Certifies the export "
+            f"computes the SAME output as the source — a conversion-fidelity metric, not end video quality."
         )
     else:
         evaluation_block = (
@@ -1105,6 +1143,9 @@ def _render_video_card(root: Path, recipe, manifest: dict, report: dict,
         recipe_id=recipe.id,
         mirror_line=mirror_line,
         facts_block=facts_block,
+        component_intro=locals().get("component_intro", ""),
+        component_callout=locals().get("component_callout", ""),
+        component_usage=locals().get("component_usage", ""),
         min_os=min_os_str,
         gate_a_status=report["gate_a"]["status"],
         evaluation_block=evaluation_block,
@@ -1221,6 +1262,9 @@ def _render_reward_model_card(root: Path, recipe, manifest: dict, report: dict,
         recipe_id=recipe.id,
         mirror_line=mirror_line,
         facts_block=facts_block,
+        component_intro=locals().get("component_intro", ""),
+        component_callout=locals().get("component_callout", ""),
+        component_usage=locals().get("component_usage", ""),
         min_os=min_os_str,
         gate_a_status=report["gate_a"]["status"],
         evaluation_block=evaluation_block,
