@@ -101,8 +101,37 @@ notes: >-
   Terms of Use — review-required at publish (mirror LICENSE/NOTICE; may need
   --acknowledge-license-review).
 
-  STATUS: draft — weights downloading (10.3GB). models/miril/export.py NOT YET
-  WRITTEN (vendored gemma4_vision ViT, like SenseNova's planned driver). Next:
-  write driver -> convert -> verify -> publish -> register. analyze verdict
-  ("candidate lane Gemma4ForConditionalGeneration") logged to
-  attempts/miril-drone-2b-1.jsonl.
+  TOOLCHAIN CONFLICT (measured 2026-07-09): the config was written with
+  transformers 5.13.0 and Gemma4 support lives ONLY in transformers 5.x — which
+  conflicts with the pinned toolchain (coreai-torch wants transformers>=4.57,<5.0;
+  the fabric .venv has 4.57.6). The shared .venv must NOT be mutated (a parallel
+  agent uses it). So the real Gemma4 impl cannot be loaded in the export venv.
+
+  VISION-TOWER ARCHITECTURE (from safetensors keys + vision_config @ 40bde4fe):
+  weights are plain BF16 (`.linear.weight`); the `.input_min/max` + `.output_min/max`
+  scalars are USED (`use_clipped_linears: true` — the linears clip activations to
+  those ranges, NOT just observer stats). patch_embedder.input_proj is a LINEAR
+  [768,768] over pre-flattened 16x16x3 patches (host does im2col), + a learned
+  position_embedding_table [2,10240,768]. 16 encoder layers, each a Gemma-style
+  block: sandwich norms (input_layernorm / post_attention_layernorm /
+  pre_feedforward_layernorm / post_feedforward_layernorm, RMSNorm eps 1e-6),
+  self_attn with q_norm/k_norm (QK-norm), 12 heads x 64 head_dim, RoPE
+  (rope_parameters present), SwiGLU mlp (gate/up/down, intermediate 3072). Plus
+  `standardize` + `pooling_kernel_size`. embed_vision.embedding_projection [1536,768]
+  bridges vision features -> the LM hidden (host-side).
+
+  PLAN (two-venv, reference-validated vendor — the reliable path): (1) a SCRATCH
+  venv with transformers==5.13 loads the REAL Gemma4 vision tower and emits the
+  fp32 reference output over seeded patch inputs; (2) a VENDORED standalone
+  gemma4_vision module (pure torch, no transformers) in the toolchain .venv is
+  torch.export'd + lowered by coreai_torch; (3) Gate B = graph_output_cosine of the
+  vendored .aimodel vs the scratch-venv reference (>=0.999) — this VALIDATES the
+  vendored architecture against the real one before shipping. Alternative: save the
+  ExportedProgram in the scratch venv (torch.export.save) and load it in the
+  toolchain venv (torch.export.load) for to_coreai, skipping the vendor if torch
+  versions align.
+
+  STATUS: draft — weights downloaded (10.3GB, 3 bf16 shards). This is a research
+  build, not a quick conversion, because of the transformers-5.x conflict + the
+  custom clipped-linear Gemma vision block. models/miril/export.py NOT YET WRITTEN.
+  analyze verdict logged to attempts/miril-drone-2b-1.jsonl.
