@@ -89,6 +89,10 @@ catalog:
   runner: CoreAIRunner
   tokenizer_required: true
   processor_required: true
+  blocks:
+  - mote-action-expert
+  - siglip-so400m-vit
+  - qwen2-vl-lm
 status: registered
 notes: 'LOADS ON ANE + GATE B PASSES via GRAPH-SPLIT (2026-07-08): min graph_output_cosine
   0.99948 / median 0.99978 over 8 obs. The monolithic 36-layer dense-MoE graph exceeds the

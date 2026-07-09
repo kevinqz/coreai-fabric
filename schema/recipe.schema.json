@@ -658,6 +658,12 @@
         },
         "streaming": {
           "type": "boolean"
+        },
+        "blocks": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1, "pattern": "^[a-z0-9][a-z0-9._-]*$"},
+          "uniqueItems": true,
+          "description": "RFC Phase 2 (F5): OPTIONAL architectural-block ids this recipe composes (e.g. siglip-so400m-vit, qwen2-7b-lm). A block string carries NO license/weights of its own — the license axis stays per-recipe (upstream.hf_repo/license). Unknown ids are a validate WARNING, never an error (YAGNI: don't block conversion on vocab lag). Valid ids are listed in schema/blocks-vocab.yaml (the single fabric-side authority); a derived reverse index lives in docs/blocks-index.md (generated, never stored)."
         }
       }
     },

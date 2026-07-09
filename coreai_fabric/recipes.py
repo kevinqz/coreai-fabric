@@ -136,6 +136,44 @@ def validate_recipe(recipe: Recipe, schema: dict) -> list[Issue]:
         )
 
     issues.extend(triage_license(recipe))
+    issues.extend(_check_blocks(recipe))
+    return issues
+
+
+def _known_block_ids(root: Path | None = None) -> set[str]:
+    """Load the valid block-id vocabulary from schema/blocks-vocab.yaml (RFC F13:
+    fabric is the single authority). Empty set if the file is absent — an unknown
+    id then warns (vocab lag), never errors."""
+    root = root or find_root()
+    vpath = root / "schema" / "blocks-vocab.yaml"
+    if not vpath.is_file():
+        return set()
+    try:
+        vocab = read_yaml(vpath)
+    except Exception:  # noqa: BLE001 — a malformed vocab file shouldn't crash validate
+        return set()
+    blocks = vocab.get("blocks") if isinstance(vocab, dict) else None
+    if not isinstance(blocks, list):
+        return set()
+    return {str(b.get("id")) for b in blocks if isinstance(b, dict) and b.get("id")}
+
+
+def _check_blocks(recipe: Recipe) -> list[Issue]:
+    """RFC Phase 2 (F5/F13): an unknown block id is a WARNING (vocab lag, never
+    a conversion blocker). A block string carries no license of its own."""
+    issues: list[Issue] = []
+    blocks = (recipe.data.get("catalog") or {}).get("blocks")
+    if not isinstance(blocks, list) or not blocks:
+        return issues
+    known = _known_block_ids()
+    # If the vocab file exists, unknown ids warn; if it's absent, we don't check.
+    if known:
+        for bid in blocks:
+            if isinstance(bid, str) and bid not in known:
+                issues.append(Issue(
+                    recipe.path.name, "warning", "catalog.blocks",
+                    f"block id '{bid}' is not in schema/blocks-vocab.yaml",
+                    hint="add it to schema/blocks-vocab.yaml, or fix the typo (unknown ids warn, never error)"))
     return issues
 
 

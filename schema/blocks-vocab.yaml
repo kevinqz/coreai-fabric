@@ -1,0 +1,50 @@
+# blocks-vocab.yaml — the SINGLE fabric-side authority for architectural block ids.
+# RFC Phase 2 (F5/F13): the catalog does NOT mirror this; if a block facet is
+# ever wanted catalog-side it is a GENERATED derived facet (docs/blocks-index.md),
+# never a second source of truth.
+#
+# A block string is an ARCHITECTURE id only. It carries NO license/weights of its
+# own (the license axis stays per-recipe: upstream.hf_repo/license). The same
+# architecture under different licenses (SigLIP under apache-2.0 vs Gemma terms)
+# is one block id referenced by different recipes.
+#
+# Loadability is NEVER inferred from a block id (F12): a block "known" at one
+# envelope tuple (graph, static shape, precision, host-contract) carries NO
+# promise at another. SenseNova's SigLIP-so400m @ 980px/patch-14 inside a MoT is
+# NET-NEW, not covered by lingbot's ViT-B/16 @ 512px.
+#
+# Seeded from the architectures of the actually-converted recipes (2026-07-09).
+# Extend by adding an id + one-line description; unknown ids in a recipe are a
+# validate WARNING (vocab lag), never an error.
+
+blocks:
+  - id: act-action-head
+    description: Action Chunking Transformer action head (lerobot ACT, chunked MLP).
+  - id: diffusion-action-head
+    description: Diffusion Policy action head (Chi et al. 2023, multi-step visual).
+  - id: flow-matching-action-head
+    description: Flow-matching action head (pi0/pi0.5/EO-1 sampler, N-step denoise).
+  - id: vqbet-action-head
+    description: Vector-Quantized Behavior Transformer action head.
+  - id: wan-action-dit
+    description: Wan2.2-stack action diffusion transformer (LingBot-VA/FastWAM dual-stream).
+  - id: mote-action-expert
+    description: Mixture-of-Transformers action expert (LingBot-VLA-v2 dense-MoE).
+  - id: qwen2-vl-lm
+    description: Qwen2.5-VL language-model forward (EO-1's VLM backbone, non-AR denoise).
+  - id: qwen2-lm
+    description: Qwen2 decoder-only LM forward (the 7B stock lane — itself an unmeasured draft).
+  - id: qwen3-lm
+    description: Qwen3 decoder-only LM forward.
+  - id: gemma2-lm
+    description: Gemma2 decoder-only LM forward (pi0/pi0.5 Gemma-licensed lanes).
+  - id: eurobert-encoder
+    description: EuroBERT text encoder (pulpie-orange token-classification lanes).
+  - id: siglip-so400m-vit
+    description: SigLIP-SO400M vision transformer (the encoder fused inside VLAs).
+  - id: lingbot-vit
+    description: LingBot-Vision self-supervised ViT (S/B/L/g, patch-16 @ 512px).
+  - id: internvl3-vl-embedder
+    description: InternVL3 vision-language embedder (EVO1's VL front).
+  - id: vit-patch16-512
+    description: Generic patch-16 ViT @ 512px image encoder (the lingbot envelope).

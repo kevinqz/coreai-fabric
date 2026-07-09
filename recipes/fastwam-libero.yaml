@@ -84,6 +84,9 @@ catalog:
   runner: CoreAIRunner
   tokenizer_required: true
   processor_required: true
+  blocks:
+  - wan-action-dit
+  - flow-matching-action-head
 status: registered
 notes: 'FastWAM (Fast World-Action Model, arXiv:2603.16666) — a LeRobot v0.6.0 world-action
   policy on the Wan2.2 stack (lerobot/fastwam_libero_uncond_2cam224 @ 53983e12, apache-2.0).
