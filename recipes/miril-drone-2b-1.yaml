@@ -8,12 +8,15 @@ upstream:
   pipeline_tag: image-text-to-text
   size_bytes: 10281187244
 conversion:
-  tool: coreai-fabric-llm-export
+  tool: models/miril/export.py
+  min_tool_version: 0.4.1
   args:
-    platform: macOS
+    component: vision_encoder
+    weights: build/_miril/vision_tower.safetensors
   quantization: none
-  precision: float16
+  precision: float32
 expected:
+  format_version: '2.0'
   bundle_files:
   - metadata.json
   - main.mlirb
@@ -35,7 +38,7 @@ publish:
 catalog:
   name: Miril-Drone 2B-1 (fabric)
   family: Miril-Drone
-  bundle_kind: vlm
+  bundle_kind: image-feature-extraction
   min_os:
     macos: '27.0'
     ios: '27.0'
@@ -45,16 +48,15 @@ catalog:
     patch_required: false
     aot_required: false
   capabilities:
+  - image-feature-extraction
   - vision-language
-  - instruction-following
   modalities:
     input:
     - image
-    - text
     output:
     - text
   parameters: 2B
-  architecture: transformer
+  architecture: encoder
   runner: CoreAIRunner
   tokenizer_required: true
   processor_required: true
@@ -71,12 +73,36 @@ notes: >-
   publish (mirror the upstream LICENSE/NOTICE; publish may need
   --acknowledge-license-review).
 
-  LANE (analyze verdict, RFC F1/F3): candidate lane transformers:Gemma4ForConditional
-  Generation — the whole-VLM forward, exported via coreai-fabric-llm-export (fp16),
-  same family as the published EO-1-3B whole-VLM lane. Host owns the image processor
-  + tokenizer + any decoding. GATE B = graph_output_cosine (logit-parity for a
-  float-precision export: identical seeded (input_ids, pixel_values) through the
-  fp32 torch VLM vs the .aimodel).
+  ARCHITECTURE (config.json): Gemma4ForConditionalGeneration, model_type gemma4 —
+  THREE towers: vision (gemma4_vision, ViT hidden 768 / 16 layers / 12 heads /
+  patch 16), text (gemma4_text, hidden 1536 / 35 layers, the ~2B LM), audio
+  (gemma4_audio, unused for image inference). vision_soft_tokens_per_image + image
+  token bookkeeping in the top-level config.
 
-  STATUS: draft — weights downloading (10.3GB). Next: convert -> verify -> publish
-  (Gemma license review) -> register. analyze logged to attempts/miril-drone-2b-1.jsonl.
+  WHY NOT THE WHOLE-VLM LANE: fabric's VLM export (coreai.vlm.export) gates on a
+  hardcoded SUPPORTED_MODELS dict that is Qwen3-VL-ONLY (register_specs injects only
+  Qwen3-VL specs); it does NOT handle Gemma-4. AND transformers 4.57.6 (fabric's
+  pinned toolchain) has NO Gemma4 class, and the repo ships NO modeling code
+  (trust_remote_code can't help). So the whole-VLM forward is not convertible with
+  current tooling.
+
+  DEPLOYABLE CORE = the gemma4_vision ENCODER (the proven graph_output_cosine
+  image-feature-extraction lane, same as SenseNova's SigLIP / lingbot-vision-vit):
+  image [1,3,S,S] -> per-patch feature tokens. Exported via a VENDORED standalone
+  ViT (gemma4_vision geometry: pre-norm transformer, hidden 768, 16 layers, patch
+  16), loading the vision_tower.* weights via a targeted safetensors slice out of
+  model.safetensors. fp32; single static-size .aimodel. Host owns the image
+  processor + the Gemma-4 LM + de-tokenization. GATE B = graph_output_cosine
+  (identical seeded images through the fp32 torch vision tower vs the .aimodel, min
+  cosine n_obs>=8) — conversion fidelity, not task accuracy. This mirrors exactly
+  how SenseNova entered (whole model unsupported -> ship the vision encoder core).
+
+  LICENSE: repo declares apache-2.0 but the Gemma-4 base carries Google's Gemma
+  Terms of Use — review-required at publish (mirror LICENSE/NOTICE; may need
+  --acknowledge-license-review).
+
+  STATUS: draft — weights downloading (10.3GB). models/miril/export.py NOT YET
+  WRITTEN (vendored gemma4_vision ViT, like SenseNova's planned driver). Next:
+  write driver -> convert -> verify -> publish -> register. analyze verdict
+  ("candidate lane Gemma4ForConditionalGeneration") logged to
+  attempts/miril-drone-2b-1.jsonl.
