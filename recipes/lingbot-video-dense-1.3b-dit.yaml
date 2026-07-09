@@ -1,0 +1,99 @@
+id: lingbot-video-dense-1.3b-dit
+upstream:
+  hf_repo: robbyant/lingbot-video-dense-1.3b
+  revision: f9789a7d9b4772a47aba62d4eb5282ddefd1da21
+  license: apache-2.0
+  license_terms: permissive
+  pipeline_tag: text-to-video
+  size_bytes: 12175278564
+conversion:
+  tool: models/lingbotvideo/dit_export.py
+  min_tool_version: 0.4.1
+  args:
+    component: dit_denoise_step
+    weights: build/_lingbotvideo/dense_dit.safetensors
+  quantization: float16
+  precision: float32
+expected:
+  format_version: '2.0'
+  bundle_files:
+  - metadata.json
+  - manifest.json
+  - programs/embed.aimodel/main.mlirb
+  - programs/block0.aimodel/main.mlirb
+  - programs/block1.aimodel/main.mlirb
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: graph_output_cosine
+    threshold: 0.999
+    tolerance: 0.0005
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: LingBot-Video-Dense-1.3B-DiT-CoreAI
+  collection: CoreAI · Apple on-device
+catalog:
+  name: LingBot-Video Dense 1.3B DiT (fabric)
+  family: LingBot-Video
+  bundle_kind: video
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: false
+    custom_kernel: false
+    patch_required: false
+    aot_required: false
+  capabilities:
+  - text-to-video
+  modalities:
+    input:
+    - text
+    - image
+    output:
+    - video
+  parameters: 1.3B
+  architecture: diffusion
+  runner: CoreAIVideoPipeline
+  tokenizer_required: true
+  processor_required: true
+status: draft
+notes: >-
+  LingBot-Video Dense 1.3B — the DiT (denoising transformer), companion to the
+  already-published VAE decoder (lingbot-video-dense-1.3b). This is the generative
+  CORE (the "brain"), apache-2.0 → PUBLISHABLE. Together with the VAE decoder + a
+  host-owned text encoder + flow-UniPC sampler it is the full T2V/I2V pipeline.
+
+  ARCHITECTURE (transformer/config.json): LingBotVideoTransformer3DModel — hidden
+  2048, depth 24, 16 heads x 128 head_dim, in/out 16 channels, patch_size [1,2,2],
+  text_dim 2560 (cross-attn text conditioning), FFN intermediate 6144, 3D RoPE
+  (axes_dims [32,48,48], rope_theta 256), norm_eps 1e-6. **DENSE, NOT MoE**
+  (num_experts 0 — the moe_intermediate/num_experts_per_tok fields are vestigial
+  shared-config; only lingbot-video-moe-30b-a3b activates them). **NON-CAUSAL** —
+  no sliding-window / sink / num_frames_per_block fields (unlike world-v2's
+  causal-fast streaming DiT), so full bidirectional attention, NO KV-cache. Simpler
+  than both the world-v2 14B causal DiT and the 30B MoE.
+
+  DEPLOYABLE GRAPH = one denoise step: (noisy_latent [1,16,T,Hl,Wl], timestep,
+  text_embeds [1,L,2560]) -> predicted velocity [1,16,T,Hl,Wl]. Host owns the
+  flow-UniPC sampler loop, the text encoder (UMT5-style), and the VAE decode (the
+  published asset). fp16.
+
+  PLANNED LANE (graph-split, cf. lingbot-vla-v2): ~1.3B params, fp16 ~2.6GB > the
+  ~1.5GB 0x10004 per-program ceiling, so split into a tiny `embed` program
+  (patch-embed + time/text projections + rope) + N layer-blocks (start N=2 x 12
+  layers, ~1.3GB fp16 each), host chains them (embed -> block0 -> block1) loading
+  the big blocks SEQUENTIALLY. NO KV-cache state to thread (non-causal) — simpler
+  than the VLA-v2 split. Gate B = graph_output_cosine of the chained fp16 output vs
+  the fp32 torch DiT denoise-step over seeded (latent, timestep, text) inputs.
+
+  STATUS: validated PLAN. models/lingbotvideo/dit_export.py is NOT YET WRITTEN; the
+  LingBotVideoTransformer3DModel is CUSTOM (not diffusers) — vendor a standalone
+  forward from github.com/Robbyant/lingbot-video (like lingbot-vla-v2 vendored
+  action_expert.py). Weights = transformer/diffusion_pytorch_model.safetensors only
+  (the VAE + text encoder stay out). Download deferred so it doesn't starve the
+  in-flight Miril-Drone fetch. Smallest of the video DiTs -> best first target.
