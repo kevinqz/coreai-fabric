@@ -53,6 +53,14 @@ parity:
       granularity: flattened
       graph_boundary: action_denoise_step
       input_protocol: recorded
+    measured:
+      status: passed
+      value: 0.9999999999990553
+      n_obs: 8
+      measurement_source: graph-output-parity-measured.json
+      min_chunk_cosine: 0.9999999999990553
+      mean_chunk_cosine: 0.9999999999992673
+      measured_on: apple_silicon
 publish:
   hf_target_namespace: kevinqz
   repo_name: FastWAM-LIBERO-CoreAI

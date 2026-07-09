@@ -36,5 +36,14 @@ jobs:
       - name: Gate-flip guard (no same-commit gate redefinition + status flip)
         run: python scripts/check_gate_flip.py --base origin/main
 
+      # RFC F14/F15 (audit L3): the generated docs must match a fresh generation
+      # (body-only, freshness stamp excluded) — a real committed-vs-drift guard,
+      # not the old overwrite-then-check tautology. Reproduces on CI because the
+      # measured numbers are durable in the recipes (H1/F6), not in gitignored build/.
+      - name: Generated docs are in sync (scorecard + blocks-index)
+        run: |
+          python scripts/generate_scorecard.py --check
+          python scripts/generate_blocks_index.py --check
+
       - name: Tests (recipe contract, register generator vs vendored catalog schemas, Gate A, doc-check)
         run: python -m pytest -q

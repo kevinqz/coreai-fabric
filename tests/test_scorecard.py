@@ -9,21 +9,17 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_scorecard_generator_runs_and_is_deterministic():
-    # Generate twice into a temp and confirm identical output (no timestamps that
-    # change per second would break this; verified_at is day-granularity).
-    env = {"COREAI_FABRIC_ROOT": str(REPO_ROOT)}
-    out1 = subprocess.run(
-        [sys.executable, "scripts/generate_scorecard.py"], capture_output=True, text=True, env=env
-    )
-    assert out1.returncode == 0, out1.stderr
-    text1 = (REPO_ROOT / "docs" / "scorecard.md").read_text()
-
-    # Re-run: --check should now pass (the file matches a fresh generation).
+def test_committed_scorecard_matches_fresh_generation():
+    # F14/L3: --check compares the COMMITTED file against a fresh generation WITHOUT
+    # overwriting it first (the old test overwrote-then-checked — a tautology that
+    # never guarded committed drift). Body-only (freshness stamp excluded) so it is
+    # stable off the author's toolchain. Because the measured numbers are durable in
+    # the recipes (H1/F6), this reproduces on a fresh clone with no build/.
     chk = subprocess.run(
-        [sys.executable, "scripts/generate_scorecard.py", "--check"], capture_output=True, text=True
+        [sys.executable, "scripts/generate_scorecard.py", "--check"],
+        capture_output=True, text=True, cwd=str(REPO_ROOT),
     )
-    assert chk.returncode == 0, f"scorecard not reproducible: {chk.stderr}"
+    assert chk.returncode == 0, f"committed scorecard is stale vs fresh generation: {chk.stderr}"
 
 
 def test_scorecard_header_carries_freshness_stamps():

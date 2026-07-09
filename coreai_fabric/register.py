@@ -128,26 +128,16 @@ def _catalog_evaluation(report: dict | None) -> dict | None:
     # PRIVACY: never surface the publisher's specific hardware/OS build. Report only
     # the generic platform family (the harness emits `platform`/`accelerator`).
     measured_on = env.get("accelerator") or env.get("platform")
-    if measured_on:
+    if measured_on and "measured_on" not in ev:
         ev["measured_on"] = str(measured_on)
-    return ev
-    if not ev.get("metric"):
-        return None
-    # F6: an evaluation with no numeric core (value / min_cosine / match-rate
-    # family) is not a measurement — return None so the catalog doesn't get a
-    # hollow "metric+status" shell with no number.
-    numeric_keys = ("value", "min_cosine", "margin_gated_match_rate",
-                    "argmax_match_rate", "top5_agreement_rate")
-    if not any(isinstance(ev.get(k), (int, float)) for k in numeric_keys):
-        return None
-    if isinstance(gb.get("runner"), str):
-        ev["runner"] = gb["runner"]
-    env = gb.get("environment", {})
-    # PRIVACY: never surface the publisher's specific hardware/OS build. Report only the generic
-    # platform family (the _environment() emits `platform`/`accelerator`, not chip/os).
-    measured_on = env.get("accelerator") or env.get("platform")
-    if measured_on:
-        ev["measured_on"] = str(measured_on)
+    # F7 rule 3 (M2): surface any named waiver INTO the catalog evaluation. The live
+    # catalog schema doesn't accept a `waivers` field yet (that is the batched
+    # protocol-extension PR), so we fold them into the accepted `reason` string —
+    # a waivered pass must never reach the catalog looking clean.
+    waivers = (gb.get("protocol") or {}).get("waivers")
+    if isinstance(waivers, list) and waivers:
+        tag = "waivers: " + ", ".join(str(w) for w in waivers)
+        ev["reason"] = f"{ev['reason']} [{tag}]" if ev.get("reason") else tag
     return ev
 
 
@@ -520,17 +510,29 @@ def _load_parity_report(root: Path, recipe: Recipe) -> dict | None:
     # fold it onto the report's gate_b so register always sees the full signature.
     recipe_gate_b = (recipe.data.get("parity") or {}).get("gate_b") or {}
     recipe_protocol = recipe_gate_b.get("protocol")
+    recipe_measured = recipe_gate_b.get("measured")
     if report is None:
-        if not recipe_protocol:
+        # RFC F6: the gitignored build report is gone (fresh clone / CI), but the
+        # recipe carries the DURABLE measured result + protocol (written by verify).
+        # Synthesize a report from them so _catalog_evaluation / _fidelity_tier run
+        # and the catalog gets the number — the exact fresh-clone gap the audit found.
+        if not (recipe_measured or recipe_protocol):
             return None
-        # Build report gone but recipe carries a signed protocol: synthesize a
-        # minimal report so _catalog_evaluation / _fidelity_tier can run.
-        report = {"gate_b": {"status": recipe_gate_b.get("status", "not_run"),
-                             "metric": recipe_gate_b.get("metric")}}
+        gb = {"metric": recipe_gate_b.get("metric")}
+        if isinstance(recipe_measured, dict):
+            gb.update({k: v for k, v in recipe_measured.items() if v is not None})
+        gb.setdefault("status", (recipe_measured or {}).get("status", "not_run"))
+        report = {"gate_a": {"status": "passed"}, "gate_b": gb}
     gb = report.setdefault("gate_b", {})
     if isinstance(recipe_protocol, dict) and recipe_protocol:
         gb["protocol"] = dict(recipe_protocol)
-    for k in ("threshold", "tolerance", "n_obs", "value"):
+    # Fold the durable measured result + the canonical gate definition onto the
+    # report's gate_b when the (transient) report lacks them.
+    if isinstance(recipe_measured, dict):
+        for k, v in recipe_measured.items():
+            if k not in gb and v is not None:
+                gb[k] = v
+    for k in ("threshold", "tolerance"):
         if k not in gb and k in recipe_gate_b:
             gb[k] = recipe_gate_b[k]
     return report

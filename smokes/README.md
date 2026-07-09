@@ -30,7 +30,19 @@ runs them locally:
 ```bash
 python smokes/moe-dense-fusion-lowering.py     # playbook T2: MoE dense-fusion lowering
 python smokes/graph-split-chaining.py          # playbook T3: graph-split host-chain wiring
+python smokes/sdpa-mask-forms.py               # playbook T2: SDPA mask-form equivalence (torch-only)
 ```
+
+## Index-only recipes are excluded BY CONSTRUCTION (F10)
+
+The battery is **technique-keyed, never recipe-keyed** — a smoke exercises a
+technique (MoE fusion, graph-split, SDPA masks) on a tiny random-weight config,
+and references **no** recipe id or upstream weights. So an index-only recipe (a
+restricted-license upstream fabric never redistributes — e.g. GR00T, MolmoAct2,
+SenseNova-Vision) is never pulled into a smoke: there is nothing recipe-specific
+to pull. This is the explicit F10 guarantee ("index-only blocks excluded from any
+regression battery, never silently skipped") — satisfied structurally, and
+guarded by `tests/test_smokes.py::test_smokes_are_technique_keyed_not_recipe_keyed`.
 
 ## Adding a smoke
 

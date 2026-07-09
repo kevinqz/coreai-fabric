@@ -34,15 +34,23 @@ from pathlib import Path
 from . import hf
 from .util import err, find_root, utc_now_iso, warn
 
-#: If a checkpoint's size_bytes implies >> this factor more params than its
-#: config declares, the config is a STUB concealing real structure (MoT, extra
-#: experts, a second backbone). SenseNova-Vision-7B-MoT trips at ~4x. Conservative.
-WEIGHT_PARAMS_RATIO_TRIPWIRE = 3.0
+#: If a checkpoint's size_bytes implies more params than its config declares by
+#: at least this factor, the config is a STUB concealing real structure (a MoT
+#: second expert, extra experts, a second backbone). A Mixture-of-Transformers
+#: dual-expert (SenseNova-Vision-7B-MoT: ~14.6B in a checkpoint declaring a single
+#: ~7.6B Qwen2) roughly DOUBLES params → ~1.9x. A normal single-stack fp16/bf16
+#: model lands at ~1.0x once implied_params/bytes are computed accurately (below),
+#: so 1.5 cleanly separates "hidden second stack" from "normal". Erring toward the
+#: tripwire is safe: it only forces MANUAL ANALYSIS (refusal-first), never a claim.
+WEIGHT_PARAMS_RATIO_TRIPWIRE = 1.5
 
-#: Rough bytes-per-parameter for a fp16 checkpoint (2 bytes/param + optimizer
-#: overhead margin). Used only to compare an *implied* param count to the
-#: config-declared one — never to assert an exact count.
-BYTES_PER_PARAM_FP16 = 2.5
+#: Bytes per parameter by checkpoint dtype. Read from config.torch_dtype so the
+#: implied param count is accurate regardless of precision; default 2.0 (fp16/bf16,
+#: the HF norm). Used only to compare an *implied* count to the config-declared
+#: one — never to assert an exact count.
+DTYPE_BYTES_PER_PARAM = {"float32": 4.0, "float16": 2.0, "bfloat16": 2.0,
+                         "int8": 1.0, "int4": 0.5, "uint8": 1.0}
+DEFAULT_BYTES_PER_PARAM = 2.0
 
 CANDIDATE = "candidate lane — verify against modeling code"
 MANUAL = "MANUAL ANALYSIS REQUIRED"
@@ -88,10 +96,28 @@ def fetch_config(hf_repo: str, revision: str | None = None) -> dict | None:
     return raw if isinstance(raw, dict) else None
 
 
+def _layer_params(h: int, inter, n_heads, n_kv) -> int:
+    """Params in one decoder layer: attention (GQA-aware) + gated MLP."""
+    if isinstance(n_heads, int) and n_heads > 0 and isinstance(n_kv, int) and n_kv > 0:
+        head_dim = max(h // n_heads, 1)
+        kv_dim = head_dim * n_kv
+        attn = h * h + 2 * (h * kv_dim) + h * h   # q + k + v + o (GQA-aware)
+    else:
+        attn = 4 * h * h                          # dense MHA fallback
+    mlp = 3 * h * inter if isinstance(inter, int) and inter > 0 else 8 * h * h
+    return attn + mlp
+
+
 def implied_params(config: dict) -> int | None:
     """Best-effort param count IMPLIED by a transformer config's declared dims.
-    Coarse — only used to compare to the checkpoint's weight bytes and detect a
-    stub config concealing real structure. None when the config carries no dims."""
+    Accurate enough (uses intermediate_size, GQA head counts, and an untied
+    lm_head) that a normal single-stack model lands near its true count — so the
+    weight-bytes ratio distinguishes a hidden second stack (MoT/extra backbone)
+    from normal overhead. None when the config carries no transformer dims.
+
+    Undercounting here was the audit's H3 defect: `12*h^2*n` estimated ~4.9B for a
+    ~7.6B Qwen2-7B, inflating the ratio's denominator's inverse and letting a real
+    MoT double slip under a 3.0x bar. This uses the real MLP/attention shapes."""
     if not isinstance(config, dict):
         return None
     h = config.get("hidden_size")
@@ -99,21 +125,35 @@ def implied_params(config: dict) -> int | None:
     v = config.get("vocab_size")
     if not isinstance(h, int) or not isinstance(n, int):
         return None
-    # Very rough: 12 * h^2 * n transformer params (attn+mlp heuristic) + embed.
-    params = 12 * h * h * n
+    inter = config.get("intermediate_size")
+    n_heads = config.get("num_attention_heads")
+    n_kv = config.get("num_key_value_heads") or n_heads
+    params = n * _layer_params(h, inter, n_heads, n_kv)
     if isinstance(v, int):
-        params += h * v
-    # Vision configs may declare these separately; fold a coarse ViT estimate.
-    ih = config.get("image_size") or config.get("vision_config", {}).get("image_size") if isinstance(config.get("vision_config"), dict) else None
-    if isinstance(ih, int):
-        params += 4 * h * h * n  # crude ViT overhead
+        params += h * v                           # token embeddings
+        if not config.get("tie_word_embeddings", False):
+            params += h * v                       # untied output head
+    # Fold a coarse estimate for a declared vision tower (VLMs carry one).
+    vc = config.get("vision_config")
+    if isinstance(vc, dict) and isinstance(vc.get("hidden_size"), int) \
+            and isinstance(vc.get("num_hidden_layers"), int):
+        vh, vn = vc["hidden_size"], vc["num_hidden_layers"]
+        params += vn * _layer_params(vh, vc.get("intermediate_size"),
+                                     vc.get("num_attention_heads"), vc.get("num_attention_heads"))
     return params
 
 
-def bytes_imply_params(size_bytes: int | None) -> int | None:
+def bytes_imply_params(size_bytes: int | None, config: dict | None = None) -> int | None:
+    """Params implied by the checkpoint's byte size, using the config's declared
+    dtype to pick bytes/param (default 2.0 = fp16/bf16). dtype-awareness is what
+    keeps a legitimate fp32 checkpoint from reading as 2x its params."""
     if not isinstance(size_bytes, int) or size_bytes <= 0:
         return None
-    return int(size_bytes / BYTES_PER_PARAM_FP16)
+    bpp = DEFAULT_BYTES_PER_PARAM
+    if isinstance(config, dict):
+        dt = str(config.get("torch_dtype") or "").lower()
+        bpp = DTYPE_BYTES_PER_PARAM.get(dt, DEFAULT_BYTES_PER_PARAM)
+    return int(size_bytes / bpp)
 
 
 def _tripwires(config: dict | None, info: dict) -> list[str]:
@@ -135,7 +175,7 @@ def _tripwires(config: dict | None, info: dict) -> list[str]:
         trips.append("gated_repo")
     # Weight-bytes vs config-implied-params contradiction (the SenseNova catch).
     declared = implied_params(config)
-    size_implied = bytes_imply_params(info.get("size_bytes"))
+    size_implied = bytes_imply_params(info.get("size_bytes"), config)
     if (isinstance(declared, int) and isinstance(size_implied, int)
             and declared > 0 and size_implied > 0
             and size_implied >= declared * WEIGHT_PARAMS_RATIO_TRIPWIRE):

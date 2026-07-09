@@ -157,6 +157,14 @@ def generate() -> tuple[str, list[str]]:
     return "\n".join(lines) + "\n", orphans
 
 
+def _content(text: str) -> str:
+    """Comparable body, excluding the env-specific freshness header lines so
+    --check is a real committed-vs-fresh guard (F14) that is stable across
+    toolchain environments (F15)."""
+    skip = ("- **verified_at:**", "- **toolchain_version:**")
+    return "\n".join(l for l in text.splitlines() if not l.startswith(skip)).strip()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true",
@@ -166,7 +174,7 @@ def main(argv: list[str] | None = None) -> int:
     text, orphans = generate()
     if args.check:
         current = OUT.read_text() if OUT.is_file() else ""
-        if current.strip() != text.strip():
+        if _content(current) != _content(text):
             print("docs/blocks-index.md is out of date — run: python scripts/generate_blocks_index.py",
                   file=sys.stderr)
             return 1

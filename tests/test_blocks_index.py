@@ -56,13 +56,13 @@ def test_known_block_id_produces_no_warning():
     assert _check_blocks(r) == []
 
 
-def test_blocks_index_generator_runs_and_is_reproducible():
-    out = subprocess.run([sys.executable, "scripts/generate_blocks_index.py"],
-                         capture_output=True, text=True, cwd=str(REPO_ROOT))
-    assert out.returncode == 0, out.stderr
+def test_committed_blocks_index_matches_fresh_generation():
+    # F14/L3: --check the COMMITTED file against a fresh generation WITHOUT
+    # overwriting it first (no overwrite-then-check tautology). Body-only, so it is
+    # stable off the author's toolchain and reproduces on a fresh clone.
     chk = subprocess.run([sys.executable, "scripts/generate_blocks_index.py", "--check"],
                          capture_output=True, text=True, cwd=str(REPO_ROOT))
-    assert chk.returncode == 0, f"blocks-index not reproducible: {chk.stderr}"
+    assert chk.returncode == 0, f"committed blocks-index is stale vs fresh generation: {chk.stderr}"
 
 
 def test_blocks_index_never_claims_solved_as_a_status():

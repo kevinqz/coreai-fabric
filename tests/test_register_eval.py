@@ -101,3 +101,21 @@ def test_fidelity_tier_unmeasured_falls_back_to_quant_hint():
 def test_eval_none_when_unmeasured():
     assert _catalog_evaluation(None) is None
     assert _catalog_evaluation({"gate_b": {"metric": "x", "status": "not_run"}}) is None
+
+
+def test_waivers_surface_in_catalog_reason():
+    # M2 (F7 rule 3): a waivered pass must not reach the catalog looking clean.
+    # The live catalog schema has no `waivers` field, so they fold into `reason`.
+    gb = {"metric": "action_parity", "status": "passed", "value": 0.999,
+          "min_action_cosine": 0.999, "n_obs": 8, "reason": "chunk cosine ok",
+          "protocol": {"waivers": ["near_zero_action"], "granularity": "per_row"}}
+    ev = _catalog_evaluation(_report(gb))
+    assert "near_zero_action" in ev["reason"]
+    assert "waivers" not in ev            # folded into reason, not a rejected property
+
+
+def test_no_waiver_leaves_reason_untouched():
+    gb = {"metric": "action_parity", "status": "passed", "value": 0.999,
+          "min_action_cosine": 0.999, "n_obs": 8, "reason": "clean"}
+    ev = _catalog_evaluation(_report(gb))
+    assert ev["reason"] == "clean"

@@ -39,12 +39,14 @@ def _row_for(recipe) -> dict | None:
     metric = gb_recipe.get("metric")
     if not metric:
         return None
-    # The measured number lives in the (committed-or-build) parity report; the
-    # durable protocol signature lives in the recipe. Prefer the report's value,
-    # fall back to the recipe where build/ is gitignored.
+    # The durable measured result + protocol signature live in the RECIPE (written
+    # by verify, RFC F6) so the scorecard reproduces on a fresh clone. A fresher
+    # build/<id>/parity-report.json, when present, is preferred.
+    measured = gb_recipe.get("measured") or {}
+    proto = gb_recipe.get("protocol") or {}
+    value = measured.get("value")
+    n_obs = measured.get("n_obs") or proto.get("n_obs")
     rpath = parity_report_path(REPO_ROOT, recipe)
-    value = None
-    n_obs = gb_recipe.get("n_obs")
     if rpath.is_file():
         import json
         try:
@@ -56,7 +58,6 @@ def _row_for(recipe) -> dict | None:
                 n_obs = gbr["n_obs"]
         except (ValueError, OSError):
             pass
-    proto = gb_recipe.get("protocol") or {}
     # A row is rankable only with a measured value AND a protocol signature.
     if value is None or not proto:
         return None
@@ -143,6 +144,16 @@ def generate() -> str:
     return "\n".join(lines) + "\n"
 
 
+def _content(text: str) -> str:
+    """The comparable body, excluding the env-specific freshness header lines
+    (verified_at / toolchain_version). This makes --check a REAL committed-vs-fresh
+    content guard (F14) that is stable across toolchain environments (F15) — before,
+    the stamp made --check fail on any machine but the author's, and the tests
+    overwrote-then-checked (a tautology that never guarded committed drift)."""
+    skip = ("- **verified_at:**", "- **toolchain_version:**")
+    return "\n".join(l for l in text.splitlines() if not l.startswith(skip)).strip()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true",
@@ -152,7 +163,7 @@ def main(argv: list[str] | None = None) -> int:
     text = generate()
     if args.check:
         current = OUT.read_text() if OUT.is_file() else ""
-        if current.strip() != text.strip():
+        if _content(current) != _content(text):
             print("docs/scorecard.md is out of date — run: python scripts/generate_scorecard.py",
                   file=sys.stderr)
             return 1

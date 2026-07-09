@@ -1,6 +1,6 @@
 # RFC — coreai-fabric surgical registry & harness loop
 
-- **Status:** ✅ Implemented (fabric-side), 2026-07-09. All phases 0–4 + hygiene landed; every confirmed finding F1–F16 traced to an artifact (Appendix A). The catalog-side `evaluation` schema PR (accept `value`/`min_cosine`/`protocol`) remains a documented batched follow-up to coreai-catalog — fabric emits the richer block via `register.catalog_protocol_extension()` and the cross-contract check stays green against the live catalog.
+- **Status:** ✅ Implemented + audited + hardened (fabric-side), 2026-07-09. All phases 0–4 + hygiene landed; every confirmed finding F1–F16 traced to an artifact (Appendix A). A 5-auditor post-implementation review found 3 HIGH + 2 MED + LOW defects where guarantees were documented-but-not-enforced (build/-trapped numbers, a gate-flip guard blind to real recipe layout, a tripwire that didn't fire on a realistic config); **all resolved** — see `docs/superpowers/specs/2026-07-09-rfc-verification-report.md` (197 tests, cross-contract green vs live catalog). The catalog-side `evaluation` schema PR (accept `value`/`min_cosine`/`protocol`/`waivers`) remains a documented batched follow-up to coreai-catalog — fabric emits the richer block via `register.catalog_protocol_extension()` and folds waivers into the accepted `reason` meanwhile.
 - **Date:** 2026-07-08
 - **Author:** kevinqz + Claude Code session
 - **Supersedes:** the "block+technique registry" proposal (killed/redesigned by the 2026-07-08 redteam)

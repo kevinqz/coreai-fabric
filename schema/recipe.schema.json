@@ -339,6 +339,26 @@
               "type": "boolean",
               "description": "LLMs only: additionally require greedy-decoded tokens to match the upstream exactly."
             },
+            "measured": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "The DURABLE measured Gate-B result (RFC Phase 0, finding F6). Written by `coreai-fabric verify` from the harness report so the number lives in git (the recipe), not only in the gitignored build/<id>/parity-report.json. This is what makes the catalog `evaluation` and docs/scorecard.md reproducible on a fresh clone / CI — before this, the value died with build/ and register emitted no number. Privacy-scrubbed (platform family only). Not hand-authored.",
+              "properties": {
+                "status": {"type": "string", "enum": ["passed", "failed", "skipped", "not_run"]},
+                "value": {"type": "number", "description": "The headline metric value the gate was judged on."},
+                "n_obs": {"type": "integer", "minimum": 1},
+                "min_chunk_cosine": {"type": "number"},
+                "mean_chunk_cosine": {"type": "number"},
+                "margin_gated_match_rate": {"type": "number"},
+                "argmax_match_rate": {"type": "number"},
+                "top5_agreement_rate": {"type": "number"},
+                "max_action_mae": {"type": "number", "minimum": 0},
+                "max_relative_action_mae": {"type": "number", "minimum": 0},
+                "measured_on": {"type": "string", "description": "Platform family only (privacy: never the specific chip/OS build)."},
+                "reason": {"type": "string"},
+                "measurement_source": {"type": "string"}
+              }
+            },
             "protocol": {
               "type": "object",
               "additionalProperties": false,

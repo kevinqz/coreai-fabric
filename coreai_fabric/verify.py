@@ -90,6 +90,12 @@ def protocol_from_report(gate_b: dict, recipe: Recipe) -> dict | None:
     rdtype = gate_b.get("reference_dtype")
     if isinstance(rdtype, str) and rdtype in ("float32", "float16", "bfloat16"):
         proto["reference_dtype"] = rdtype
+    else:
+        # The playbook's standard reference is fp32 (§0); fp16-reference lanes
+        # (e.g. pi0, by design) set reference_dtype explicitly in their report, so
+        # they are never defaulted. A complete signature is required-when-measured
+        # (F2), so we always fill this.
+        proto["reference_dtype"] = "float32"
 
     if metric in METRIC_GRANULARITY:
         proto["granularity"] = METRIC_GRANULARITY[metric]
@@ -103,7 +109,12 @@ def protocol_from_report(gate_b: dict, recipe: Recipe) -> dict | None:
     reason = str(gate_b.get("reason") or "").lower()
     if metric == "action_parity" or "recorded" in src or "real" in src:
         proto["input_protocol"] = "recorded"
-    elif "rand" in src or "synthetic" in src or "rand" in reason:
+    else:
+        # Conservative honest default for non-action lanes (encoder /
+        # graph_output_cosine / greedy): seeded synthetic inputs unless the harness
+        # says otherwise. Under-claiming (synthetic is the "weaker" protocol) is the
+        # safe direction — the smolvla 0.02-cosine catastrophe is why we never
+        # assume 'recorded'. Ensures input_protocol is always set (F2).
         proto["input_protocol"] = "synthetic"
 
     # graph_boundary: what the number spans. From the recipe's split-export
@@ -137,6 +148,65 @@ def protocol_from_report(gate_b: dict, recipe: Recipe) -> dict | None:
         proto.setdefault("waivers", []).append("near_zero_action")
 
     return proto or None
+
+
+#: Durable numeric result fields copied from a Gate-B report into the recipe
+#: (RFC F6). These are the numbers the catalog `evaluation` and the scorecard
+#: need; keeping them in the recipe (not gitignored build/) makes both
+#: reproducible on a fresh clone. `measured_on` is added scrubbed below.
+_MEASURED_KEYS = (
+    "status", "value", "n_obs", "reason", "measurement_source",
+    "min_chunk_cosine", "mean_chunk_cosine",
+    "margin_gated_match_rate", "argmax_match_rate", "top5_agreement_rate",
+    "max_action_mae", "max_relative_action_mae",
+)
+
+
+def measurement_from_report(gate_b: dict) -> dict | None:
+    """The DURABLE measured Gate-B result written back into the recipe (RFC F6).
+
+    Before this, the value lived only in the gitignored build/<id>/parity-report.json,
+    so on a fresh clone / CI register the catalog got NO number and the scorecard
+    could not reproduce. This distills the catalog-relevant numeric core (privacy
+    scrubbed) so the recipe is the durable home. None when there is no numeric
+    measurement (we never fabricate one)."""
+    if not isinstance(gate_b, dict):
+        return None
+    out: dict = {}
+    for k in _MEASURED_KEYS:
+        if gate_b.get(k) is not None:
+            out[k] = gate_b[k]
+    # Normalize the action-lane cosine aliases to the catalog-accepted names.
+    if "min_chunk_cosine" not in out:
+        for alias in ("min_action_cosine", "min_cosine"):
+            if isinstance(gate_b.get(alias), (int, float)):
+                out["min_chunk_cosine"] = gate_b[alias]
+                break
+    if "mean_chunk_cosine" not in out and isinstance(gate_b.get("mean_cosine"), (int, float)):
+        out["mean_chunk_cosine"] = gate_b["mean_cosine"]
+    # PRIVACY: platform family only, never the specific chip/OS build.
+    env = gate_b.get("environment") or {}
+    measured_on = env.get("accelerator") or env.get("platform")
+    if measured_on:
+        out["measured_on"] = str(measured_on)
+    # A measurement needs a numeric core, else it is not one.
+    numeric = ("value", "min_chunk_cosine", "mean_chunk_cosine", "margin_gated_match_rate",
+               "argmax_match_rate", "top5_agreement_rate", "max_action_mae", "max_relative_action_mae")
+    if not any(isinstance(out.get(k), (int, float)) for k in numeric):
+        return None
+    return out
+
+
+def _write_gate_b_measurement(recipe: Recipe, gate_b: dict) -> None:
+    """Write the durable protocol signature + measured result into the recipe's
+    gate_b (RFC F2 + F6). Called on pass AND fail so no measurement is transient."""
+    gb = recipe.data.setdefault("parity", {}).setdefault("gate_b", {})
+    proto = protocol_from_report(gate_b, recipe)
+    if proto:
+        gb["protocol"] = proto
+    measured = measurement_from_report(gate_b)
+    if measured:
+        gb["measured"] = measured
 
 
 #: Metric for a quantized PRODUCTION `coreai.llm.export` asset: task accuracy
@@ -486,12 +556,10 @@ def cmd_verify(args) -> int:
         from .util import write_yaml
 
         recipe.data["status"] = "verified"
-        # RFC Phase 0 (F2): write the measurement SIGNATURE back into the recipe
-        # so the number is never cited without its protocol. The harness report
-        # already carries these fields; they died in the gitignored build/ before.
-        proto = protocol_from_report(gate_b, recipe)
-        if proto:
-            recipe.data["parity"]["gate_b"]["protocol"] = proto
+        # RFC Phase 0 (F2/F6): write the measurement SIGNATURE + the durable
+        # measured RESULT back into the recipe so the number is never cited without
+        # its protocol AND survives a fresh clone (build/ is gitignored).
+        _write_gate_b_measurement(recipe, gate_b)
         write_yaml(recipe.path, recipe.data)
         ok(f"recipe status -> verified ({recipe.path.name})")
         print(f"next: coreai-fabric publish {recipe.id}")
@@ -510,9 +578,7 @@ def cmd_verify(args) -> int:
     # failed report is always written; the status flip is gated to pre-publish.
     from .util import write_yaml
 
-    proto = protocol_from_report(gate_b, recipe)
-    if proto:
-        recipe.data["parity"]["gate_b"]["protocol"] = proto
+    _write_gate_b_measurement(recipe, gate_b)
     if recipe.data.get("status") not in ("published", "registered"):
         recipe.data["status"] = "failed"
         write_yaml(recipe.path, recipe.data)
@@ -520,6 +586,5 @@ def cmd_verify(args) -> int:
     else:
         warn(f"Gate B failed but {recipe.id} is already {recipe.data['status']} — "
              "report written, status NOT regressed (a spot-check is not an un-publish)")
-        if proto:
-            write_yaml(recipe.path, recipe.data)
+        write_yaml(recipe.path, recipe.data)
     return 1

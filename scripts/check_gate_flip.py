@@ -37,9 +37,11 @@ PASSING_STATUSES = ("converted", "verified", "published", "registered")
 # The gate-definition fields a relaxation changes.
 GATE_FIELDS = ("metric", "threshold", "tolerance")
 
-# Match YAML lines like `    threshold: 0.99` or `status: verified`.
-_FIELD_RE = re.compile(r"^\+?\s*-?\s*([A-Za-z_][A-Za-z0-9_]*):\s*(.+)$")
-_INDENT_FIELD_RE = re.compile(r"^\+?\s+(threshold|metric|tolerance|status):\s*(.+)$")
+# Match added YAML lines like `    threshold: 0.99` (indented, under gate_b) or
+# `status: verified` (COLUMN 0 in every real recipe). The leading whitespace is
+# OPTIONAL (`\s*`): `status:` is a top-level key, so a `\s+` here silently missed
+# the exact flip this guard exists to catch (the F7a regression the audit found).
+_FIELD_RE = re.compile(r"^\+?\s*(threshold|metric|tolerance|status):\s*(.+)$")
 
 
 def _git(*args: str) -> str:
@@ -88,7 +90,7 @@ def _analyze_diff(diff: str) -> tuple[bool, bool, list[str]]:
 
         if not raw.startswith("+") or raw.startswith("+++"):
             continue
-        m = _INDENT_FIELD_RE.match(raw)
+        m = _FIELD_RE.match(raw)
         if not m:
             continue
         field, value = m.group(1), m.group(2).strip()
