@@ -168,6 +168,38 @@ def _machine_chip_brand() -> str | None:
         return None
 
 
+def assert_bundle_content(bundle: Path, recipe) -> list[str]:
+    """RFC F10: the bundle content allowlist. `upload_folder` ships the bundle
+    dir recursively with no content gate; a stray *.safetensors / raw upstream
+    slice / extracted block weights would redistribute derivative data of a
+    restricted upstream. Returns the offending relative paths (empty = OK).
+
+    Allowed inside the bundle: the verified .aimodel inventory
+    (metadata.json/main.mlirb/main.hash) + the recipe's declared bundle_files +
+    known sidecars (norm_stats.json, manifest.json, programs/*.aimodel parts).
+    Anything else — especially *.safetensors — is refused."""
+    from .recipes import Recipe  # noqa: F401 (type hint only)
+    expected = set(recipe.data.get("expected", {}).get("bundle_files", []) or [])
+    allowed_names = {
+        "metadata.json", "main.mlirb", "main.hash", "manifest.json",
+        "norm_stats.json", "lerobot-coreai.json",
+    }
+    offending: list[str] = []
+    for p in sorted(bundle.rglob("*")):
+        if not p.is_file():
+            continue
+        rel = p.relative_to(bundle)
+        rel_str = str(rel)
+        # Allowed: a declared bundle_file, a known sidecar name, or a programs/*
+        # split-graph part (the graph-split package layout from playbook T3).
+        if rel_str in expected or rel.name in allowed_names:
+            continue
+        if rel.parts and rel.parts[0] == "programs" and rel.suffix == ".aimodel":
+            continue
+        offending.append(rel_str)
+    return offending
+
+
 def assert_no_local_paths(staging: Path) -> list[str]:
     """Last-line guard before a public upload: any staged text file still carrying an absolute local
     path OR the publisher's specific hardware fingerprint (chip brand string) is a leak. Returns the
@@ -322,6 +354,13 @@ def render_model_card(root: Path, recipe, manifest: dict, report: dict,
         return _render_reward_model_card(root, recipe, manifest, report,
                                          copyright_holder=copyright_holder,
                                          collection_url=collection_url)
+    if bundle_kind == "video":
+        # A video model's deployable core is the AutoencoderKLWan VAE decoder
+        # (latent -> pixel frames). Honest card: decoder only, host owns the DiT
+        # denoise loop + un-normalization + streaming cache; Gate B graph_output_cosine.
+        return _render_video_card(root, recipe, manifest, report,
+                                  copyright_holder=copyright_holder,
+                                  collection_url=collection_url)
     if bundle_kind and bundle_kind != "llm":
         raise SystemExit(
             f"publish: no card template for bundle_kind '{bundle_kind}' yet "
@@ -968,6 +1007,118 @@ def _render_image_feature_extraction_card(root: Path, recipe, manifest: dict, re
     )
 
 
+def _render_video_card(root: Path, recipe, manifest: dict, report: dict,
+                       *, copyright_holder: str | None = None,
+                       collection_url: str | None = None) -> str:
+    """Card for a video model's VAE decoder (bundle_kind: video).
+    Honest by construction: ships ONLY the AutoencoderKLWan decode path (latent ->
+    pixel frames); the host owns the text encoder, the DiT denoise loop, latent
+    un-normalization, frame assembly, and the streaming cache. Gate B is
+    graph_output_cosine (decoded pixels vs the torch reference)."""
+    from . import FABRIC_REPO_URL
+    upstream = recipe.data["upstream"]
+    conv = recipe.data["conversion"]
+    catalog_block = recipe.data.get("catalog") or {}
+    publish_cfg = recipe.data.get("publish") or {}
+    repo_id = f"{publish_cfg.get('hf_target_namespace')}/{publish_cfg.get('repo_name')}"
+    template = (root / "templates" / "model-card-video.md").read_text()
+
+    quant = str(conv.get("quantization", "none")).strip()
+    is_quantized = quant.lower() not in ("", "none")
+    base_model_relation_line = "base_model_relation: quantized\n" if is_quantized else ""
+
+    tags = ["coreai", "core-ai", "coreai-fabric", "aimodel", "coreml", "apple",
+            "apple-silicon", "on-device", "video", "text-to-video", "image-to-video",
+            "vae", "diffusion"]
+    if is_quantized:
+        tags.append(quant.lower())
+    seen: set[str] = set()
+    tags_block = "".join(f"- {t}\n" for t in tags if not (t in seen or seen.add(t)))
+
+    langs = catalog_block.get("languages") or upstream.get("languages")
+    language_block = ("language:\n" + "".join(f"- {l}\n" for l in langs)) if langs else ""
+
+    meta = _bundle_metadata(root, recipe)
+    min_os = catalog_block.get("min_os") or {}
+    min_os_str = f"macOS {min_os.get('macos', '27.0')}+ / iOS {min_os.get('ios', '27.0')}+"
+    main = bundle_path(root, recipe) / "main.mlirb"
+    size_str = _human_size(main.stat().st_size) if main.is_file() else "—"
+
+    # decoded output shape from the measured parity JSON, if present
+    gb = report.get("gate_b", {})
+    out_shape = gb.get("output_shape")
+    out_str = "×".join(str(x) for x in out_shape) if out_shape else "—"
+    facts_rows = [
+        ("Parameters (upstream)", catalog_block.get("parameters", "—")),
+        ("Architecture", catalog_block.get("architecture", "—")),
+        ("Capabilities", ", ".join(catalog_block.get("capabilities", [])) or "—"),
+        ("Deployable core", "AutoencoderKLWan VAE decoder (latent → frames)"),
+        ("Decoded frame shape", out_str),
+        ("Quantization / precision", f"{conv.get('quantization', '—')} / {conv.get('precision', '—')}"),
+        ("On-disk size", size_str),
+        ("Asset kind", "single-graph VAE decoder (first-chunk decode)"),
+        ("assetVersion", meta.get("assetVersion", "—")),
+    ]
+    facts_block = "".join(f"| {k} | {v} |\n" for k, v in facts_rows)
+
+    if gb.get("metric") == "graph_output_cosine" and isinstance(gb.get("value"), (int, float)):
+        env = gb.get("environment", {})
+        dev = env.get("accelerator") or env.get("chip") or "Apple Silicon"
+        ref = {"float16": "fp16", "float32": "fp32"}.get(
+            gb.get("reference_dtype"), gb.get("reference_dtype", "fp32"))
+        med = gb.get("median_cosine")
+        med_str = f" (median {med:.6f})" if isinstance(med, (int, float)) else ""
+        n = gb.get("n_obs") or "N"
+        evaluation_block = (
+            f"- **Gate B — graph_output_cosine: {gb['value']:.6f} min output cosine**{med_str} "
+            f"vs the {ref} torch VAE decoder over {n} seeded latents, measured on {dev}. Certifies the "
+            f"export decodes the SAME pixels as the source VAE — a conversion-fidelity metric, not "
+            f"end video quality."
+        )
+    else:
+        evaluation_block = (
+            f"- **Gate B (graph_output_cosine): {gb.get('status', 'not_run')}** — unmeasured "
+            "pending a real conversion + `verify` on hardware.")
+
+    holder = copyright_holder or upstream.get("copyright_holder")
+    attribution = (f"Weights © {holder}, " if holder else "Weights ") + \
+        f"licensed **{upstream['license']}** — see the bundled `LICENSE`."
+
+    mirror_ns = publish_cfg.get("mirror_namespace")
+    mirror_line = (
+        f"> **Canonical:** [`{repo_id}`](https://huggingface.co/{repo_id}) — source of truth. "
+        + (f"**Mirror:** [`{mirror_ns}/{publish_cfg.get('repo_name')}`]"
+           f"(https://huggingface.co/{mirror_ns}/{publish_cfg.get('repo_name')})."
+           if mirror_ns else ""))
+    collection_link = f"- [HF Collection]({collection_url})\n" if collection_url else ""
+
+    return template.format(
+        license=upstream["license"],
+        upstream_hf_repo=upstream["hf_repo"],
+        upstream_revision=manifest.get("input", {}).get("revision") or upstream.get("revision", "unpinned"),
+        base_model_relation_line=base_model_relation_line,
+        gated_frontmatter="",
+        gemma_license_block="",
+        language_block=language_block,
+        tags_block=tags_block,
+        name=catalog_block.get("name", recipe.id),
+        recipe_id=recipe.id,
+        mirror_line=mirror_line,
+        facts_block=facts_block,
+        min_os=min_os_str,
+        gate_a_status=report["gate_a"]["status"],
+        evaluation_block=evaluation_block,
+        attribution=attribution,
+        collection_link=collection_link,
+        recipe_url=f"{FABRIC_REPO_URL}/blob/main/recipes/{recipe.id}.yaml",
+        tool=manifest.get("tool", conv["tool"]),
+        tool_version=manifest.get("tool_version") or "(version not reported)",
+        precision=conv["precision"],
+        quantization=conv["quantization"],
+        date=today(),
+    )
+
+
 def _render_reward_model_card(root: Path, recipe, manifest: dict, report: dict,
                               *, copyright_holder: str | None = None,
                               collection_url: str | None = None) -> str:
@@ -1217,6 +1368,16 @@ def cmd_publish(args) -> int:
     if leaks:
         err(f"ABORT: local paths would leak into the public repo via {leaks} — "
             "not uploading. This is a bug; report it.")
+        return 1
+
+    # RFC F10: bundle content allowlist. upload_folder ships the bundle dir
+    # recursively with no content gate; a stray *.safetensors / raw upstream
+    # slice / extracted block weights sitting one directory convention away would
+    # redistribute derivative data of a restricted upstream. Refuse before upload.
+    stray = assert_bundle_content(bundle, recipe)
+    if stray:
+        err(f"ABORT: bundle contains files outside the verified content allowlist: {stray} — "
+            "not uploading. Remove stray weights/slices (derivative data of NC upstreams).")
         return 1
 
     if args.dry_run:

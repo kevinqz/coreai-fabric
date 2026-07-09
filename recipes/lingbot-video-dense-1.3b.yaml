@@ -30,6 +30,11 @@ parity:
     metric: graph_output_cosine
     threshold: 0.999
     tolerance: 0.0005
+    protocol:
+      n_obs: 8
+      reference_dtype: float32
+      granularity: flattened
+      graph_boundary: single-graph forward
 publish:
   hf_target_namespace: kevinqz
   repo_name: LingBot-Video-Dense-1.3B-CoreAI
@@ -59,34 +64,34 @@ catalog:
   runner: CoreAIVideoPipeline
   tokenizer_required: true
   processor_required: true
-status: verified
-notes: >-
-  LingBot-Video Dense 1.3B (robbyant/lingbot-video-dense-1.3b @ f9789a7d,
-  apache-2.0) — the dense member of the open LingBotVideoPipeline family (T2I / T2V /
-  TI2V; trained on 70k+ hours embodied + web video). PUBLISHABLE (Apache-2.0), unlike
-  the CC-BY-NC-SA lingbot-world-v2. Diffusers format: AutoencoderKLWan VAE +
-  UMT5-style text encoder (2 shards) + a 1.3B DiT (CausalLingBotVideoTransformer3D)
-  + flow-UniPC scheduler.
+status: published
+notes: 'LingBot-Video Dense 1.3B (robbyant/lingbot-video-dense-1.3b @ f9789a7d, apache-2.0)
+  — the dense member of the open LingBotVideoPipeline family (T2I / T2V / TI2V; trained on
+  70k+ hours embodied + web video). PUBLISHABLE (Apache-2.0), unlike the CC-BY-NC-SA lingbot-world-v2.
+  Diffusers format: AutoencoderKLWan VAE + UMT5-style text encoder (2 shards) + a 1.3B DiT
+  (CausalLingBotVideoTransformer3D) + flow-UniPC scheduler.
 
-  DEPLOYABLE CORE = the AutoencoderKLWan VAE DECODER — CONFIG IDENTICAL to
-  lingbot-world-v2 (base_dim 96, z_dim 16, dim_mult [1,2,4,4], temporal_downsample
-  [f,t,t], same latents_mean/std), so the same models/lingbotvideo/export.py lane
-  builds it: latent [1,16,1,60,104] -> frames [1,3,1,480,832], ONE static fp32
-  .aimodel, single program (no graph-split). Host owns the DiT denoise loop, latent
-  un-normalization, frame assembly, and the streaming feat_cache. GATE B =
-  graph_output_cosine on decoded pixels. Weights = the vae/ safetensors only; the DiT
-  + text encoder stay out of the build.
+  DEPLOYABLE CORE = the AutoencoderKLWan VAE DECODER — CONFIG IDENTICAL to lingbot-world-v2
+  (base_dim 96, z_dim 16, dim_mult [1,2,4,4], temporal_downsample [f,t,t], same latents_mean/std),
+  so the same models/lingbotvideo/export.py lane builds it: latent [1,16,1,60,104] -> frames
+  [1,3,1,480,832], ONE static fp32 .aimodel, single program (no graph-split). Host owns the
+  DiT denoise loop, latent un-normalization, frame assembly, and the streaming feat_cache.
+  GATE B = graph_output_cosine on decoded pixels. Weights = the vae/ safetensors only; the
+  DiT + text encoder stay out of the build.
 
-  BUILT + GATE B MEASURED (2026-07-08, coreai-torch 0.4.1 / coremltools 9.0):
-  min graph_output_cosine 0.99999999999941 / median 0.99999999999941 over n_obs=8
-  (fp32 torch AutoencoderKLWan first-chunk decoder vs fp32 .aimodel; latent
-  [1,16,1,60,104] -> frames [1,3,1,480,832]). One fp32 program ~286MB, LOADS OK.
-  NOTE: the vae/ safetensors is BYTE-IDENTICAL (SHA256 d6e524b3...) to
-  lingbot-world-v2's VAE — the whole LingBot video family shares ONE AutoencoderKLWan,
-  so this single asset is the deployable VAE decoder for world-v2 + video-dense +
-  video-moe alike. PUBLISHABLE (Apache-2.0) as kevinqz/LingBot-Video-Dense-1.3B-CoreAI.
+  BUILT + GATE B MEASURED (2026-07-08, coreai-torch 0.4.1 / coremltools 9.0): min graph_output_cosine
+  0.99999999999941 / median 0.99999999999941 over n_obs=8 (fp32 torch AutoencoderKLWan first-chunk
+  decoder vs fp32 .aimodel; latent [1,16,1,60,104] -> frames [1,3,1,480,832]). One fp32 program
+  ~286MB, LOADS OK. NOTE: the vae/ safetensors is BYTE-IDENTICAL (SHA256 d6e524b3...) to lingbot-world-v2''s
+  VAE — the whole LingBot video family shares ONE AutoencoderKLWan, so this single asset is
+  the deployable VAE decoder for world-v2 + video-dense + video-moe alike. PUBLISHABLE (Apache-2.0)
+  as kevinqz/LingBot-Video-Dense-1.3B-CoreAI.
 
-  DiT 1.3B = the next buildable target (dense, no MoE — smaller than world-v2's 14B
-  and lingbot-video-moe-30b's 30B; a plausible single-or-few-program export). UMT5
-  text encoder = trivial reuse encoder lane. Because this is Apache-2.0, a VAE-decoder
-  artifact CAN be published (kevinqz/LingBot-Video-Dense-1.3B-CoreAI).
+  DiT 1.3B = the next buildable target (dense, no MoE — smaller than world-v2''s 14B and lingbot-video-moe-30b''s
+  30B; a plausible single-or-few-program export). UMT5 text encoder = trivial reuse encoder
+  lane. Because this is Apache-2.0, a VAE-decoder artifact CAN be published (kevinqz/LingBot-Video-Dense-1.3B-CoreAI).'
+published:
+  hf_repo: kevinqz/LingBot-Video-Dense-1.3B-CoreAI
+  revision: 3106a28e6edd106b60a94fb6c51e8a854e8254cc
+  date: '2026-07-09'
+catalog_pr: https://github.com/kevinqz/coreai-catalog/pull/36
