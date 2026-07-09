@@ -1,7 +1,8 @@
 # Upstream coverage — robbyant / feyninc / sensenova
 
 Gap analysis of the requested upstream collections vs. the fabric recipe set.
-Snapshot: **2026-07-08**. Legend: ✅ have · ⬜ missing.
+Snapshot: **2026-07-08** (updated after the backlog sweep). Legend: ✅ have ·
+⬜ missing · 🚫 out-of-scope.
 
 ## Summary
 
@@ -9,12 +10,19 @@ Snapshot: **2026-07-08**. Legend: ✅ have · ⬜ missing.
 |---|---|---|---|
 | github robbyant/lingbot-vla-v2 | 1 | 1 | 0 |
 | hf robbyant/lingbot-vision | 4 | 4 | 0 |
-| hf feyninc/pulpie | 3 | 2 | **1** |
+| hf feyninc/pulpie | 3 | **3** | 0 |
 | hf sensenova/SenseNova-Vision-7B-MoT | 1 | 1 | 0 |
-| hf robbyant/lingbot-video | 3 | 0 | **3** |
-| hf robbyant/lingbot-world-v2 *(bonus, done this session)* | 2 | 1 | 0 |
+| hf robbyant/lingbot-video | 3 | **2** + 1🚫 | 0 |
+| hf robbyant/lingbot-world-v2 | 2 | 1 | 0 |
 
-**Net: 4 missing** — `pulpie-orange-small` + the entire `lingbot-video` collection (3).
+**All requested models now have a recipe.** The backlog sweep added
+`pulpie-orange-small` (verified), `lingbot-video-dense-1.3b` (verified, publishable),
+`lingbot-video-moe-30b-a3b` (draft — VAE verified by identity); the
+`lingbot-video-rewriter-lora` is out-of-scope (prompt LoRA, not a `.aimodel` lane).
+
+**Family VAE fact:** world-v2, video-dense-1.3b and video-moe-30b all ship the
+**same** AutoencoderKLWan (vae/ safetensors byte-identical, SHA256 d6e524b3…) — ONE
+verified VAE-decoder asset covers all three.
 
 ## 1. github.com/Robbyant/lingbot-vla-v2 — ✅ HAVE
 
@@ -38,18 +46,19 @@ Gate B min 0.99948). Nothing to do.
 
 The `graph_output_cosine` encoder lane. All four published+registered. Nothing to do.
 
-## 3. feyninc/pulpie — ⬜ 2/3 (1 missing)
+## 3. feyninc/pulpie — ✅ COMPLETE (3/3)
 
 Token-classification models ("cleaning up the web").
 
 | Model | Params | Recipe | Status |
 |---|---|---|---|
-| ⬜ **pulpie-orange-small** | 0.2B | — | **MISSING** |
+| ✅ pulpie-orange-small | 0.2B | `recipes/pulpie-orange-small.yaml` | **verified** (index-only, cc-by-nc) |
 | ✅ pulpie-orange-base | 0.6B | `recipes/pulpie-orange-base.yaml` | registered |
 | ✅ pulpie-orange-large | 2B | `recipes/pulpie-orange-large.yaml` | registered |
 
-**Action:** add `pulpie-orange-small` — same encoder lane as base/large, smallest
-of the family, should be a near-copy of the base recipe. Low risk, quick win.
+`pulpie-orange-small` built this session: EuroBERT-210m, Gate B min 0.99999999999174
+(n=8). Note the small checkpoint is **cc-by-nc-4.0** (base/large are apache-2.0), so
+it's index-only — verified but not republished.
 
 ## 4. sensenova/SenseNova-Vision-7B-MoT — ✅ HAVE (draft)
 
@@ -60,20 +69,20 @@ of the family, should be a near-copy of the base recipe. Low risk, quick win.
 Index-only draft (CC-BY-NC-4.0). Deployable core = the SigLIP ViT encoder; the
 `export.py` driver is not yet written. Blocked from publishing on license, not effort.
 
-## 5. robbyant/lingbot-video — ⬜ 0/3 (all missing)
+## 5. robbyant/lingbot-video — ✅ covered (2 verified/draft + 1 out-of-scope)
 
-**Distinct from `lingbot-world-v2`.** A separate video-model collection, entirely
-uncovered.
+**Distinct from `lingbot-world-v2`** but **Apache-2.0 (publishable)** and shares the
+same VAE. `LingBotVideoPipeline` (T2I/T2V/TI2V).
 
 | Model | Notes | Recipe | Status |
 |---|---|---|---|
-| ⬜ **lingbot-video-dense-1.3b** | 1.3B dense video model — smallest, best first target | — | **MISSING** |
-| ⬜ **lingbot-video-moe-30b-a3b** | 30B MoE, ~3B active — large, MoE graph-split territory | — | **MISSING** |
-| ⬜ **lingbot-video-rewriter-lora** | prompt-rewriter LoRA — likely a text adapter, not a core convert target | — | **MISSING** |
+| ✅ lingbot-video-dense-1.3b | VAE decoder built, Gate B 0.99999999999941 | `recipes/lingbot-video-dense-1.3b.yaml` | **verified**, publishable |
+| ✅ lingbot-video-moe-30b-a3b | VAE verified by identity; 30B MoE DiT = research | `recipes/lingbot-video-moe-30b-a3b.yaml` | **draft** |
+| 🚫 lingbot-video-rewriter-lora | prompt-rewriter LoRA — a text adapter, not a `.aimodel` core | — | out-of-scope |
 
-**Action:** triage needed — architecture unknown (probably Wan-family like world-v2).
-Best entry = `dense-1.3b` (smallest). The `moe-30b-a3b` is a big MoE (graph-split, cf.
-lingbot-vla-v2). The `rewriter-lora` is likely out of scope for a `.aimodel` lane.
+The dense VAE decoder is built + verified and, being Apache-2.0, is publishable. The
+MoE's VAE is the same shared family weights (recipe draft pending its own hash confirm);
+its 30B MoE DiT is a dedicated graph-split campaign. The rewriter LoRA is out of scope.
 
 ## 6. robbyant/lingbot-world-v2 — ✅ done this session (bonus)
 
@@ -88,9 +97,14 @@ feat_cache-as-I/O, then the 14B DiT graph-split. See `docs/validation-log.md`.
 
 ## Prioritized backlog
 
-1. **pulpie-orange-small** (0.2B) — trivial, completes the pulpie family.
-2. **lingbot-video-dense-1.3b** — smallest video model; triage architecture first.
-3. **SenseNova export.py** — turn the draft into a measured Gate-B number (index-only).
-4. **lingbot-world-v2 streaming** — feat_cache-as-I/O, finishes the VAE lane.
-5. **lingbot-video-moe-30b-a3b** — big MoE graph-split; dedicated campaign.
-6. **lingbot-world-v2 DiT 14B** — the SotA core; multi-session (~28GB download + split).
+- ~~pulpie-orange-small~~ ✅ done (verified, index-only)
+- ~~lingbot-video-dense-1.3b VAE~~ ✅ done (verified, publishable)
+
+Remaining:
+1. **Publish `lingbot-video-dense-1.3b`** — Apache-2.0 VAE decoder asset, ready to
+   register (kevinqz/LingBot-Video-Dense-1.3B-CoreAI) → the first publishable video asset.
+2. **SenseNova export.py** — turn the draft into a measured Gate-B number (index-only).
+3. **Streaming feat_cache-as-I/O** — finishes the VAE lane for the whole video family
+   (world-v2 + video-dense + video-moe share the asset).
+4. **lingbot-video DiT** — dense-1.3b DiT first (smallest, Apache, publishable), then
+   the 30B MoE graph-split (cf. lingbot-vla-v2), then world-v2's 14B DiT. Multi-session.

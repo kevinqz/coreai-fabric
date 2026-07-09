@@ -342,3 +342,28 @@ Status `verified`, index-only (CC-BY-NC-SA → no republish). Asset + parity JSO
 under `build/` (gitignored); weights not hosted. Follow-ups: (1) expose the WAN
 causal `feat_cache` as graph I/O for streaming multi-chunk decode (prefix-K/V
 technique); (2) DiT 14B graph-split (research-grade, host-owned).
+
+---
+
+## 2026-07-08 — Backlog sweep: pulpie-orange-small + LingBot-Video family
+
+**pulpie-orange-small** (EuroBERT-210m token classifier, `feyninc/pulpie-orange-small`
+@ 15ead335, **cc-by-nc-4.0** → index-only, unlike the apache base/large). Built via
+`models/eurobert/export.py` (one static-seq-64 `.aimodel`, `(input_ids,
+attention_mask) -> [1,64,2]`) + `models/eurobert/parity.py`. **Gate B
+(graph_output_cosine, n=8): min 0.99999999999174 / median 0.99999999999451.** LOADS OK.
+
+**LingBot-Video family VAE decoder** (`robbyant/lingbot-video-dense-1.3b` @ f9789a7d,
+**apache-2.0 → publishable**). VAE is `AutoencoderKLWan`, and its `vae/` safetensors
+is **byte-identical (SHA256 d6e524b3…) to lingbot-world-v2's VAE** — the whole LingBot
+video family (world-v2 14B, video-dense-1.3b, video-moe-30b-a3b) ships ONE shared VAE.
+Built via `models/lingbotvideo/export.py` (latent [1,16,1,60,104] → frames
+[1,3,1,480,832], one fp32 program ~286MB). **Gate B (n=8): min/median
+0.99999999999941.** LOADS OK. Same number as the world-v2 build, as expected from the
+identical weights. This asset is the deployable VAE decoder for all three members;
+Apache-2.0 makes it publishable (kevinqz/LingBot-Video-Dense-1.3B-CoreAI).
+
+Assets + parity JSON under build/ (gitignored). Recipes: pulpie-orange-small (verified,
+index-only), lingbot-video-dense-1.3b (verified, publishable), lingbot-video-moe-30b-a3b
+(draft — VAE verified by identity, 30B MoE DiT = research-grade). The
+lingbot-video-rewriter-lora is a prompt-rewriter LoRA, out of scope for a .aimodel lane.

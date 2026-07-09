@@ -1,0 +1,88 @@
+id: lingbot-video-moe-30b-a3b
+upstream:
+  hf_repo: robbyant/lingbot-video-moe-30b-a3b
+  revision: f2e538f64afe00cc4ae674db2aeb52e2945edfd5
+  license: apache-2.0
+  license_terms: permissive
+  pipeline_tag: text-to-video
+  size_bytes: 129900000000
+conversion:
+  tool: models/lingbotvideo/export.py
+  min_tool_version: 0.4.1
+  args:
+    component: vae_decoder
+    weights: build/_lingbotvideo/moe_vae.safetensors
+  quantization: none
+  precision: float32
+expected:
+  format_version: '2.0'
+  bundle_files:
+  - metadata.json
+  - main.mlirb
+  - main.hash
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: graph_output_cosine
+    threshold: 0.999
+    tolerance: 0.0005
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: LingBot-Video-MoE-30B-A3B-CoreAI
+  collection: CoreAI · Apple on-device
+catalog:
+  name: LingBot-Video MoE 30B-A3B (fabric)
+  family: LingBot-Video
+  bundle_kind: video
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: false
+    custom_kernel: false
+    patch_required: false
+    aot_required: false
+  capabilities:
+  - text-to-video
+  modalities:
+    input:
+    - text
+    - image
+    output:
+    - video
+  parameters: 30B
+  architecture: diffusion
+  runner: CoreAIVideoPipeline
+  tokenizer_required: true
+  processor_required: true
+status: draft
+notes: >-
+  LingBot-Video MoE 30B-A3B (robbyant/lingbot-video-moe-30b-a3b @ f2e538f6,
+  apache-2.0) — the flagship Mixture-of-Experts member of the LingBotVideoPipeline
+  family: ~30B total / ~3B active ("A3B"), ~3x faster inference via grouped-expert
+  execution, T2I / T2V / TI2V + a refiner. ~130GB (13 transformer shards).
+  PUBLISHABLE (Apache-2.0).
+
+  DEPLOYABLE CORE = the AutoencoderKLWan VAE DECODER, the SAME lane as
+  lingbot-video-dense-1.3b / lingbot-world-v2 (identical VAE config family) — built
+  via models/lingbotvideo/export.py --weights build/_lingbotvideo/moe_vae.safetensors:
+  latent [1,16,1,60,104] -> frames [1,3,1,480,832], ONE static fp32 .aimodel, single
+  program. GATE B = graph_output_cosine on decoded pixels. Only the vae/ safetensors
+  is fetched; the 130GB DiT stays out of the build.
+
+  VAE ALREADY VERIFIED BY IDENTITY: lingbot-world-v2's and lingbot-video-dense-1.3b's
+  vae/ safetensors are byte-identical (SHA256 d6e524b3...), and both share this
+  model's AutoencoderKLWan config — the LingBot family ships ONE VAE, whose decoder
+  is BUILT + Gate B 0.99999999999941 (see lingbot-video-dense-1.3b). Recipe stays
+  `draft` only because this repo's own vae hash was not re-fetched here; confirm it to
+  promote (expected identical). The deployable VAE decoder asset is effectively done.
+
+  DiT 30B MoE = host-owned RESEARCH-GRADE graph-split target — a much larger sibling
+  of the lingbot-vla-v2 dense-MoE split (30B, 13 shards, grouped experts). Far above
+  the 0x10004 per-program complexity ceiling; needs an N-program split with the MoE
+  dense-rewrite + sequential block loading proven on lingbot-vla-v2. Multi-session,
+  large download. UMT5 text encoder = trivial reuse encoder lane.

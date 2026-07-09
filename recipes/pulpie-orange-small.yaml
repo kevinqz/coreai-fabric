@@ -1,0 +1,85 @@
+id: pulpie-orange-small
+upstream:
+  hf_repo: feyninc/pulpie-orange-small
+  revision: 15ead3350a66e9f15745b7e6619370e3437a5fb0
+  license: cc-by-nc-4.0
+  license_terms: restricted
+  pipeline_tag: token-classification
+  size_bytes: 440877840
+conversion:
+  tool: models/eurobert/export.py
+  min_tool_version: 0.4.1
+  args:
+    model: feyninc/pulpie-orange-small
+    seq: 64
+  quantization: none
+  precision: float32
+expected:
+  format_version: '2.0'
+  bundle_files:
+  - metadata.json
+  - main.mlirb
+  - main.hash
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: graph_output_cosine
+    threshold: 0.999
+    tolerance: 0.0005
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: Pulpie-Orange-Small-CoreAI
+  collection: CoreAI · Apple on-device
+catalog:
+  name: Pulpie Orange Small (fabric)
+  family: EuroBERT
+  bundle_kind: token-classification
+  languages:
+  - en
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: false
+    custom_kernel: false
+    patch_required: false
+    aot_required: false
+  capabilities:
+  - token-classification
+  modalities:
+    input:
+    - text
+    output:
+    - text
+  parameters: 0.2B
+  architecture: transformer
+  runner: CoreAIRunner
+  tokenizer_required: true
+  processor_required: false
+status: verified
+notes: >-
+  pulpie-orange-small (feyninc/pulpie-orange-small @ 15ead335) — the SMALLEST of the
+  pulpie "cleaning up the web" family, an EuroBERT-210m token classifier labelling
+  HTML tokens content-vs-boilerplate (web extraction / RAG cleanup). Same
+  non-autoregressive encoder lane as the registered pulpie-orange-base / -large:
+  EuroBERT is a modern bidirectional encoder (RoPE + GQA, custom_code); exported via
+  models/eurobert/export.py as ONE static-seq (64) .aimodel — (input_ids,
+  attention_mask) -> per-token logits [1,64,2]. fp32; the host owns the tokenizer.
+  GATE B = graph_output_cosine (models/eurobert/parity.py): identical seeded
+  (input_ids, attention_mask) through the fp32 torch reference vs the .aimodel, min
+  cosine over n_obs=8 — conversion fidelity, not task accuracy.
+
+  BUILT + GATE B MEASURED (2026-07-08, coreai-torch 0.4.1 / coremltools 9.0):
+  min graph_output_cosine 0.99999999999174 / median 0.99999999999451 over n_obs=8
+  (EuroBERT-210m, 2 labels, seq 64). Loads on the runtime. Asset + parity JSON under
+  build/ (gitignored). Status verified (index-only — not published, see below).
+
+  INDEX-ONLY: unlike pulpie-orange-base/-large (apache-2.0), the SMALL checkpoint is
+  cc-by-nc-4.0 (non-commercial) — a non-commercial grant is not a redistribution
+  basis for fabric's publish lane, so fabric does NOT republish the weights. The
+  deliverable is this reproducible recipe + a measured Gate-B number; revisit for a
+  hosted artifact only if upstream relicenses commercially.
