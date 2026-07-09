@@ -6,6 +6,31 @@ Apple Core AI `.aimodel` assets on the ANE (macOS 27 / Xcode-27-beta, coreai_tor
 `v060-classb-build-specs.md` / `v060-conversion-findings.md`; this file is the portable
 "how" — the traps and the fixes, ordered by how often they bite.
 
+> **RFC Phase 4 (F4/F11):** this file IS the ACE playbook — there is **no
+> `techniques.yaml`** (auto-apply has no execution vehicle: techniques are
+> trace-time source edits in hand-vendored torch, and fabric refuses by design to
+> drive those scripts). Each technique has an id (`T0`–`T7`) + a **framework scope
+> + explicit preconditions**; a **deployability facet** (`loaded_on_ane`,
+> distinct from cosine parity — see T3) is tracked because an AR generator that
+> reloads N multi-GB programs per token can pass cosine while being undeployable.
+> The `/reflect` ritual (`docs/reflect-ritual.md`) mines `attempts/*.jsonl` and
+> proposes bounded diffs back into this file.
+
+## Technique index (trigger-phrase → id)
+
+| Trigger phrase (in an attempt/at error) | Technique |
+|---|---|
+| `complex128`, `view_as_complex`, `torch.polar` | **T1** — real-rewrite complex RoPE |
+| `FoldMultiplyIntoSDPAScale`, SDPA segfault, mask-free attn | **T1** — eager attn / bool keep-mask |
+| `0x10004`, `Program load failure`, dense-MoE > ~1.5GB | **T3** — graph-split + free-between |
+| `_assert_tensor_metadata` on MoE einsum, fused 3D expert params | **T2** — dense-fusion + manual per-channel int8 |
+| top-k routing, ragged gather, `group_gemm` | **T2** — dense-fusion MoE |
+| multi-GB download, throttled CDN, only need the head | **T4** — targeted safetensors range-fetch |
+| disk full, `coreai-cache` ballooned | **T4** — purge the ANE compile cache (not the HF token) |
+| framework import storm (distributed/triton/flash-attn) | **T5** — standalone-import pattern |
+| empty/unpopulated upstream license | **T6** — index-only, no weights path |
+| N unmerged catalog PRs conflicting pairwise | **T7** — batch from fresh main |
+
 ## 0. The split discipline (the organizing principle)
 
 Don't try to ship the whole multi-billion-param model as one ANE program. **The host
@@ -25,7 +50,9 @@ the sampling loop (flow-matching Euler / diffusion), and un-normalization. **Gat
 `action_parity` (drive both sides through the identical sampling loop). It's a
 *conversion-fidelity* metric, not task success.
 
-## 1. coreai_torch op traps (fix before you export)
+## 1. coreai_torch op traps (fix before you export) — **T1**
+
+**Framework scope:** all (any model whose torch reference uses these ops). **Precondition:** the rewrite is validated against the upstream (dense-MoE vs sparse, real-RoPE vs complex) BEFORE export — never ship an unvalidated rewrite (the "fake parity" trap where both sides share the bug).
 
 - **complex-dtype RoPE → rewrite real.** coreai_torch has no complex dtype
   (`KeyError: torch.complex128`). Rewrite `torch.polar` / `view_as_complex` as real
@@ -49,7 +76,9 @@ the sampling loop (flow-matching Euler / diffusion), and un-normalization. **Gat
   **manual per-output-channel int8**: store `int8` + an fp16 scale buffer, dequantize
   (`q.to(scale.dtype) * scale`) right before the einsum.
 
-## 2. Mixture-of-Experts export (the dense-fusion trick)
+## 2. Mixture-of-Experts export (the dense-fusion trick) — **T2**
+
+**Framework scope:** MoE/MoT models only (lingbot-vla-v2, GR00T). **Precondition:** the bool-mask monkeypatch variant is a **lerobot artifact** (triplicated in exactly the three lerobot lanes, absent elsewhere) — triggers are framework-keyed, NOT block-keyed. Dense-fusion multiplies compute by E×, which is precisely what triggers T3.
 
 Sparse top-k routing is export-hostile: the "which experts" gather is data-dependent
 (ragged shapes) and the fast path is a `group_gemm` CUDA/triton kernel. **The only
@@ -68,7 +97,9 @@ out = einsum('ted,te->td', eo, weights) + shared_expert(x)
 Mathematically **exact** vs sparse top-k (verified cosine 1.0). Cost: E× compute baked
 into the graph — which is what triggers the ANE ceiling below.
 
-## 3. The ANE program ceiling — `0x10004` (the big one)
+## 3. The ANE program ceiling — `0x10004` (the big one) — **T3**
+
+**Framework scope:** any large/dense graph (MoE dense-fusion output, deep stacks). **Precondition — BOUNDED host-loop pass count:** graph-split is valid *only* when the host drives a small, bounded number of programs per inference (4–10 denoise steps). An **autoregressive generator that reloads N multi-GB programs per token passes cosine parity while being UNDEPLOYABLE** — that is the **deployability facet** (`loaded_on_ane`, tracked in `gate_b.protocol`, DISTINCT from the cosine number). A green Gate B on an AR reloading loop is not a deployability claim; record `loaded_on_ane: false` honestly.
 
 `Error … appleneuralengine … Program load failure (0x10004)` /
 `could not load module from MPSGraphPackage` is a **per-program graph-complexity / size
@@ -94,7 +125,9 @@ the host, and **load each big program then FREE it (never co-resident).**
 - **Prefer fp16 blocks over int8** when they fit — int8 experts dropped the worst-obs
   cosine below the 0.999 gate; fp16 12-layer blocks fit *and* hit 0.99948.
 
-## 4. Weight logistics
+## 4. Weight logistics — **T4**
+
+**Framework scope:** any large checkpoint (>5GB). **Precondition:** targeted range-fetch is for a *separable* head (Class A); a Class B whole-LM forward needs the full stack, so estimate honestly before committing to range-fetch. Never purge the HF token cache.
 
 - **Targeted safetensors range-fetch.** You usually need only the small deployable head
   (e.g. the 7.15 GB action expert), not the 17.75 GB VL backbone. Read the safetensors
@@ -108,7 +141,9 @@ the host, and **load each big program then FREE it (never co-resident).**
 - **Background downloads:** don't put `&` inside a `run_in_background` shell — the shell
   exits and orphans it. Let the harness background the whole command.
 
-## 5. Standalone-import pattern
+## 5. Standalone-import pattern — **T5**
+
+**Framework scope:** LeRobot/transformers models with heavy dependency graphs. **Precondition:** vendor the norm/attention/decoder verbatim; rewrite ONLY what must change (MoE→dense, complex→real) and validate the rewrite — this is where a "fake parity" trap hides (both sides share the vendored bug).
 
 To run a model's conversion in the coreai_torch venv without dragging its whole
 framework (distributed / triton / flash-attn / the VL backbone): **vendor just the
@@ -120,7 +155,9 @@ upstream (e.g. dense-MoE vs the sparse reference) so you don't ship a "fake pari
 (`_diffusers_available=True`, `require_package=lambda *a,**k: None`) when a LeRobot
 modeling file must import standalone.
 
-## 6. Catalog / publishing process
+## 6. Catalog / publishing process — **T6 / T7**
+
+**Framework scope:** publishing + register. **Precondition (T6):** an empty/unpopulated upstream license is NOT an affirmative grant — index-only, no weights path, no bypass. **Precondition (T7):** batch from fresh `main`; N unmerged PRs conflict pairwise because `register` regenerates the derived surfaces.
 
 - **Restricted or *unpopulated* upstream license → INDEX-ONLY.** An empty license field
   is NOT an affirmative redistribution grant. Ship the reproducible recipe + a measured
@@ -136,6 +173,11 @@ modeling file must import standalone.
   register (opens catalog PR) → merge → register --mark-merged`.
 
 ## 7. Scorecard (what this produced)
+
+> This is the hand-built prototype. The GENERATED successor is
+> `docs/scorecard.md` (`python scripts/generate_scorecard.py`), which ranks
+> WITHIN a `(metric, granularity, input_protocol, reference_dtype, graph_boundary)`
+> cell only — never cross-cell (RFC F2). The table below is the human-curated view.
 
 Full LeRobot v0.6.0-era VLA fleet on the ANE:
 

@@ -168,6 +168,38 @@ def _machine_chip_brand() -> str | None:
         return None
 
 
+def assert_bundle_content(bundle: Path, recipe) -> list[str]:
+    """RFC F10: the bundle content allowlist. `upload_folder` ships the bundle
+    dir recursively with no content gate; a stray *.safetensors / raw upstream
+    slice / extracted block weights would redistribute derivative data of a
+    restricted upstream. Returns the offending relative paths (empty = OK).
+
+    Allowed inside the bundle: the verified .aimodel inventory
+    (metadata.json/main.mlirb/main.hash) + the recipe's declared bundle_files +
+    known sidecars (norm_stats.json, manifest.json, programs/*.aimodel parts).
+    Anything else — especially *.safetensors — is refused."""
+    from .recipes import Recipe  # noqa: F401 (type hint only)
+    expected = set(recipe.data.get("expected", {}).get("bundle_files", []) or [])
+    allowed_names = {
+        "metadata.json", "main.mlirb", "main.hash", "manifest.json",
+        "norm_stats.json", "lerobot-coreai.json",
+    }
+    offending: list[str] = []
+    for p in sorted(bundle.rglob("*")):
+        if not p.is_file():
+            continue
+        rel = p.relative_to(bundle)
+        rel_str = str(rel)
+        # Allowed: a declared bundle_file, a known sidecar name, or a programs/*
+        # split-graph part (the graph-split package layout from playbook T3).
+        if rel_str in expected or rel.name in allowed_names:
+            continue
+        if rel.parts and rel.parts[0] == "programs" and rel.suffix == ".aimodel":
+            continue
+        offending.append(rel_str)
+    return offending
+
+
 def assert_no_local_paths(staging: Path) -> list[str]:
     """Last-line guard before a public upload: any staged text file still carrying an absolute local
     path OR the publisher's specific hardware fingerprint (chip brand string) is a leak. Returns the
@@ -1217,6 +1249,16 @@ def cmd_publish(args) -> int:
     if leaks:
         err(f"ABORT: local paths would leak into the public repo via {leaks} — "
             "not uploading. This is a bug; report it.")
+        return 1
+
+    # RFC F10: bundle content allowlist. upload_folder ships the bundle dir
+    # recursively with no content gate; a stray *.safetensors / raw upstream
+    # slice / extracted block weights sitting one directory convention away would
+    # redistribute derivative data of a restricted upstream. Refuse before upload.
+    stray = assert_bundle_content(bundle, recipe)
+    if stray:
+        err(f"ABORT: bundle contains files outside the verified content allowlist: {stray} — "
+            "not uploading. Remove stray weights/slices (derivative data of NC upstreams).")
         return 1
 
     if args.dry_run:
