@@ -1,0 +1,82 @@
+# coreai-fabric recipe — scaffolded by `coreai-fabric new MirilAI/Miril-Drone-2B-1`, catalog block added by hand.
+id: miril-drone-2b-1
+upstream:
+  hf_repo: MirilAI/Miril-Drone-2B-1
+  revision: 40bde4fe61edc451440f62dc6653ddb06999543d
+  license: apache-2.0
+  license_terms: permissive
+  pipeline_tag: image-text-to-text
+  size_bytes: 10281187244
+conversion:
+  tool: coreai-fabric-llm-export
+  args:
+    platform: macOS
+  quantization: none
+  precision: float16
+expected:
+  bundle_files:
+  - metadata.json
+  - main.mlirb
+  - main.hash
+parity:
+  gate_a:
+    checks:
+    - bundle_files_present
+    - metadata_json_parses
+    - metadata_matches_recipe
+  gate_b:
+    metric: graph_output_cosine
+    threshold: 0.999
+    tolerance: 0.0005
+publish:
+  hf_target_namespace: kevinqz
+  repo_name: Miril-Drone-2B-1-CoreAI
+  collection: CoreAI · Apple on-device
+catalog:
+  name: Miril-Drone 2B-1 (fabric)
+  family: Miril-Drone
+  bundle_kind: vlm
+  min_os:
+    macos: '27.0'
+    ios: '27.0'
+  runtime_facts:
+    stock_runtime: false
+    custom_kernel: false
+    patch_required: false
+    aot_required: false
+  capabilities:
+  - vision-language
+  - instruction-following
+  modalities:
+    input:
+    - image
+    - text
+    output:
+    - text
+  parameters: 2B
+  architecture: transformer
+  runner: CoreAIRunner
+  tokenizer_required: true
+  processor_required: true
+status: draft
+notes: >-
+  Miril-Drone-2B-1 (MirilAI/Miril-Drone-2B-1 @ 40bde4fe, apache-2.0) — an aerial /
+  drone-imagery VLM: scene captioning, VQA, and operational pointing (coarse 0-1000
+  coordinates for landing / inspection cues). Explicitly NOT a flight controller /
+  VLA — outputs are review cues requiring human validation; it emits text/JSON, not
+  flight commands. Derived from Google Gemma-4-E2B-it (the ~2B-effective MatFormer
+  variant; ~5B raw bf16 on disk, 10.3GB) — architecture Gemma4ForConditional
+  Generation (vision tower + Gemma-4 LM). LICENSE: the repo declares apache-2.0, but
+  the Gemma-4 base carries Google's Gemma Terms of Use — treat as review-required at
+  publish (mirror the upstream LICENSE/NOTICE; publish may need
+  --acknowledge-license-review).
+
+  LANE (analyze verdict, RFC F1/F3): candidate lane transformers:Gemma4ForConditional
+  Generation — the whole-VLM forward, exported via coreai-fabric-llm-export (fp16),
+  same family as the published EO-1-3B whole-VLM lane. Host owns the image processor
+  + tokenizer + any decoding. GATE B = graph_output_cosine (logit-parity for a
+  float-precision export: identical seeded (input_ids, pixel_values) through the
+  fp32 torch VLM vs the .aimodel).
+
+  STATUS: draft — weights downloading (10.3GB). Next: convert -> verify -> publish
+  (Gemma license review) -> register. analyze logged to attempts/miril-drone-2b-1.jsonl.
