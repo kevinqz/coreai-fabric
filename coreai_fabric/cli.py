@@ -197,6 +197,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_conv.add_argument("--print-command", action="store_true",
                         help="print the converter invocation without running it")
 
+    # RFC Phase 1 (F8): the single failure-capture choke point. Executes the exact
+    # invocation `convert --print-command` emits, instruments it, and appends a
+    # committed attempts/<id>.jsonl record (including failures) — the weakness-
+    # mining loop's data substrate. The drivers do not change.
+    p_run = sub.add_parser("run", help="run a conversion and capture it (incl. failures) into attempts/<id>.jsonl")
+    p_run.add_argument("id")
+    p_run.add_argument("--print-command", action="store_true",
+                       help="print the converter invocation without running it")
+
     p_ver = sub.add_parser("verify", help="Gate A (structure) + Gate B (numeric parity); writes parity-report.json")
     p_ver.add_argument("id")
 
@@ -280,6 +289,10 @@ def main(argv: list[str] | None = None) -> int:
         from .convert import cmd_convert
 
         return cmd_convert(args)
+    if args.command == "run":
+        from .run import cmd_run
+
+        return cmd_run(args)
     if args.command == "verify":
         from .verify import cmd_verify
 
