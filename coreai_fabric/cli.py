@@ -206,6 +206,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--print-command", action="store_true",
                        help="print the converter invocation without running it")
 
+    # RFC Phase 3 (F1/F3): refusal-first decomposition of an upstream HF repo.
+    # Never "SOLVED", never a coverage %; either a candidate lane (verify against
+    # modeling code) or MANUAL ANALYSIS REQUIRED (a tripwire fired).
+    p_an = sub.add_parser("analyze", help="refusal-first decomposition of an upstream HF repo (F1/F3)")
+    p_an.add_argument("hf_repo", help="upstream Hugging Face repo id (owner/name)")
+    p_an.add_argument("--allow-manual", action="store_true",
+                      help="exit 0 even when the verdict is MANUAL ANALYSIS REQUIRED")
+
     p_ver = sub.add_parser("verify", help="Gate A (structure) + Gate B (numeric parity); writes parity-report.json")
     p_ver.add_argument("id")
 
@@ -293,6 +301,10 @@ def main(argv: list[str] | None = None) -> int:
         from .run import cmd_run
 
         return cmd_run(args)
+    if args.command == "analyze":
+        from .analyze import cmd_analyze
+
+        return cmd_analyze(args)
     if args.command == "verify":
         from .verify import cmd_verify
 
