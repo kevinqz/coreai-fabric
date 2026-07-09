@@ -59,7 +59,7 @@ catalog:
   runner: CoreAIVideoPipeline
   tokenizer_required: true
   processor_required: true
-status: verified
+status: draft
 notes: >-
   LingBot-World V2 14B causal-fast
   (robbyant/lingbot-world-v2-14b-causal-fast-diffusers @ 59cccf49) — a brand-new
