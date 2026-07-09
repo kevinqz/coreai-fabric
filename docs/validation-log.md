@@ -315,3 +315,30 @@ failure — a metric that can't run yet is not a parity failure.
 
 The 320 MB bundle + the ~2 GB scratch venv/checkout were deleted after these
 measurements — fabric never hosts weights.
+
+---
+
+## 2026-07-08 — LingBot-World V2 14B causal-fast: VAE decoder (FIRST video lane)
+
+First generative-video conversion in the fleet. Deployable core = the
+`AutoencoderKLWan` video VAE decoder (pure conv, no attention), exported as one
+static-size fp32 `.aimodel` via `models/lingbotworld/export.py`. Ran end-to-end
+in `.venv` (coreai-torch 0.4.1, coremltools 9.0, diffusers 0.37.1):
+
+- Weights: `vae/diffusion_pytorch_model.safetensors` @ 59cccf49 (~508MB fp32),
+  194 tensors load clean into `AutoencoderKLWan(**cfg)` — 0 missing / 0 unexpected.
+- Graph: first-chunk decode (`num_frame=1`, `use_tiling` off). Latent
+  `[1,16,1,60,104]` → frames `[1,3,1,480,832]` (true causal-fast 480×832).
+- `torch.export` → `run_decompositions(get_decomp_table())` →
+  `TorchConverter.add_exported_program` → `to_coreai().optimize()` →
+  `save_asset`. Bundle ~286MB: `metadata.json` + `main.mlirb` + `main.hash`.
+  Single program — no graph-split (well under the 0x10004 ceiling).
+- Runtime: `coreai.runtime.AIModel.load` → `load_function("vae_decode")` → LOADS OK.
+- **Gate B (graph_output_cosine, fp32 ref vs fp32 asset, n_obs=8): min
+  0.99999999999941 / median 0.99999999999941 / mean 0.99999999999941.** Crushes
+  the 0.999 threshold.
+
+Status `verified`, index-only (CC-BY-NC-SA → no republish). Asset + parity JSON
+under `build/` (gitignored); weights not hosted. Follow-ups: (1) expose the WAN
+causal `feat_cache` as graph I/O for streaming multi-chunk decode (prefix-K/V
+technique); (2) DiT 14B graph-split (research-grade, host-owned).

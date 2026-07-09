@@ -59,7 +59,7 @@ catalog:
   runner: CoreAIVideoPipeline
   tokenizer_required: true
   processor_required: true
-status: draft
+status: verified
 notes: >-
   LingBot-World V2 14B causal-fast
   (robbyant/lingbot-world-v2-14b-causal-fast-diffusers @ 59cccf49) — a brand-new
@@ -97,8 +97,20 @@ notes: >-
   in the config) and the frame assembly. GATE B = graph_output_cosine (seeded
   latents through the fp32 torch AutoencoderKLWan decoder vs the .aimodel, min
   cosine over n_obs>=8 on the decoded pixels) — conversion fidelity, not video
-  quality. Weights come from a targeted range-fetch of vae/diffusion_pytorch_model.safetensors
-  only (~254MB); the 14B DiT (8 shards) + 3-shard UMT5 stay out of the build.
+  quality. Weights come from a targeted fetch of vae/diffusion_pytorch_model.safetensors
+  only (~508MB fp32); the 14B DiT (8 shards) + 3-shard UMT5 stay out of the build.
+
+  BUILT + GATE B MEASURED (2026-07-08, coreai-torch 0.4.1 / coremltools 9.0):
+  min graph_output_cosine 0.99999999999941 / median 0.99999999999941 over n_obs=8
+  (fp32 torch AutoencoderKLWan first-chunk decoder vs the fp32 .aimodel; seeded
+  latents [1,16,1,60,104] -> frames [1,3,1,480,832], the true causal-fast res).
+  194 weight tensors load clean (0 missing / 0 unexpected). Single-program bundle
+  ~286MB (metadata.json + main.mlirb + main.hash); LOADS OK on the runtime, no
+  graph-split needed. SINGLE-CHUNK: the asset does the WAN `first_chunk` decode
+  (num_frame=1, use_tiling off); streaming multi-chunk needs the causal feat_cache
+  threaded as graph I/O (same technique as the VLA prefix-K/V) — documented
+  follow-up. Asset + parity JSON kept under build/ (gitignored); fabric never
+  hosts the NC weights.
 
   UMT5 TEXT ENCODER = a trivial reuse lane (the same graph_output_cosine encoder
   path as lingbot-vision-vit-* / SenseNova SigLIP) — mentioned, not exported in
@@ -114,9 +126,9 @@ notes: >-
   larger than the VLA-v2 split, with KV-cache + causal-window state threaded
   host-side. Revisit alongside the lingbot-vla-v2 / SenseNova-MoT split work.
 
-  STATUS: validated index-only PLAN (mirrors how sensenova / groot / molmoact2
-  entered as drafts). The models/lingbotworld/export.py driver + the targeted
-  safetensors range-fetch of the VAE slice are NOT YET WRITTEN. Conversion base
-  is the -diffusers repo (AutoencoderKLWan.from_pretrained), never the native
-  Wan2.2-format causal-fast repo. Upstream:
-  huggingface.co/collections/robbyant/lingbot-world-v2.
+  STATUS: VERIFIED index-only (conversion + Gate B pass locally; NOT published —
+  the CC-BY-NC-SA weights block republication, so this stays index-only like
+  sensenova / groot / molmoact2). The models/lingbotworld/export.py driver IS
+  WRITTEN and reproduces the measured number above. Conversion base is the
+  -diffusers repo (AutoencoderKLWan), never the native Wan2.2-format causal-fast
+  repo. Upstream: huggingface.co/collections/robbyant/lingbot-world-v2.
