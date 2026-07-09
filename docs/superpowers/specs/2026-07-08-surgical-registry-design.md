@@ -1,6 +1,6 @@
 # RFC — coreai-fabric surgical registry & harness loop
 
-- **Status:** Draft for review
+- **Status:** ✅ Implemented (fabric-side), 2026-07-09. All phases 0–4 + hygiene landed; every confirmed finding F1–F16 traced to an artifact (Appendix A). The catalog-side `evaluation` schema PR (accept `value`/`min_cosine`/`protocol`) remains a documented batched follow-up to coreai-catalog — fabric emits the richer block via `register.catalog_protocol_extension()` and the cross-contract check stays green against the live catalog.
 - **Date:** 2026-07-08
 - **Author:** kevinqz + Claude Code session
 - **Supersedes:** the "block+technique registry" proposal (killed/redesigned by the 2026-07-08 redteam)
@@ -236,25 +236,29 @@ Catalog-side block entity; per-block cosine; technique auto-apply; coverage %; c
 
 ## Appendix A — Findings → design traceability
 
-| Finding | Sev | Addressed by |
+Each finding now maps to the **commit + artifact** that implements it (landed 2026-07-09):
+
+| Finding | Sev | Addressed by (artifact) |
 |---|---|---|
-| F1 false-SOLVED generator | fatal | §6.4 honest status, §7.1 refusal + bytes tripwire, §7.2 golden |
-| F2 Gate-B = 4 quantities | fatal | §4.1 protocol, §4.5 per-cell only |
-| F3 analyze base-rate ~0 | fatal | §7 reduced/refusal-first, §7.2 golden |
-| F4 no execution vehicle | fatal (KILL B) | §8 techniques.yaml killed, playbook-as-ACE |
-| F5 blocks not reusable units | major | §6.1 optional tag, §6.3 derived index |
-| F6 no per-block #, no durable home | major | §4.3 `_EVAL_KEYS`, §4.5 generated scorecard |
-| F7 evaluator too weak/negotiable | major | §4.4 integrity rules |
-| F8 no weakness-mining substrate | major | §5 `run`/`attempts`, `failed` status |
-| F9 no license/provenance axis | major | §6.1 license stays per-recipe, §12 Q5 |
-| F10 no content gate on weights | major | §9 allowlist + CI guard |
-| F11 framework-keyed triggers / mot-split precondition | major | §8 framework scope + preconditions + deployability facet |
-| F12 envelope-tuple facts / 0x10004 compositional | major | §6.4 envelope keying, §5.3 smoke exclusions |
-| F13 two-repo vocab contract broken | major | §6.2 single authority, §9 fixture/traits fix |
-| F14 stored used_by → merge collisions | major | §6.3 generated, never stored |
-| F15 freshness vs moving toolchain | minor | §9 `verified_at` + toolchain, CI invariant |
-| F16 zero-regression unclosable | minor | §5.3 `smokes/` proxy battery + exclusions |
-| (refuted) human-PR-merge-in-loop | — | §8 loop never blocks on catalog merge |
+| F1 false-SOLVED generator | fatal | `analyze.py` refusal + bytes tripwire; `blocks-index.md` `measured @` vocab (never SOLVED); `test_analyze_golden.py` |
+| F2 Gate-B = 4 quantities | fatal | `gate_b.protocol` schema; `verify.protocol_from_report`; `generate_scorecard.py` per-cell only |
+| F3 analyze base-rate ~0 | fatal | `analyze.py` refusal-first + bytes tripwire; `test_analyze_golden.py` precision baseline |
+| F4 no execution vehicle | fatal (KILL B) | no `techniques.yaml`; playbook-as-ACE (Tn ids); `reflect-ritual.md` |
+| F5 blocks not reusable units | major | optional `catalog.blocks`; `blocks-vocab.yaml`; `generate_blocks_index.py` |
+| F6 no per-block #, no durable home | major | `_catalog_evaluation` carries numbers; `catalog_protocol_extension`; `generate_scorecard.py` |
+| F7 evaluator too weak/negotiable | major | `_fidelity_tier` from margin/n_obs/waivers; `check_gate_flip.py` CI; waivers surface |
+| F8 no weakness-mining substrate | major | `error_signatures.py`; `run.py`; `attempts/*.jsonl`; `failed`/`blocked` statuses |
+| F9 no license/provenance axis | major | block ids carry no license (stays per-recipe); analyze feeds `triage_license` |
+| F10 no content gate on weights | major | `publish.assert_bundle_content` allowlist; `.gitignore` weight guard |
+| F11 framework-keyed triggers / precondition | major | playbook framework scope + preconditions; `loaded_on_ane` deployability facet |
+| F12 envelope-tuple facts / 0x10004 | major | `blocks-index` envelope keying; `smokes/` exclusion headers |
+| F13 two-repo vocab contract broken | major | single fabric-side `blocks-vocab.yaml`; evaluation reconciled to LIVE catalog; cross-contract green |
+| F14 stored used_by → merge collisions | major | `used_by` derived by generation, never stored |
+| F15 freshness vs moving toolchain | minor | `verified_at` + `toolchain_version` on generated docs; orphan-ref flag |
+| F16 zero-regression unclosable | minor | `smokes/` proxy battery with explicit scale-effect exclusions |
+| (refuted) human-PR-merge-in-loop | — | reflect loop never blocks on catalog merge |
+
+Commit trace (one per phase): `b283b92` Phase 0 · `d6c6bf3` Phase 1 · `c8120a7` Phase 3 · `c7418b8` F13 · `bf2ab2d` Phase 2 · `94a39d4` Phase 4 + F10/F15.
 
 ## Appendix B — Redteam provenance
 
