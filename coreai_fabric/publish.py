@@ -168,6 +168,37 @@ def _machine_chip_brand() -> str | None:
         return None
 
 
+def split_bundle_members(bundle: Path) -> list[Path] | None:
+    """The bundle component paths to publish for Apple's `coreai.llm.export`
+    SPLIT layout — the descriptor `metadata.json`, each asset from the
+    descriptor's `assets`, and a `tokenizer/` dir if present — EXCLUDING build
+    cruft (conversion-manifest.json, parity-report.json, bench-out/, staging).
+
+    Returns None for the single-dir (fabric-driver) layout, where the descriptor
+    lives inside `<id>.aimodel/` and the .aimodel dir is the whole bundle."""
+    from .convert import resolve_bundle_dir
+
+    root = resolve_bundle_dir(bundle)
+    if root == bundle:
+        return None  # single-dir: the .aimodel itself is the bundle
+    members: list[Path] = []
+    descriptor = root / "metadata.json"
+    if descriptor.is_file():
+        members.append(descriptor)
+        try:
+            data = json.loads(descriptor.read_text())
+        except (ValueError, OSError):
+            data = {}
+        for asset in (data.get("assets") or {}).values():
+            p = root / asset
+            if p.exists():
+                members.append(p)
+    tokenizer = root / "tokenizer"
+    if tokenizer.is_dir():
+        members.append(tokenizer)
+    return members
+
+
 def assert_bundle_content(bundle: Path, recipe) -> list[str]:
     """RFC F10: the bundle content allowlist. `upload_folder` ships the bundle
     dir recursively with no content gate; a stray *.safetensors / raw upstream
@@ -195,6 +226,10 @@ def assert_bundle_content(bundle: Path, recipe) -> list[str]:
         if rel_str in expected or rel.name in allowed_names:
             continue
         if rel.parts and rel.parts[0] == "programs" and rel.suffix == ".aimodel":
+            continue
+        # Apple split layout: the sibling tokenizer/ dir is part of the bundle
+        # (tokenizer.json/merges.txt/vocab.json/chat_template.jinja/...).
+        if rel.parts and rel.parts[0] == "tokenizer":
             continue
         offending.append(rel_str)
     return offending
@@ -1415,8 +1450,34 @@ def cmd_publish(args) -> int:
         (report_dir / "reproduce-manifest.json").write_text(
             json.dumps(sanitize_manifest(manifest, root), indent=2) + "\n")
 
+    # Bundle upload source. Apple's coreai.llm.export SPLIT layout ships the
+    # descriptor metadata.json + <id>.aimodel/ + tokenizer/ as SIBLINGS — stage
+    # all three (build cruft excluded) so the HF bundle loads via
+    # LanguageBundle(from:). The fabric single-dir layout uploads the .aimodel
+    # dir as before.
+    members = split_bundle_members(bundle)
+    if members is not None:
+        import shutil as _shutil
+        bundle_src = root / "build" / recipe.id / "publish-bundle-stage"
+        if bundle_src.exists():
+            _shutil.rmtree(bundle_src)
+        bundle_src.mkdir(parents=True)
+        for member in members:
+            dest = bundle_src / member.name
+            if member.is_dir():
+                _shutil.copytree(member, dest)
+            else:
+                _shutil.copy2(member, dest)
+        bundle_repo_path = variant or "."
+    else:
+        bundle_src = bundle
+
     # Last-line privacy guard: no absolute local path may reach a public repo.
+    # Scan the freshly-staged split bundle too (its descriptor + tokenizer are
+    # new uploads); the single-dir path keeps its existing (staging-only) scan.
     leaks = assert_no_local_paths(staging)
+    if members is not None:
+        leaks += assert_no_local_paths(bundle_src)
     if leaks:
         err(f"ABORT: local paths would leak into the public repo via {leaks} — "
             "not uploading. This is a bug; report it.")
@@ -1426,7 +1487,7 @@ def cmd_publish(args) -> int:
     # recursively with no content gate; a stray *.safetensors / raw upstream
     # slice / extracted block weights sitting one directory convention away would
     # redistribute derivative data of a restricted upstream. Refuse before upload.
-    stray = assert_bundle_content(bundle, recipe)
+    stray = assert_bundle_content(bundle_src, recipe)
     if stray:
         err(f"ABORT: bundle contains files outside the verified content allowlist: {stray} — "
             "not uploading. Remove stray weights/slices (derivative data of NC upstreams).")
@@ -1434,8 +1495,15 @@ def cmd_publish(args) -> int:
 
     if args.dry_run:
         print(f"would publish to https://huggingface.co/{repo_id}")
-        staged = sorted(str(p.relative_to(staging)) for p in staging.rglob("*") if p.is_file())
-        print(f"  fileset: {bundle_repo_path}/ + " + ", ".join(staged))
+        prefix = "" if bundle_repo_path == "." else f"{bundle_repo_path.rstrip('/')}/"
+        bundle_files = sorted(
+            prefix + str(p.relative_to(bundle_src))
+            for p in bundle_src.rglob("*") if p.is_file())
+        extras = sorted(str(p.relative_to(staging)) for p in staging.rglob("*") if p.is_file())
+        print("  bundle fileset:")
+        for f in bundle_files:
+            print(f"    {f}")
+        print(f"  repo extras: {', '.join(extras)}")
         print("--- model card (repo root README.md) ---")
         print(card)
         return 0
@@ -1450,7 +1518,7 @@ def cmd_publish(args) -> int:
     api.create_repo(repo_id=repo_id, repo_type="model", exist_ok=True, private=True)
     _set_private(api, repo_id, True)
     print(f"uploading bundle -> {bundle_repo_path} + card + license (private) ...")
-    api.upload_folder(repo_id=repo_id, folder_path=str(bundle), path_in_repo=bundle_repo_path,
+    api.upload_folder(repo_id=repo_id, folder_path=str(bundle_src), path_in_repo=bundle_repo_path,
                       commit_message=f"coreai-fabric: {recipe.id} asset")
     info = api.upload_folder(repo_id=repo_id, folder_path=str(staging), path_in_repo=".",
                              commit_message=f"coreai-fabric: {recipe.id} card + license + reports")

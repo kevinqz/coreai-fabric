@@ -251,24 +251,10 @@ def _sha256_file(path: Path) -> str:
 
 
 def _resolve_bundle_dir(bundle: Path) -> Path:
-    """The directory the runner's LanguageBundle actually loads: the one whose
-    metadata.json is the DESCRIPTOR (carries `language` + `assets.main`).
-
-    Two export layouts exist: the fabric driver writes the descriptor INSIDE
-    `<id>.aimodel/`; Apple's `coreai.llm.export` writes it one level up (with
-    `<id>.aimodel/` as the referenced asset). Probe both — prefer the .aimodel
-    dir (fabric convention), fall back to its parent (Apple), else the bundle."""
-    for candidate in (bundle, bundle.parent):
-        meta = candidate / "metadata.json"
-        if not meta.is_file():
-            continue
-        try:
-            data = json.loads(meta.read_text())
-        except (json.JSONDecodeError, OSError):
-            continue
-        if isinstance(data, dict) and data.get("language") and (data.get("assets") or {}).get("main"):
-            return candidate
-    return bundle
+    """The dir the runner's LanguageBundle loads (descriptor with language +
+    assets.main). Shared with publish via convert.resolve_bundle_dir."""
+    from .convert import resolve_bundle_dir
+    return resolve_bundle_dir(bundle)
 
 
 def _bundle_provenance(bundle: Path, recipe, catalog_bench) -> dict:
