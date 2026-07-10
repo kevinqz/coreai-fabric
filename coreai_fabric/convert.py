@@ -87,6 +87,32 @@ def bundle_path(root: Path, recipe: Recipe) -> Path:
     return root / "build" / recipe.id / f"{recipe.id}.aimodel"
 
 
+def resolve_bundle_dir(bundle: Path) -> Path:
+    """The directory whose metadata.json is the LanguageBundle DESCRIPTOR
+    (carries `language` + `assets.main`).
+
+    Two export layouts exist: the fabric driver writes the descriptor INSIDE
+    `<id>.aimodel/` (single-dir); Apple's `coreai.llm.export` writes it one level
+    up, with `<id>.aimodel/` as the referenced asset (split). Probe both — prefer
+    the .aimodel dir (fabric convention), fall back to its parent (Apple), else
+    the bundle. This is the read-side (runner --model-path) AND write-side
+    (publish) source of truth for what the loadable bundle root is.
+    """
+    import json as _json
+
+    for candidate in (bundle, bundle.parent):
+        meta = candidate / "metadata.json"
+        if not meta.is_file():
+            continue
+        try:
+            data = _json.loads(meta.read_text())
+        except (ValueError, OSError):
+            continue
+        if isinstance(data, dict) and data.get("language") and (data.get("assets") or {}).get("main"):
+            return candidate
+    return bundle
+
+
 def manifest_path(root: Path, recipe: Recipe) -> Path:
     return root / "build" / recipe.id / "conversion-manifest.json"
 
