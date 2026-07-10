@@ -68,8 +68,7 @@ A complete, buildable example lives at
 - **Gate A (structure): {gate_a_status}** — the bundle's layout + metadata were
   validated on real hardware (Apple Silicon); the asset loads and generates.
 {evaluation_block}
-- **Runtime throughput (tok/s):** to be published once measured on the on-device
-  (macOS/iOS 27) Swift runtime. Not estimated — real numbers or none.
+- **Runtime throughput (tok/s):** {throughput_line}
 
 ## Provenance
 
