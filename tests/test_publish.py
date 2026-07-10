@@ -53,11 +53,23 @@ def test_card_omits_relation_for_uncompressed_export():
     assert "4bit" not in fm["tags"]
 
 
-def test_card_never_advertises_an_unpublished_sibling_variant():
-    # Publishing int8 while its int4 sibling is only drafted (no `published`
+def test_card_never_advertises_an_unpublished_sibling_variant(monkeypatch):
+    # Publishing int8 while a sibling int4 is only DRAFTED (no `published`
     # block) must NOT put an `int4/` row on the card — that would advertise a
     # repo subdir that 404s. A lone real tier drops the comparison table.
+    # Hermetic: build the drafted sibling in-memory (sibling_variants reads
+    # load_all_recipes) so the test never depends on the live published-state
+    # of any int4 recipe in the tree.
+    import coreai_fabric.recipes as recipes_mod
+
     int8 = find_recipe("qwen3-0.6b-int8", REPO_ROOT)
+    draft_int4 = copy.deepcopy(int8)
+    draft_int4.data["id"] = "qwen3-0.6b-int4-draft"  # a DIFFERENT recipe id
+    draft_int4.data["publish"] = {**int8.data.get("publish", {}), "variant": "int4"}
+    draft_int4.data.pop("published", None)
+    draft_int4.data["status"] = "draft"
+    monkeypatch.setattr(recipes_mod, "load_all_recipes",
+                        lambda root=None: [int8, draft_int4])
     card = render_model_card(REPO_ROOT, int8, MANIFEST, REPORT)
     assert "## Quantization variants" not in card
     assert "`int4/`" not in card
