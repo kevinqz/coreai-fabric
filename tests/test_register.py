@@ -245,9 +245,12 @@ def test_unknown_tool_version_stays_honest():
 
 
 def test_register_requires_published_block():
-    recipe = find_recipe("qwen3-0.6b", REPO_ROOT)
+    # Hermetic: strip any published block so the test never depends on whether
+    # the sample recipe happens to be published in the tree.
+    recipe = copy.deepcopy(find_recipe("qwen3-0.6b", REPO_ROOT))
+    recipe.data.pop("published", None)
     with pytest.raises(SystemExit, match="no published block"):
-        build_artifact_entry(copy.deepcopy(recipe), FAKE_FILES, tool_version=None)
+        build_artifact_entry(recipe, FAKE_FILES, tool_version=None)
 
 
 def test_review_required_license_maps_to_check_license():
