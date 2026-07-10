@@ -27,9 +27,6 @@ parity:
     - metadata_json_parses
     - metadata_matches_recipe
   gate_b:
-    # Runnable Gate B: per-token greedy argmax agreement vs the fp32 reference
-    # (the community's 'X/Y token-exact'). Driven on-device via the coreai-core
-    # Python runtime; opt-in through COREAI_FABRIC_PARITY_RUNNER (slow).
     metric: greedy_parity
     threshold: 0.9
     tolerance: 0.05
@@ -67,14 +64,44 @@ catalog:
   runner: CoreAIRunner
   tokenizer_required: true
   processor_required: false
-status: draft
-notes: 'PRODUCTION path — Apple''s coreai.llm.export with registry preset qwen3-0.6b
-  (resolves 4bit / 8192 ctx). VALIDATED ON REAL HARDWARE 2026-07-03 (Apple Silicon, macOS
-  26.6): produced a ~320 MB 4bit STATEFUL KV-cache chat asset (state_names keyCache/valueCache,
-  embedded tokenizer + Qwen3 chat template, assetVersion 2.0); Gate A passed. Gate B
-  (benchmark_accuracy) is not_run — blocked upstream: Apple''s coreai.llm.eval is a stub in
-  coreai-models 0.1.0 (''Evaluation support is coming soon''), and a static-graph runner cannot
-  score a stateful asset. quantization/precision are documentation-only (the registry preset
-  wins). Assets serialize with minimum_os v27, so Swift-runner deployment needs macOS/iOS 27+;
-  converting + Python-runtime execution work on macOS 26. Status committed as draft:
-  converted/verified describe disposable local build/ state. See docs/validation-log.md.'
+status: registered
+notes: 'PRODUCTION path — Apple''s coreai.llm.export with registry preset qwen3-0.6b (resolves
+  4bit / 8192 ctx). VALIDATED ON REAL HARDWARE 2026-07-03 (Apple Silicon, macOS 26.6): produced
+  a ~320 MB 4bit STATEFUL KV-cache chat asset (state_names keyCache/valueCache, embedded tokenizer
+  + Qwen3 chat template, assetVersion 2.0); Gate A passed. Gate B (benchmark_accuracy) is
+  not_run — blocked upstream: Apple''s coreai.llm.eval is a stub in coreai-models 0.1.0 (''Evaluation
+  support is coming soon''), and a static-graph runner cannot score a stateful asset. quantization/precision
+  are documentation-only (the registry preset wins). Assets serialize with minimum_os v27,
+  so Swift-runner deployment needs macOS/iOS 27+; converting + Python-runtime execution work
+  on macOS 26. Status committed as draft: converted/verified describe disposable local build/
+  state. See docs/validation-log.md.'
+published:
+  hf_repo: kevinqz/Qwen3-0.6B-CoreAI
+  revision: 62038680473768fda12e3c8fea7db8502a719518
+  date: '2026-07-10'
+catalog_pr: https://github.com/kevinqz/coreai-catalog/pull/51
+benchmark:
+  protocol_version: '1.0'
+  runner_version: 0.1.0
+  observed_date: '2026-07-10'
+  device_class: M4 Max
+  measured:
+    decode_throughput:
+      median: 555.0699338922293
+      stddev: 0.9210746375310057
+    time_to_first_token:
+      median: 18.734229499999998
+      stddev: 0.16911523750537655
+  environment:
+    os_major: '27'
+    engine: CoreAIPipelinedEngine
+    compute_unit: GPU
+    thermal_state_end: nominal
+    low_power_mode: false
+  self_check:
+    thermal_pressure_detected: false
+    all_trials_completed_requested_tokens: true
+    prompt_token_count_exact: true
+  warmup_runs: 3
+  measured_runs: 10
+  artifact_revision: 62038680473768fda12e3c8fea7db8502a719518
