@@ -498,7 +498,15 @@ def render_model_card(root: Path, recipe, manifest: dict, report: dict,
     )
     collection_link = f"- [HF Collection]({collection_url})\n" if collection_url else ""
 
+    # Runtime throughput: the measured on-device number (native `bench` step)
+    # or the honest pending line. Real numbers or none — never estimated.
+    from .bench import format_throughput_line
+    throughput_line = format_throughput_line(recipe.data.get("benchmark")) or (
+        "to be published once measured on the on-device (macOS/iOS 27) Swift "
+        "runtime via `coreai-fabric bench`. Not estimated — real numbers or none.")
+
     return template.format(
+        throughput_line=throughput_line,
         license=upstream["license"],
         upstream_hf_repo=upstream["hf_repo"],
         upstream_revision=manifest.get("input", {}).get("revision")

@@ -117,6 +117,12 @@ def cmd_status(args) -> int:
         if r.data.get("published"):
             p = r.data["published"]
             print(f"  published: https://huggingface.co/{p['hf_repo']} @ {p['revision'][:12]}")
+        bench = r.data.get("benchmark") or {}
+        decode = (bench.get("measured") or {}).get("decode_throughput") or {}
+        if decode.get("median") is not None:
+            print(f"  benched: {decode['median']:.1f} tok/s on {bench.get('device_class', '?')} "
+                  f"{(bench.get('environment') or {}).get('compute_unit', '?')} "
+                  f"(protocol v{bench.get('protocol_version', '?')})")
         print(f"  next: {NEXT_STEP[r.status].format(id=r.id)}")
     return 0
 
@@ -252,6 +258,32 @@ def build_parser() -> argparse.ArgumentParser:
     p_reg.add_argument("--mark-merged", action="store_true",
                        help="flip status published->registered after the catalog PR (catalog_pr) merges")
 
+    # Native benchmark step: measure REAL on-device throughput via the catalog's
+    # SotA runner (coreai-catalog bench/CoreAIBenchRunner, protocol v1.0) and
+    # write a durable `benchmark:` block into the recipe. Optional enrichment
+    # (needs macOS 27; llm/vlm only) — not a linear pipeline stage.
+    p_bench = sub.add_parser("bench",
+        help="measure on-device throughput (tok/s) via the catalog runner; writes the recipe benchmark block")
+    p_bench.add_argument("id")
+    p_bench.add_argument("--catalog-path",
+                         help="path to a coreai-catalog clone (runner + protocol-config; "
+                         "default: ~/.cache/coreai-fabric/catalog, the one register uses)")
+    p_bench.add_argument("--runner",
+                         help="path to a coreai-bench-runner binary (else auto-located in the clone)")
+    p_bench.add_argument("--out-dir", help="output dir for trials + run manifest "
+                         "(default: build/<id>/bench-out)")
+    p_bench.add_argument("--seed", type=int, default=0, help="recorded seed (greedy sampling is deterministic)")
+
+    p_bsub = sub.add_parser("bench-submit",
+        help="assemble + sign the benchmarks.jsonl line from the durable block and open the benchmark-lane PR")
+    p_bsub.add_argument("id")
+    p_bsub.add_argument("--catalog-path",
+                        help="path to a coreai-catalog clone (default: ~/.cache/coreai-fabric/catalog)")
+    p_bsub.add_argument("--source", default="coreai-fabric",
+                        help="sources.yaml id to attribute the measurement to (default: coreai-fabric)")
+    p_bsub.add_argument("--dry-run", action="store_true",
+                        help="assemble + validate the line, change nothing")
+
     sub.add_parser("list", help="recipe inventory with pipeline stage")
 
     p_stat = sub.add_parser("status", help="pipeline stage + next step per recipe")
@@ -321,6 +353,14 @@ def main(argv: list[str] | None = None) -> int:
         from .register import cmd_register
 
         return cmd_register(args)
+    if args.command == "bench":
+        from .bench import cmd_bench
+
+        return cmd_bench(args)
+    if args.command == "bench-submit":
+        from .bench import cmd_bench_submit
+
+        return cmd_bench_submit(args)
     if args.command == "list":
         return cmd_list(args)
     if args.command == "status":

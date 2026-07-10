@@ -409,6 +409,87 @@
         }
       }
     },
+    "benchmark": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The DURABLE on-device performance measurement, written by `coreai-fabric bench` from the catalog's SotA benchmark runner (coreai-catalog bench/CoreAIBenchRunner, protocol v1.0). Optional (bench is an enrichment step: it needs macOS 27 and covers llm/vlm only). Lives in the recipe — not the gitignored build/ — so `bench-submit` can re-emit the signed benchmarks.jsonl line on a fresh clone. Real measured numbers only; the Python Gate-B runtime's ~0.16 tok/s is NEVER recorded here. Not hand-authored.",
+      "properties": {
+        "protocol_version": {
+          "type": "string",
+          "description": "The catalog benchmark protocol version measured against (benchmarks/protocol-config.json, e.g. '1.0'). Tags every number for cohort comparability."
+        },
+        "runner_version": {
+          "type": ["string", "null"],
+          "description": "coreai-bench-runner version that produced the run-manifest."
+        },
+        "observed_date": {
+          "type": "string",
+          "description": "UTC date the measurement was taken (YYYY-MM-DD)."
+        },
+        "device_class": {
+          "type": ["string", "null"],
+          "description": "Coarsened chip-family label (e.g. 'M4 Max'), from the protocol's exact-identifier device coarsening. Privacy: never the raw hw.model identifier."
+        },
+        "measured": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Per-metric medians over the measured trials (statistic: median, per protocol).",
+          "properties": {
+            "decode_throughput": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["median"],
+              "properties": {
+                "median": {"type": "number", "minimum": 0, "description": "Median decode throughput (tokens/second) — the headline SotA number."},
+                "stddev": {"type": "number", "minimum": 0}
+              }
+            },
+            "time_to_first_token": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["median"],
+              "properties": {
+                "median": {"type": "number", "minimum": 0, "description": "Median time-to-first-token (milliseconds). Prefill cost — never folded into decode throughput."},
+                "stddev": {"type": "number", "minimum": 0}
+              }
+            }
+          }
+        },
+        "environment": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Environment captured around the run (privacy: platform/engine family only, never the specific chip/OS build).",
+          "properties": {
+            "os_major": {"type": "string"},
+            "engine": {"type": "string", "description": "Inference engine type name (e.g. CoreAIPipelinedEngine)."},
+            "compute_unit": {"type": "string", "enum": ["GPU", "ANE", "CPU", "mixed", "unknown"], "description": "Inferred compute unit the engine ran on."},
+            "thermal_state_end": {"type": "string", "description": "ProcessInfo thermal state after the run (nominal/fair/serious/critical/unknown)."},
+            "low_power_mode": {"type": "boolean"}
+          }
+        },
+        "self_check": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Runner self-checks that grade the measurement's confidence (thermal pressure / short trials downgrade to needs_review at intake).",
+          "properties": {
+            "thermal_pressure_detected": {"type": "boolean"},
+            "all_trials_completed_requested_tokens": {"type": "boolean"},
+            "prompt_token_count_exact": {"type": "boolean"}
+          }
+        },
+        "warmup_runs": {"type": ["integer", "null"], "minimum": 0},
+        "measured_runs": {"type": ["integer", "null"], "minimum": 1},
+        "artifact_revision": {
+          "type": "string",
+          "minLength": 7,
+          "description": "The published HF artifact revision the number was measured on (filled at bench-submit time, post-publish). Absent at bench time is fine."
+        },
+        "pr": {
+          "type": "string",
+          "description": "URL of the benchmark-lane PR opened by `bench-submit` (the signed benchmarks.jsonl submission)."
+        }
+      }
+    },
     "publish": {
       "type": "object",
       "additionalProperties": false,
