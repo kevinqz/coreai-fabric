@@ -51,3 +51,22 @@ new → validate → convert (Gate A) → parity (Gate B, wheel runtime)
 The catalog ingests the verdict as a first-class **runtime-compatibility record**
 (`data/runtime-verifications.jsonl`), so consumers can answer *"does this load on
 my Xcode/OS?"* before downloading gigabytes.
+
+## Automated driver (`gate-c.sh`)
+
+`gate-c.sh` runs the verifier and emits a **catalog-ready** verdict line, so wiring
+Gate C into the convert loop is one command per model:
+
+```bash
+# after `coreai-fabric convert <id>` produces build/<id>/<id>.aimodel:
+verify/gate-c.sh <model-id> build/<id> graph \
+  --append ../coreai-catalog/data/runtime-verifications.jsonl
+# LLM bundles:
+verify/gate-c.sh <model-id> build/<id> llm --input "Hi" --append <jsonl>
+```
+
+It builds the verifier on first use, prints the raw verdict to stderr, the
+catalog line to stdout, appends it when `--append` is given, and exits non-zero
+if the artifact fails to run — so it drops cleanly into CI on a Mac with the
+target SDK. Verified verdicts to date: qwen2.5-0.5b (llm), whisper-large-v3-turbo,
+lingbot-vision-vit-{small,base,large} (graph) — all load+run on macOS 27 (26A5378j).
