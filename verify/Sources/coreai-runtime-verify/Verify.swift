@@ -55,8 +55,11 @@ struct Main {
                 verdict.loads = true; verdict.runs = true; verdict.outputPreview = preview
             case "graph":
                 try await verifyGraph(bundle: URL(fileURLWithPath: args.model), into: &verdict)
+            case "inspect":
+                try await inspectGraph(bundle: URL(fileURLWithPath: args.model))
+                return
             default:
-                verdict.error = "unknown --kind \(args.kind) (use llm|graph)"
+                verdict.error = "unknown --kind \(args.kind) (use llm|graph|inspect)"
             }
         } catch {
             verdict.error = "\(error)"
@@ -109,6 +112,27 @@ struct Main {
         } else {
             verdict.note = "loaded + forward ran, but no named output"
             verdict.runs = true
+        }
+    }
+
+    /// Dump the graph's functions + input/output shapes — used to design harnesses.
+    static func inspectGraph(bundle: URL) async throws {
+        let url = aimodelURL(in: bundle)
+        let model = try await AIModel(contentsOf: url,
+                                      options: SpecializationOptions(preferredComputeUnitKind: .gpu))
+        print("functionNames: \(model.functionNames)")
+        for fnName in model.functionNames {
+            guard let desc = model.functionDescriptor(for: fnName) else { continue }
+            print("\n[function] \(fnName)")
+            print("  inputs:")
+            for n in desc.inputNames {
+                if case .ndArray(let nd)? = desc.inputDescriptor(of: n) {
+                    print("    \(n): shape=\(nd.shape)")
+                } else {
+                    print("    \(n): (non-ndarray)")
+                }
+            }
+            print("  outputs: \(desc.outputNames)")
         }
     }
 
