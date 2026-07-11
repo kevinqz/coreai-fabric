@@ -33,3 +33,4 @@ venv/
 
 # internal (private, never published) planning docs
 .internal/
+.superpowers/
