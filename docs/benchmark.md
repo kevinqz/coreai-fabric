@@ -74,16 +74,17 @@ Sigstore binds the signature to an OIDC identity:
 - **GitHub Actions (ambient OIDC, `id-token: write`)** — the certificate carries
   your GitHub login; CI compares it to the PR author and **auto-merges** on a
   physics-clean, non-duplicate `signed_plausible` outcome. This is the intended
-  production path:
+  production path, shipped as **`.github/workflows/bench-submit.yml`**
+  (`workflow_dispatch` with a `recipe` input). One-time setup: add a
+  `CATALOG_PAT` secret (fine-grained PAT for the catalog repo, Contents +
+  Pull-requests write — its account is the PR author the sigstore identity must
+  match). Then the two halves are:
 
-  ```yaml
-  permissions:
-    id-token: write
-    contents: write
-  steps:
-    - run: pip install "coreai-fabric[bench]" sigstore
-    - run: coreai-fabric bench-submit ${{ inputs.recipe }} --catalog-path catalog
-  ```
+  1. **Measure** on your macOS 27 machine and commit the block:
+     `coreai-fabric bench <id> --runner … && git commit recipes/<id>.yaml`
+  2. **Submit** in CI: run the `bench-submit` workflow for `<id>` — it signs
+     under the runner's ambient OIDC and opens the auto-merging PR. No
+     conversion, no macOS 27, no key material in CI.
 
 - **Local browser flow** — the certificate identity is your e-mail, which CI
   can't map to a PR author, so the submission lands in the **curator lane** (no

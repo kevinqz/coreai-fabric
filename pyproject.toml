@@ -37,6 +37,12 @@ Catalog = "https://github.com/kevinqz/coreai-catalog"
 [project.optional-dependencies]
 hf = ["huggingface_hub>=0.20"]
 test = ["pytest>=7", "huggingface_hub>=0.20"]
+# `bench-submit` (sign the benchmarks.jsonl line + open the signed
+# benchmark-lane PR). sigstore does the keyless signing; the catalog clone
+# supplies coreai_catalog.bench + scripts/sign_benchmark.py. The `bench`
+# measurement step itself needs macOS 27 + the catalog's coreai-bench-runner
+# (not a pip dep) — see docs/benchmark.md.
+bench = ["sigstore>=3.0", "huggingface_hub>=0.20"]
 # The Apple conversion stack VERIFIED on real hardware (Apple Silicon,
 # macOS 26, 2026-07-03): coreai-torch 0.4.1 (library, pulls
 # coreai-core==1.0.0b2 whose wheel bundles the Core AI compiler AND runtime —
