@@ -42,6 +42,15 @@ jobs:
   submit:
     runs-on: ubuntu-latest
     steps:
+      - name: Preflight — CATALOG_PAT secret must be set
+        env:
+          CATALOG_PAT: ${{ secrets.CATALOG_PAT }}
+        run: |
+          if [ -z "$CATALOG_PAT" ]; then
+            echo "::error::CATALOG_PAT repo secret is not set. Create a fine-grained PAT for kevinqz/coreai-catalog (Contents:write + Pull-requests:write) under an account matching this repo's owner, and add it as the CATALOG_PAT Actions secret. See this workflow's header."
+            exit 1
+          fi
+
       - name: Checkout fabric
         uses: actions/checkout@v4
 
