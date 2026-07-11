@@ -14,9 +14,11 @@ Bring a reusable, high-fidelity `qwen3_5` VLM export into coreai-fabric, with Qw
 
 **In scope:** dense `qwen3_5` decode (hybrid 24 GatedDeltaNet + 8 full), `qwen3_5_vision` tower, M-RoPE + YaRN, **128 K validated context**, the experiment ledger, parity harness, recipe/register/publish integration.
 
-**Device scope:** **Mac-only for v1** (9 B int8 ≈ 9.8 GB > the ~6.4 GB iPhone jetsam ceiling; Ornith-9B is Mac-only for the same reason). iPhone (int4-body + int8-head, ~6.5 GB) is a follow-on. GPU compute-unit only — the fp32 recurrence blocks ANE.
+**Conversion posture:** this is a **faithful format conversion, like the zoo** — we convert a reference model to `.aimodel` and preserve its upstream identity, name, attribution, and provenance verbatim. We do not create, rebrand, or endorse a model; we index/convert the ref as-is with full provenance.
 
-**Non-goals (v1):** MTP (weights ignored on load by the reference itself — `_keys_to_ignore_on_load_unexpected=[r"^mtp.*"]`); 256 K / 1 M context (KV-compression follow-on); `qwen3_5_moe`; iPhone ship; the ecosystem-wide provenance standard (this lane pilots it, §14).
+**Device scope: Mac-first, full device matrix.** Prioritize Mac (int8hu / int4lin), but **emit every device-feasible variant of each model from the same flow** — including **iPhone** (int4-body + int8-head, ~6.5 GB) wherever it fits the ~6.4 GB jetsam ceiling. Not Mac-only: the pipeline produces a per-model device matrix, each variant gated + ledgered. GPU compute-unit only — the fp32 recurrence blocks ANE.
+
+**Non-goals (v1):** MTP (weights ignored on load by the reference itself — `_keys_to_ignore_on_load_unexpected=[r"^mtp.*"]`); 256 K / 1 M context (KV-compression follow-on); `qwen3_5_moe`; the ecosystem-wide provenance standard (this lane pilots it, §14).
 
 ## 2. Fidelity policy
 
@@ -29,7 +31,7 @@ Replicate the model's math exactly. Bounded knobs (device, context ceiling, quan
 - **YaRN:** replicated (`rope_type yarn`, `factor 4.0`, `original_max 262144`, `theta 1e7`), including the `attention_scaling` **mscale** (≈1.139) that multiplies cos **and** sin.
 - **Two distinct RMSNorm conventions** (must not conflate): text/qk/final norms use `(1 + weight)` (init 0); the DeltaNet `RMSNormGated` uses `weight` directly (init 1), normalizes per-head over `head_v_dim=128`, gates with `silu(z)`.
 - **fp32** in conv, the recurrent/chunk scan, the decay gate `g`, and all RMSNorms (the reference's fallback runs these fp32 regardless of model dtype).
-- **Vision:** native dynamic resolution is the *goal*; R1 may force resolution-bucketing — a ledgered fidelity delta, not a silent one.
+- **Vision:** **attempt native dynamic resolution first (the faithful original)**; where the runtime cannot export a dynamic-shaped graph, document why and fall back to alternatives (resolution-bucketing over an increasing grid set; fixed-max slicing) — **implement and ship each variant that exports**, each with its ledgered fidelity delta. Never pre-concede the compromise.
 - **Quant** is ledgered: **int4 is a candidate, not assumed-failing** — Ornith-9B (identical arch) passes int4lin 24/24 exact; the vocab head must be **absmax symmetric, per-block-32** (clipping crushes the 248 K-vocab head).
 
 ## 3. Architecture reality (grounded, verified)
@@ -90,7 +92,7 @@ Carried as in-place **states** (RWKV7/qwen3_5 idiom, faster) on the patched pipe
 - **Patch merger** `LN(1152) → fc1(4608→4608) → GELU → fc2(4608→4096)`.
 - **No deepstack** (`deepstack_visual_indexes` empty; genuinely absent).
 
-**R1:** every shipped tower is fixed-grid/fixed-slice; a dynamic-shaped-output graph the runtime cannot execute. **Spike S3** decides: true dynamic-res vs **resolution-bucketing** (a set of fixed grids, the only proven export shape) — measure and ledger the fidelity delta rather than assume a single dynamic-res graph exports.
+**R1:** every shipped tower is fixed-grid/fixed-slice; a dynamic-shaped-output graph may not execute. **Spike S3 attempts native dynamic-res first (the original).** If it won't export, document precisely why, then evaluate + **implement each alternative that does export** (resolution-bucketing over a grid set; fixed-max slicing), each documented with its ledgered fidelity delta and shipped as a device-feasible variant. Don't assume a single outcome.
 
 ## 9. Bundle, host orchestration, and the manual convert step
 
@@ -130,9 +132,9 @@ Two-venv (reference `.venv-lerobot` transformers → npz; `--compare` drives the
 
 1. **S1 — vendored decode gate:** run the ported overlay on Qwythos; reproduce Ornith-style fp16/int8hu/int4lin gate + engine token-exact; confirm the **GVA 32v/16k** branch and the 4-state layout load. (Highest-confidence; mostly a port.)
 2. **S2 — M-RoPE on the hybrid backbone:** re-enable interleaved 3-D M-RoPE + YaRN mscale on the decoder; first-token logit cosine vs torch (R3).
-3. **S3 — vision (primary unknown):** dynamic-res vs resolution-bucketing for `qwen3_5_vision`; measure export-ability + fidelity delta (R1).
+3. **S3 — vision (primary unknown):** attempt native dynamic-res first; on failure document why + implement each exporting alternative (resolution-bucketing / fixed-max slicing), every variant ledgered (R1).
 4. **S4 — 128 K prefill:** loop-free chunk vs fp32 Metal kernel; TTFT + rollout margin (R2).
-5. **S5 — quant ship shape:** int8hu vs int4lin under the ledger (int4 is a live candidate).
+5. **S5 — device matrix + quant:** emit every feasible variant per device from the one flow — Mac (int8hu / int4lin) and iPhone (int4-body + int8-head where it fits the ceiling) — each gated + ledgered; int4 is a live candidate.
 
 ## 13. Fabric ↔ catalog integration (validated)
 
@@ -145,14 +147,14 @@ Two-venv (reference `.venv-lerobot` transformers → npz; `--compare` drives the
 - **No `framework_contract`** (lerobot-only enum; stays null for a VLM).
 - New id `qwythos-9b` (edit-distance-safe from `qwen3-5-*`; a qwen3.5 *text* LLM already exists but Qwythos does not — not an `alternate_artifacts`).
 - **License-laundering guard (audit cat.10):** for `commercial_use: likely` on apache-2.0, add/verify an `empero-ai/Qwythos` `original_model_sources` upstream with `license_terms: permissive` and verified `trust`/`owner`; else it fails.
-- `context_window: 128K`, `streaming: true` — accepted, no cap. No content/appropriateness gate exists (the catalog already lists an abliterated model); the "Claude-Mythos" name is a trademark/governance judgment, not a schema block — flag to the curator.
+- `context_window: 128K`, `streaming: true` — accepted, no cap. **Faithful conversion (like the zoo):** the entry preserves the upstream identity/name/attribution verbatim (`empero-ai/Qwythos-9B-Claude-Mythos-5-1M`, rev, apache-2.0) with full provenance — we convert the ref to `.aimodel`, we do not rebrand or endorse. No content gate exists (the catalog already lists an abliterated model); the verified `license_terms: permissive` upstream record (above) is the only ingestion requirement.
 
 **Publish gate (all confirmed):** apache-2.0 ∈ permissive allowlist → passes; restricted = hard-refuse; bundle allowlist refuses raw `*.safetensors`/`*.pt` (weights live in `main.mlirb`); privacy guard refuses local paths + hardware fingerprints. **R6:** the ~10–18 GB bundle upload uses `api.upload_folder` with no resumable/sharded path — on a throttled/Xet network this is a practical risk; consider a robust sharded upload before shipping.
 
 ## 14. Follow-on (separate specs)
 1. Ecosystem-wide provenance standard (generalize §10 across catalog + fabric + zoo).
 2. 256 K / 1 M context via KV-cache compression (8 full layers).
-3. iPhone ship (int4-body + int8-head, ~6.5 GB).
+3. Broader device coverage beyond the v1 matrix (tighter iPhone ceilings, older chips).
 4. MTP speculative decode; `qwen3_5_moe` lane.
 
 ## 15. Resolved / open questions
