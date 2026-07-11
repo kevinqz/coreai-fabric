@@ -1,0 +1,77 @@
+# Sign a recipe's committed on-device benchmark and open the signed
+# benchmark-lane PR to the catalog (auto-merges on `signed_plausible`).
+#
+# TWO HALVES, by design:
+#   1. MEASURE (`coreai-fabric bench <id>`) — runs on YOUR macOS 27 machine
+#      (Apple's Core AI runtime is macOS-27-only; hosted runners can't load a
+#      .aimodel). It writes a durable `benchmark:` block into the recipe, which
+#      you commit. CI never fabricates a speed number.
+#   2. SUBMIT (this workflow) — reads that committed block, signs the
+#      benchmarks.jsonl line under the runner's AMBIENT GitHub OIDC identity
+#      (sigstore keyless, no key material), and opens a one-line, signed
+#      benchmark-lane PR to the catalog. The catalog's benchmark-validate.yml
+#      auto-merges it when the signer identity == PR author and it is
+#      physics-clean + non-duplicate.
+#
+# ONE-TIME SETUP:
+#   - Repo secret CATALOG_PAT: a fine-grained PAT for kevinqz/coreai-catalog
+#     with Contents:write + Pull-requests:write (the default GITHUB_TOKEN cannot
+#     touch another repo). Its account is the PR author the sigstore identity
+#     must match for auto-merge — use YOUR account, matching this repo's owner.
+#   - The model must already be REGISTERED in the catalog (its model PR merged),
+#     else the catalog's model_id_exists gate rejects the row.
+
+name: bench-submit
+
+on:
+  workflow_dispatch:
+    inputs:
+      recipe:
+        description: "Recipe id with a committed benchmark: block (e.g. qwen3-0.6b)"
+        required: true
+      source:
+        description: "sources.yaml id to attribute the measurement to"
+        required: false
+        default: coreai-fabric
+
+permissions:
+  id-token: write   # ambient OIDC -> sigstore keyless identity (== repo owner)
+  contents: read
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fabric
+        uses: actions/checkout@v4
+
+      - name: Checkout catalog (PAT — cross-repo push + PR)
+        uses: actions/checkout@v4
+        with:
+          repository: kevinqz/coreai-catalog
+          path: catalog
+          fetch-depth: 0
+          token: ${{ secrets.CATALOG_PAT }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install (bench extras + catalog gate deps)
+        run: |
+          pip install -e ".[bench]"
+          # deps the catalog's local benchmark gates import
+          pip install jsonschema pyyaml cryptography
+
+      - name: Git identity for the benchmark-lane commit
+        run: |
+          git -C catalog config user.name "coreai-fabric[bot]"
+          git -C catalog config user.email "coreai-fabric@users.noreply.github.com"
+
+      - name: Sign + open the signed benchmark-lane PR
+        env:
+          GH_TOKEN: ${{ secrets.CATALOG_PAT }}   # gh pr create --repo catalog
+        run: |
+          coreai-fabric bench-submit "${{ inputs.recipe }}" \
+            --catalog-path catalog \
+            --source "${{ inputs.source }}"
