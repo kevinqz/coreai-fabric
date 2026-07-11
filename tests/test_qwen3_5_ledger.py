@@ -35,3 +35,22 @@ def test_ledgerentry_rejects_bad_verdict():
     bad["verdict"] = "maybe"
     with pytest.raises(ValueError, match="verdict must be one of"):
         LedgerEntry.from_dict(bad)
+
+
+def test_record_appends_jsonl(tmp_path):
+    out = tmp_path / "provenance" / "exp.jsonl"
+    record(_valid_entry(), path=out)
+    second = _valid_entry(); second["id"] = "exp-0002"; second["verdict"] = "rejected"
+    record(second, path=out)
+    lines = out.read_text().splitlines()
+    assert len(lines) == 2
+    assert json.loads(lines[0])["id"] == "exp-0001"
+    assert json.loads(lines[1])["verdict"] == "rejected"
+
+
+def test_record_rejects_invalid_before_write(tmp_path):
+    out = tmp_path / "exp.jsonl"
+    bad = _valid_entry(); del bad["why"]
+    with pytest.raises(ValueError):
+        record(bad, path=out)
+    assert not out.exists()
