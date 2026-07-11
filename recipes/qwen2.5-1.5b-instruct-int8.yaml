@@ -74,5 +74,5 @@ notes: 'int8 high-fidelity variant of qwen2.5-1.5b-instruct — Qwen2.5-1.5B-Ins
   Publishes into the Qwen2.5-1.5B-Instruct-CoreAI repo as the int8/ tier.'
 published:
   hf_repo: kevinqz/Qwen2.5-1.5B-Instruct-CoreAI
-  revision: ec241c1a53561c41154d265facb1e89117b78d60
-  date: '2026-07-04'
+  revision: 73b97bf1d91f805fc987004c22b8b2513fb55d10
+  date: '2026-07-10'
