@@ -69,5 +69,5 @@ notes: VibeThinker-3B (WeiboAI) — a compact Qwen2 reasoning/math/code LLM, MIT
   greedy_parity shot). Gate B = greedy_parity vs the HF reference on real hardware.
 published:
   hf_repo: kevinqz/VibeThinker-3B-CoreAI
-  revision: 9ee2dd03a19aaae79b249a62c21d8d6c5c66888e
-  date: '2026-07-05'
+  revision: 5d015e3fc4d110f5d5793724862d2cd8c4441203
+  date: '2026-07-11'

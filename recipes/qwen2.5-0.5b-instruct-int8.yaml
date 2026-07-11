@@ -63,5 +63,5 @@ notes: int8 high-fidelity variant via the int8 absmax/per-block-32 config (quant
   never fakes a parity number.
 published:
   hf_repo: kevinqz/Qwen2.5-0.5B-Instruct-CoreAI
-  revision: 6b127fd099db84d3e903a8b9ad29aa73e76be216
-  date: '2026-07-04'
+  revision: 481ad12e684770b611f7408d5e2c4b327ee44859
+  date: '2026-07-10'

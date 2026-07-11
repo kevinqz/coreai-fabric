@@ -74,5 +74,5 @@ notes: 'HIGH-FIDELITY int8 variant of qwen3-0.6b — the same Qwen3-0.6B convert
   subdirs). See docs/parity-protocol.md and quant/int8_absmax_perblock32.yaml.'
 published:
   hf_repo: kevinqz/Qwen3-0.6B-CoreAI
-  revision: 406aff00bcfb85863c4bc423cbf326e00ce425f1
-  date: '2026-07-04'
+  revision: e4b2cf333d366eade7537941b1d50e4b674a451d
+  date: '2026-07-10'
