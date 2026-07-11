@@ -108,8 +108,11 @@ notes: >-
   fidelity, not task accuracy.
 
   STATUS: this is the validated index-only PLAN (mirrors how groot / molmoact2
-  entered as drafts). The models/sensenova/export.py driver + the targeted
-  safetensors range-fetch of the ViT slice out of the 29.2GB ema.safetensors are
-  NOT YET WRITTEN. Upstream inference code: github.com/OpenSenseNova/SenseNova-Vision.
+  entered as drafts). The models/sensenova/{ref_export,export}.py driver is
+  SCAFFOLDED as a DRAFT (mirrors the miril two-venv ExportedProgram lane; uses
+  transformers SiglipVisionModel) — NOT YET RUN. It needs an on-device capture +
+  iteration: the ViT weight-key prefix in the 29.2GB ema.safetensors and the
+  exact SigLIP config are self-diagnosed at runtime (missing/unexpected keys).
+  Upstream inference code: github.com/OpenSenseNova/SenseNova-Vision.
   HF pipeline_tag is depth-estimation; the deployable lane here is
   image-feature-extraction.
