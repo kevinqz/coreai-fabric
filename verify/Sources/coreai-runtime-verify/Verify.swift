@@ -20,6 +20,7 @@ struct Verdict: Codable {
     var runs: Bool = false
     let runtime: Runtime
     var outputPreview: String? = nil
+    var note: String? = nil
     var elapsedSeconds: Double? = nil
     var error: String? = nil
     let verifiedAt: String
@@ -53,9 +54,7 @@ struct Main {
                                                   prompt: args.input ?? "Reply with one short word.")
                 verdict.loads = true; verdict.runs = true; verdict.outputPreview = preview
             case "graph":
-                let shape = try await verifyGraph(bundle: URL(fileURLWithPath: args.model))
-                verdict.loads = true; verdict.runs = true
-                verdict.outputPreview = "output shape \(shape)"
+                try await verifyGraph(bundle: URL(fileURLWithPath: args.model), into: &verdict)
             default:
                 verdict.error = "unknown --kind \(args.kind) (use llm|graph)"
             }
@@ -77,29 +76,40 @@ struct Main {
         return String(response.content.prefix(120))
     }
 
-    /// Loads a graph and runs its first function with zero-filled inputs — proves
-    /// the compiled IR loads AND executes a forward pass on this runtime.
-    static func verifyGraph(bundle: URL) async throws -> [Int] {
+    /// Loads a graph and runs its first function with zero-filled inputs. Sets
+    /// `loads` as soon as the IR loads on this runtime (the key compatibility
+    /// signal), then attempts a forward pass. Dynamic-shape inputs (e.g. ASR mel
+    /// frames) are resolved to a minimal concrete shape so the run is attempted
+    /// without a hard crash; if a forward pass can't be synthesized generically,
+    /// `runs` stays false with a note — load is still certified.
+    static func verifyGraph(bundle: URL, into verdict: inout Verdict) async throws {
         let url = aimodelURL(in: bundle)
         let model = try await AIModel(contentsOf: url,
                                       options: SpecializationOptions(preferredComputeUnitKind: .gpu))
+        verdict.loads = true   // IR loaded on this runtime — the compatibility guarantee
         guard let fnName = model.functionNames.first,
               let fn = try model.loadFunction(named: fnName),
               let desc = model.functionDescriptor(for: fnName) else {
-            throw Err.msg("no usable graph function")
+            verdict.note = "loaded, but no usable graph function to run"
+            return
         }
         var inputs: [String: NDArray] = [:]
         for name in desc.inputNames {
-            if case .ndArray(let nd)? = desc.inputDescriptor(of: name) {
-                inputs[name] = NDArray(descriptor: nd)   // zero-initialized
-            }
+            guard case .ndArray(let nd)? = desc.inputDescriptor(of: name) else { continue }
+            // Resolve any dynamic dimension to a minimal concrete size (1) so the
+            // descriptor is fully static before allocating.
+            let concrete = nd.shape.map { $0 > 0 && $0 < 1_000_000 ? $0 : 1 }
+            let resolved = nd.resolvingDynamicDimensions(concrete)
+            inputs[name] = NDArray(descriptor: resolved)
         }
         var outputs = try await fn.run(inputs: inputs, outputViews: InferenceFunction.MutableViews())
-        guard let outName = desc.outputNames.first,
-              let out = outputs.remove(outName)?.ndArray else {
-            throw Err.msg("function produced no output")
+        if let outName = desc.outputNames.first, let out = outputs.remove(outName)?.ndArray {
+            verdict.runs = true
+            verdict.outputPreview = "output shape \(out.shape)"
+        } else {
+            verdict.note = "loaded + forward ran, but no named output"
+            verdict.runs = true
         }
-        return out.shape
     }
 
     // MARK: helpers
